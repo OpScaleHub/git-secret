@@ -1,24 +1,75 @@
 package core
 
-import "fmt"
+import (
+	"bufio"
+	"os"
+)
 
 // AddUserKey adds a user's key to the users file.
 func AddUserKey(key string, config *Config) error {
-	fmt.Printf("Adding user key: %s\n", key)
-	// TODO: Implement logic to add key to users file in config.SecretDir
-	return nil
+	usersPath := config.SecretDir + "/users"
+	var users []string
+	f, err := os.Open(usersPath)
+	if err == nil {
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			users = append(users, scanner.Text())
+		}
+		f.Close()
+	}
+	for _, u := range users {
+		if u == key {
+			return nil // Already present
+		}
+	}
+	f, err = os.OpenFile(usersPath, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(key + "\n")
+	return err
 }
 
 // RemoveUserKey removes a user's key from the users file.
 func RemoveUserKey(key string, config *Config) error {
-	fmt.Printf("Removing user key: %s\n", key)
-	// TODO: Implement logic to remove key from users file in config.SecretDir
+	usersPath := config.SecretDir + "/users"
+	var users []string
+	f, err := os.Open(usersPath)
+	if err != nil {
+		return nil // Nothing to remove
+	}
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		u := scanner.Text()
+		if u != key {
+			users = append(users, u)
+		}
+	}
+	f.Close()
+	f, err = os.Create(usersPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	for _, u := range users {
+		f.WriteString(u + "\n")
+	}
 	return nil
 }
 
 // ListUserKeys lists all user keys.
 func ListUserKeys(config *Config) ([]string, error) {
-	fmt.Println("Listing user keys")
-	// TODO: Implement logic to list keys from users file in config.SecretDir
-	return []string{}, nil
+	usersPath := config.SecretDir + "/users"
+	var users []string
+	f, err := os.Open(usersPath)
+	if err != nil {
+		return users, nil
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		users = append(users, scanner.Text())
+	}
+	return users, nil
 }
