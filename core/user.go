@@ -3,17 +3,22 @@ package core
 import (
 	"bufio"
 	"os"
+	"strings"
 )
 
 // AddUserKey adds a user's key to the users file.
 func AddUserKey(key string, config *Config) error {
 	usersPath := config.SecretDir + "/users"
+	key = strings.TrimSpace(key)
 	var users []string
 	f, err := os.Open(usersPath)
 	if err == nil {
 		scanner := bufio.NewScanner(f)
 		for scanner.Scan() {
-			users = append(users, scanner.Text())
+			line := strings.TrimSpace(scanner.Text())
+			if line != "" {
+				users = append(users, line)
+			}
 		}
 		f.Close()
 	}
@@ -22,7 +27,7 @@ func AddUserKey(key string, config *Config) error {
 			return nil // Already present
 		}
 	}
-	f, err = os.OpenFile(usersPath, os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err = os.OpenFile(usersPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return err
 	}

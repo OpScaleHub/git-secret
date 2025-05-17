@@ -1,2 +1,6 @@
 .gitsecret/
+*.secretsecret.txt
 *.secret
+secret.txt
+secret.txt
+cred.secret
