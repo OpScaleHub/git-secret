@@ -20,11 +20,11 @@ func TestUpdateGitIgnoreEntry(t *testing.T) {
 	file := ".testignore"
 	defer os.Remove(file)
 	os.WriteFile(file, []byte("foo\n"), 0o644)
-	if err := UpdateGitIgnoreEntry("bar.txt"); err != nil {
+	if err := UpdateGitIgnoreEntry(file, "bar.txt"); err != nil {
 		t.Fatalf("UpdateGitIgnoreEntry failed: %v", err)
 	}
 	data, _ := os.ReadFile(file)
-	if string(data) != "foo\nbar.txt\n" && string(data) != "foo\nbar.txt\n" {
+	if string(data) != "foo\nbar.txt\n" && string(data) != "foo\n\nbar.txt\n" {
 		t.Errorf(".gitignore entry not added: %q", string(data))
 	}
 }

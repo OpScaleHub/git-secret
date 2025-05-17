@@ -44,7 +44,7 @@ func Add(files []string) error {
 	}
 	// Update .gitignore for each file
 	for _, file := range files {
-		core.UpdateGitIgnoreEntry(file)
+		core.UpdateGitIgnoreEntry(".gitignore", file)
 	}
 	fmt.Println("Added files to secret tracking:", strings.Join(files, ", "))
 	return nil

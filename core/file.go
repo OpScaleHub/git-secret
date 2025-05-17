@@ -18,12 +18,11 @@ func UpdateGitIgnore(secretDir string) error {
 	return updateGitIgnoreWithEntries(ignorePath, entries)
 }
 
-// UpdateGitIgnoreEntry adds a single file entry to .gitignore if missing.
-func UpdateGitIgnoreEntry(file string) error {
-	ignorePath := ".gitignore"
+// UpdateGitIgnoreEntry adds a single file entry to the specified ignore file if missing.
+func UpdateGitIgnoreEntry(ignorePath, file string) error {
 	var lines []string
 	if data, err := os.ReadFile(ignorePath); err == nil {
-		lines = append(lines, string(data))
+		lines = strings.Split(string(data), "\n")
 	}
 	for _, l := range lines {
 		if l == file {
