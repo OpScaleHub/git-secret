@@ -1,23 +1,35 @@
 package core
 
-import "fmt"
+import (
+	"fmt"
+	"os/exec"
+)
 
 // EncryptFile encrypts a single file using the configured backend.
 func EncryptFile(filePath string, config *Config, userKeys []string) error {
-	fmt.Printf("Encrypting file: %s using backend: %s\n", filePath, config.Backend)
-	// TODO: Implement encryption logic based on config.Backend (gpg or ssh)
-	// For GPG: execute `gpg --encrypt --recipient <keyID> ...`
-	// For SSH: use openssl or golang.org/x/crypto/ssh
-	return nil
+	if config.Backend == "gpg" {
+		for _, key := range userKeys {
+			outFile := filePath + ".secret"
+			cmd := exec.Command(config.GPGProgram, "--yes", "--batch", "--output", outFile, "--encrypt", "--recipient", key, filePath)
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("gpg encryption failed for %s: %w", filePath, err)
+			}
+		}
+		return nil
+	}
+	// SSH backend: not implemented
+	return fmt.Errorf("encryption backend '%s' not implemented", config.Backend)
 }
 
 // DecryptFile decrypts a single file using the configured backend.
 func DecryptFile(encryptedFilePath string, outputFilePath string, config *Config) error {
-	fmt.Printf("Decrypting file: %s to %s using backend: %s\n", encryptedFilePath, outputFilePath, config.Backend)
-	// TODO: Implement decryption logic based on config.Backend
-	// For GPG: execute `gpg --decrypt ...`
-	// For SSH: use openssl or golang.org/x/crypto/ssh
-	// Note: For SSH, you'll need the user's private key, which this plugin
-	// assumes is managed by the user (e.g., via ssh-agent).
-	return nil
+	if config.Backend == "gpg" {
+		cmd := exec.Command(config.GPGProgram, "--yes", "--batch", "--output", outputFilePath, "--decrypt", encryptedFilePath)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("gpg decryption failed for %s: %w", encryptedFilePath, err)
+		}
+		return nil
+	}
+	// SSH backend: not implemented
+	return fmt.Errorf("decryption backend '%s' not implemented", config.Backend)
 }

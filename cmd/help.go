@@ -6,7 +6,7 @@ import "fmt"
 func Help() {
 	fmt.Println("Git Secret Manager - Help")
 	// TODO: Implement detailed help messages for each command
-	fmt.Println(`
+	fmt.Print(`
 Usage: git secret <command> [options]
 
 Commands:
