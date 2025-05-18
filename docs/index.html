@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Git Secret Manager</title>
+  <meta name="description" content="Securely manage secrets in your Git repositories with git-secret. Cross-platform, easy to use, and integrates with Git.">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css">
+  <style>
+    body { max-width: 700px; margin: 2rem auto; }
+    header, footer { text-align: center; }
+    pre, code { background: #f6f8fa; border-radius: 4px; }
+    .logo { font-size: 2.2rem; font-weight: bold; margin-bottom: 0.2em; }
+    .tagline { color: #555; margin-bottom: 1.5em; }
+    nav a { margin: 0 0.5em; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo">git-secret</div>
+    <div class="tagline">Secure Secret Management for Git Repositories</div>
+    <nav>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#usage">Usage</a>
+      <a href="#config">Config</a>
+      <a href="https://github.com/OpScaleHub/git-secret" target="_blank">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    <section id="features">
+      <h2>Features</h2>
+      <ul>
+        <li>🔒 Encrypts sensitive files before committing to Git</li>
+        <li>🔗 Seamless Git integration as a <code>git secret</code> subcommand</li>
+        <li>⚙️ Flexible global and per-repo configuration</li>
+        <li>🗝️ GPG backend (SSH planned)</li>
+        <li>👥 User management via GPG IDs</li>
+        <li>🌐 Cross-platform: Linux, macOS, Windows</li>
+      </ul>
+    </section>
+    <section id="install">
+      <h2>Installation</h2>
+      <ol>
+        <li>
+          <b>Download a prebuilt binary:</b><br>
+          <a href="https://github.com/OpScaleHub/git-secret/releases" target="_blank">GitHub Releases</a>
+        </li>
+        <li>
+          <b>Or build from source:</b>
+          <pre><code>git clone https://github.com/OpScaleHub/git-secret.git
+cd git-secret
+go build -o git-secret .
+sudo mv git-secret /usr/local/bin/</code></pre>
+        </li>
+        <li>
+          <b>Verify installation:</b>
+          <pre><code>git secret help</code></pre>
+        </li>
+      </ol>
+      <p><b>Requirements:</b> Go 1.21+, Git, GPG (in PATH)</p>
+    </section>
+    <section id="usage">
+      <h2>Usage</h2>
+      <pre><code># Initialize in your repo
+git secret init
+# Add files to encrypt
+git secret add secret.txt config.yaml
+# Add a user by GPG key ID
+git secret adduser KEYID
+# Encrypt/decrypt
+ git secret encrypt
+ git secret decrypt
+# Remove file from tracking
+git secret rm secret.txt
+# List users and files
+git secret list
+# Re-encrypt after user changes
+git secret rekey
+</code></pre>
+      <p>For all commands, run <code>git secret help</code>.</p>
+    </section>
+    <section id="config">
+      <h2>Configuration</h2>
+      <p>Configure via Git (global or per-repo):</p>
+      <pre><code>git config --local secret.backend gpg
+git config --local secret.gpg_program /usr/bin/gpg
+git config --local secret.secret_dir .gitsecret</code></pre>
+      <p>See <a href="https://github.com/OpScaleHub/git-secret#configuration" target="_blank">README</a> for all options.</p>
+    </section>
+    <section id="docs">
+      <h2>Documentation &amp; Website</h2>
+      <p>This site is published via <b>GitHub Pages</b> from the <code>docs/</code> folder.<br>
+      Main site: <a href="https://git-secret.opscale.ir">https://git-secret.opscale.ir</a></p>
+      <p>To update, push changes to <code>docs/</code> in the main branch.</p>
+    </section>
+  </main>
+  <footer>
+    <hr>
+    <p>MIT License &mdash; <a href="https://github.com/OpScaleHub/git-secret">GitHub</a></p>
+  </footer>
+</body>
+</html>
