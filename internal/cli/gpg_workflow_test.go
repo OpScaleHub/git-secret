@@ -13,6 +13,22 @@ import (
 	"github.com/OpScaleHub/git-secret/internal/keybackend"
 )
 
+// shortTempDir returns a short-path temp directory suitable for
+// GNUPGHOME. t.TempDir() on macOS lives under a long
+// /var/folders/.../T/<test name>/001 path, and gpg-agent's Unix domain
+// socket (created inside GNUPGHOME) can exceed AF_UNIX's ~104-byte
+// sun_path limit there ("File name too long" / "IPC connect call
+// failed") — a real GnuPG-on-macOS gotcha, unrelated to this feature.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "gnupg-test-")
+	if err != nil {
+		t.Fatalf("create short temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 // gpgIdentity is a throwaway GPG identity generated in its own isolated
 // GNUPGHOME, so tests can simulate multiple separate people without ever
 // touching the developer's real keyring.
@@ -32,7 +48,7 @@ func newGPGIdentity(t *testing.T, uid string) gpgIdentity {
 		// quirk, not a limitation of the feature itself.
 		t.Skip("gpg-agent unreliable on windows CI runners")
 	}
-	home := t.TempDir()
+	home := shortTempDir(t)
 	withGNUPGHome(t, home)
 
 	cmd := exec.Command(gpgutil.Binary, "--batch", "--passphrase", "", "--quick-generate-key", uid, "default", "default", "never")
@@ -95,7 +111,7 @@ func newSharedKeyring(t *testing.T, a, b gpgIdentity) string {
 	secA := exportKey(t, a.home, a.fingerprint, true)
 	pubB := exportKey(t, b.home, b.fingerprint, false)
 
-	shared := t.TempDir()
+	shared := shortTempDir(t)
 	importKey(t, shared, pubA)
 	importKey(t, shared, secA)
 	importKey(t, shared, pubB)

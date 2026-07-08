@@ -2,10 +2,31 @@ package gpgutil
 
 import (
 	"bytes"
+	"os"
 	"os/exec"
 	"runtime"
 	"testing"
 )
+
+// shortTempDir returns a short-path temp directory suitable for
+// GNUPGHOME. t.TempDir() on macOS lives under a long
+// /var/folders/.../T/<test name>/001 path, and gpg-agent's Unix domain
+// socket (created inside GNUPGHOME) can exceed AF_UNIX's ~104-byte
+// sun_path limit there ("File name too long" / "IPC connect call
+// failed") — a real GnuPG-on-macOS gotcha, unrelated to this feature.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	base := "/tmp"
+	if runtime.GOOS == "windows" {
+		base = os.TempDir()
+	}
+	dir, err := os.MkdirTemp(base, "gnupg-test-")
+	if err != nil {
+		t.Fatalf("create short temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
 
 // skipUnlessGPGTestable skips on environments where real gpg operations
 // can't be exercised reliably: gpg missing, or GitHub's windows-latest
@@ -28,7 +49,7 @@ func skipUnlessGPGTestable(t *testing.T) {
 func newTestKeyring(t *testing.T, uid string) string {
 	t.Helper()
 	skipUnlessGPGTestable(t)
-	home := t.TempDir()
+	home := shortTempDir(t)
 	t.Setenv("GNUPGHOME", home)
 
 	cmd := exec.Command(Binary, "--batch", "--passphrase", "", "--quick-generate-key", uid, "default", "default", "never")
@@ -107,7 +128,7 @@ func TestEncryptRequiresRecipients(t *testing.T) {
 
 func TestDecryptRejectsGarbage(t *testing.T) {
 	skipUnlessGPGTestable(t)
-	t.Setenv("GNUPGHOME", t.TempDir())
+	t.Setenv("GNUPGHOME", shortTempDir(t))
 	if _, err := Decrypt([]byte("not a pgp message")); err == nil {
 		t.Fatalf("expected error decrypting garbage input")
 	}

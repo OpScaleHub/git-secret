@@ -14,6 +14,22 @@ import (
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 )
 
+// shortTempDir returns a short-path temp directory suitable for
+// GNUPGHOME. t.TempDir() on macOS lives under a long
+// /var/folders/.../T/<test name>/001 path, and gpg-agent's Unix domain
+// socket (created inside GNUPGHOME) can exceed AF_UNIX's ~104-byte
+// sun_path limit there ("File name too long" / "IPC connect call
+// failed") — a real GnuPG-on-macOS gotcha, unrelated to this feature.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "gnupg-test-")
+	if err != nil {
+		t.Fatalf("create short temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 // buildBinary compiles the current source tree once per test run and
 // returns the path to the resulting executable, so these tests exercise
 // exactly what a user would run — not internal/cli's Go API directly.
@@ -332,7 +348,7 @@ func TestCLIInitGPGBackendNonInteractive(t *testing.T) {
 	withBinOnPath(t, bin)
 	repo := initGitRepo(t)
 
-	t.Setenv("GNUPGHOME", t.TempDir())
+	t.Setenv("GNUPGHOME", shortTempDir(t))
 	genCmd := exec.Command(gpgutil.Binary, "--batch", "--passphrase", "", "--quick-generate-key", "Test <test@example.com>", "default", "default", "never")
 	if out, err := genCmd.CombinedOutput(); err != nil {
 		t.Fatalf("generate test gpg key: %v: %s", err, out)

@@ -12,6 +12,22 @@ import (
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 )
 
+// shortTempDir returns a short-path temp directory suitable for
+// GNUPGHOME. t.TempDir() on macOS lives under a long
+// /var/folders/.../T/<test name>/001 path, and gpg-agent's Unix domain
+// socket (created inside GNUPGHOME) can exceed AF_UNIX's ~104-byte
+// sun_path limit there ("File name too long" / "IPC connect call
+// failed") — a real GnuPG-on-macOS gotcha, unrelated to this feature.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("/tmp", "gnupg-test-")
+	if err != nil {
+		t.Fatalf("create short temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 // newTestGPGIdentity generates an ephemeral, unattended GPG identity in
 // a throwaway GNUPGHOME (never the developer's real keyring) and returns
 // its primary key fingerprint.
@@ -26,7 +42,7 @@ func newTestGPGIdentity(t *testing.T, uid string) string {
 		// quirk, not a limitation of the feature itself.
 		t.Skip("gpg-agent unreliable on windows CI runners")
 	}
-	t.Setenv("GNUPGHOME", t.TempDir())
+	t.Setenv("GNUPGHOME", shortTempDir(t))
 
 	cmd := exec.Command(gpgutil.Binary, "--batch", "--passphrase", "", "--quick-generate-key", uid, "default", "default", "never")
 	var stderr bytes.Buffer
