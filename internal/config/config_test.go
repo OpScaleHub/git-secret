@@ -129,6 +129,7 @@ func TestValidateRejectsBadConfig(t *testing.T) {
 		{Version: 1, Patterns: nil, KeyBackend: "file", KeySource: "k"},
 		{Version: 1, Patterns: []string{"a"}, KeyBackend: "bogus", KeySource: "k"},
 		{Version: 1, Patterns: []string{"a"}, KeyBackend: "file", KeySource: ""},
+		{Version: 1, Patterns: []string{"a"}, KeyBackend: "gpg", KeySource: "k"}, // gpg requires gpg_recipients
 	}
 	for i, cfg := range cases {
 		if err := cfg.Validate(); err == nil {
@@ -161,5 +162,86 @@ func TestWriteDefaultIsIdempotent(t *testing.T) {
 	}
 	if !strings.Contains(string(data2), "# user edit") {
 		t.Fatalf("user edit was lost: %s", data2)
+	}
+}
+
+func TestValidateAcceptsGPGBackendWithRecipients(t *testing.T) {
+	cfg := &Config{
+		Version: CurrentVersion, Patterns: []string{"secrets/**"},
+		KeyBackend: "gpg", KeySource: DefaultKeySourceFor("gpg"),
+		GPGRecipients: []string{"AAAABBBBCCCCDDDD"},
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: unexpected error: %v", err)
+	}
+}
+
+func TestDefaultKeySourceForDiffersByBackend(t *testing.T) {
+	if DefaultKeySourceFor("file") == DefaultKeySourceFor("gpg") {
+		t.Fatalf("file and gpg backends should not share a default key_source (one is gitignored/secret, the other is meant to be committed)")
+	}
+}
+
+func TestWriteConfigIdempotentLikeWriteDefault(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &Config{
+		Version: CurrentVersion, Patterns: []string{"secrets/**"},
+		KeyBackend: "gpg", KeySource: DefaultKeySourceFor("gpg"),
+		GPGRecipients: []string{"AAAABBBBCCCCDDDD"},
+	}
+	path1, err := WriteConfig(tmp, cfg)
+	if err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+
+	// A second call with different content must not overwrite.
+	otherCfg := &Config{Version: CurrentVersion, Patterns: []string{"other/**"}, KeyBackend: "file", KeySource: DefaultKeySourceFor("file")}
+	path2, err := WriteConfig(tmp, otherCfg)
+	if err != nil {
+		t.Fatalf("WriteConfig (2nd call): %v", err)
+	}
+	if path1 != path2 {
+		t.Fatalf("path changed between calls")
+	}
+	loaded, err := loadFile(path2)
+	if err != nil {
+		t.Fatalf("loadFile: %v", err)
+	}
+	if loaded.KeyBackend != "gpg" {
+		t.Fatalf("KeyBackend = %q, want gpg to survive the idempotent 2nd call", loaded.KeyBackend)
+	}
+}
+
+func TestSaveOverwritesUnconditionally(t *testing.T) {
+	tmp := t.TempDir()
+	cfg := &Config{Version: CurrentVersion, Patterns: []string{"secrets/**"}, KeyBackend: "file", KeySource: DefaultKeySourceFor("file")}
+	if _, err := WriteConfig(tmp, cfg); err != nil {
+		t.Fatalf("WriteConfig: %v", err)
+	}
+
+	updated := &Config{
+		Version: CurrentVersion, Patterns: []string{"secrets/**"},
+		KeyBackend: "gpg", KeySource: DefaultKeySourceFor("gpg"),
+		GPGRecipients: []string{"AAAABBBBCCCCDDDD", "1111222233334444"},
+	}
+	if err := Save(tmp, updated); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := loadFile(filepath.Join(tmp, FileName))
+	if err != nil {
+		t.Fatalf("loadFile: %v", err)
+	}
+	if loaded.KeyBackend != "gpg" || len(loaded.GPGRecipients) != 2 {
+		t.Fatalf("Save did not overwrite: got %+v", loaded)
+	}
+}
+
+func TestMergeIntoUnionsGPGRecipients(t *testing.T) {
+	base := &Config{GPGRecipients: []string{"AAAA"}}
+	overlay := &Config{GPGRecipients: []string{"BBBB", "AAAA"}}
+	mergeInto(base, overlay)
+	if len(base.GPGRecipients) != 2 {
+		t.Fatalf("GPGRecipients = %v, want union-deduped [AAAA BBBB]", base.GPGRecipients)
 	}
 }

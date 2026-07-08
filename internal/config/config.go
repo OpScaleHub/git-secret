@@ -24,22 +24,40 @@ type Config struct {
 	Exclude    []string `yaml:"exclude,omitempty"`
 	KeyBackend string   `yaml:"key_backend"`
 	KeySource  string   `yaml:"key_source"`
+	// GPGRecipients are GPG fingerprints the key is wrapped to when
+	// KeyBackend is "gpg". Not secret — these are public key
+	// identifiers — so this is committed as part of the repo config,
+	// same as Patterns/Exclude.
+	GPGRecipients []string `yaml:"gpg_recipients,omitempty"`
 }
 
 // validBackends are the key_backend values recognized by this build.
-// "gpg" and "kms" are reserved for future backends behind the same
-// keybackend.KeyBackend interface; selecting them today is a validation
+// "kms" is reserved for a future backend behind the same
+// keybackend.Backend interface; selecting it today is a validation
 // error rather than a silent no-op.
 var validBackends = map[string]bool{
 	"file": true,
 	"env":  true,
+	"gpg":  true,
+}
+
+// DefaultKeySourceFor returns the default key_source for a given
+// key_backend. "gpg" gets a distinct default from "file" (".repo-enc/key.gpg"
+// vs ".repo-enc/key") since the two are semantically different — one
+// gitignored/secret, one meant to be committed — and switching backends
+// shouldn't silently collide with a stale key from the other.
+func DefaultKeySourceFor(backend string) string {
+	if backend == "gpg" {
+		return ".repo-enc/key.gpg"
+	}
+	return ".repo-enc/key"
 }
 
 func defaults() *Config {
 	return &Config{
 		Version:    CurrentVersion,
 		KeyBackend: "file",
-		KeySource:  ".repo-enc/key",
+		KeySource:  DefaultKeySourceFor("file"),
 	}
 }
 
@@ -70,9 +88,10 @@ func GlobalPath() (string, error) {
 //
 // Merge semantics: scalar fields (key_backend, key_source) are repo-local
 // if set there, else global, else built-in default. List fields
-// (patterns, exclude) are the union of global and repo-local entries, so a
-// user's personal default patterns (e.g. "*.secret.*") apply everywhere
-// without needing to be copy-pasted into every repo.
+// (patterns, exclude, gpg_recipients) are the union of global and
+// repo-local entries, so a user's personal defaults (e.g. "*.secret.*"
+// patterns, or always including their own key as a gpg recipient) apply
+// everywhere without needing to be copy-pasted into every repo.
 func Load(repoRoot string) (*Config, error) {
 	cfg := defaults()
 
@@ -123,6 +142,7 @@ func mergeInto(base, overlay *Config) {
 	}
 	base.Patterns = unionDedup(base.Patterns, overlay.Patterns)
 	base.Exclude = unionDedup(base.Exclude, overlay.Exclude)
+	base.GPGRecipients = unionDedup(base.GPGRecipients, overlay.GPGRecipients)
 }
 
 func unionDedup(a, b []string) []string {
@@ -152,6 +172,9 @@ func (c *Config) Validate() error {
 	if c.KeySource == "" {
 		return fmt.Errorf("config: key_source must not be empty")
 	}
+	if c.KeyBackend == "gpg" && len(c.GPGRecipients) == 0 {
+		return fmt.Errorf("config: key_backend \"gpg\" requires at least one entry in gpg_recipients")
+	}
 	for _, p := range append(append([]string{}, c.Patterns...), c.Exclude...) {
 		if _, err := filepath.Match(lastSegment(p), "x"); err != nil {
 			return fmt.Errorf("config: invalid glob pattern %q: %w", p, err)
@@ -160,26 +183,49 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+const configHeader = "# repo-enc config: https://github.com/OpScaleHub/git-secret\n" +
+	"# 'patterns' are glob paths (relative to repo root, '**' matches any depth)\n" +
+	"# that get transparently encrypted by the installed git hooks.\n"
+
 // WriteDefault writes a starter config to repoRoot/.repo-enc.yml. It
 // refuses to overwrite an existing file so `init` stays idempotent.
 func WriteDefault(repoRoot string, patterns []string) (string, error) {
+	cfg := defaults()
+	cfg.Patterns = patterns
+	return WriteConfig(repoRoot, cfg)
+}
+
+// WriteConfig writes cfg as the starter .repo-enc.yml, refusing to
+// overwrite an existing file (same idempotency contract as WriteDefault).
+// Used by `init` when the caller has chosen a non-default key backend
+// (e.g. gpg) and needs to set key_backend/key_source/gpg_recipients
+// before the file is ever written.
+func WriteConfig(repoRoot string, cfg *Config) (string, error) {
 	path := filepath.Join(repoRoot, FileName)
 	if _, err := os.Stat(path); err == nil {
 		return path, nil
 	} else if !os.IsNotExist(err) {
 		return "", err
 	}
-	cfg := defaults()
-	cfg.Patterns = patterns
+	return path, writeConfigFile(path, cfg)
+}
+
+// Save overwrites repoRoot/.repo-enc.yml with cfg unconditionally, unlike
+// WriteDefault/WriteConfig's refuse-if-exists guard. Used by adduser/
+// removeuser, which are legitimate in-place edits to an already-existing,
+// already-customized config rather than a first-time bootstrap.
+func Save(repoRoot string, cfg *Config) error {
+	path := filepath.Join(repoRoot, FileName)
+	return writeConfigFile(path, cfg)
+}
+
+func writeConfigFile(path string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
-		return "", fmt.Errorf("config: marshal default config: %w", err)
+		return fmt.Errorf("config: marshal config: %w", err)
 	}
-	header := "# repo-enc config: https://github.com/OpScaleHub/git-secret\n" +
-		"# 'patterns' are glob paths (relative to repo root, '**' matches any depth)\n" +
-		"# that get transparently encrypted by the installed git hooks.\n"
-	if err := os.WriteFile(path, []byte(header+string(data)), 0o644); err != nil {
-		return "", fmt.Errorf("config: write %s: %w", path, err)
+	if err := os.WriteFile(path, []byte(configHeader+string(data)), 0o644); err != nil {
+		return fmt.Errorf("config: write %s: %w", path, err)
 	}
-	return path, nil
+	return nil
 }

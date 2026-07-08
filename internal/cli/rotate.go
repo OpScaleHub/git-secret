@@ -103,9 +103,13 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		if sha, err := gitutil.HashObjectWrite(c.RepoRoot, sealed[pl.path]); err == nil {
 			_ = gitutil.UpdateIndexBlob(c.RepoRoot, sha, pl.path)
 		}
+		// Working tree now holds ciphertext matching the index (unlike
+		// Encrypt/DecryptPaths, rotation always writes ciphertext to the
+		// working tree directly) — no longer needs hiding from status.
+		_ = gitutil.SetSkipWorktree(c.RepoRoot, pl.path, false)
 	}
 
-	if c.Config.KeyBackend == "file" {
+	if persistsKeyToDisk(c.Config.KeyBackend) {
 		if err := os.Rename(c.abs(stagingRef), c.abs(c.Config.KeySource)); err != nil {
 			return result, fmt.Errorf("rotate-keys: promote new key (files rotated but key file not swapped — do not re-run; restore %s from %s manually): %w", c.Config.KeySource, stagingRef, err)
 		}
@@ -114,8 +118,16 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 	return result, nil
 }
 
+// persistsKeyToDisk reports whether a backend's Generate writes to a
+// real file that needs the stage-then-promote treatment ("file", "gpg")
+// as opposed to one that only returns key material in memory for the
+// caller to export ("env").
+func persistsKeyToDisk(backend string) bool {
+	return backend == "file" || backend == "gpg"
+}
+
 func cleanupStagingKey(c *Context, stagingRef string) {
-	if c.Config.KeyBackend == "file" {
+	if persistsKeyToDisk(c.Config.KeyBackend) {
 		os.Remove(c.abs(stagingRef))
 	}
 }

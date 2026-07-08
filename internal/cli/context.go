@@ -31,11 +31,28 @@ func Load() (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
-	backend, err := keybackend.New(cfg.KeyBackend)
+	backend, err := resolveBackend(cfg)
 	if err != nil {
 		return nil, err
 	}
 	return &Context{RepoRoot: root, Config: cfg, Backend: backend}, nil
+}
+
+// resolveBackend looks up cfg.KeyBackend and, for backends that need
+// identifiers beyond key_source (currently just "gpg"), wires in the
+// config's recipients. This is centralized here — rather than left to
+// each call site — so every caller (Load, and Init before a Context
+// exists) gets a fully-usable backend, not just the one that happens to
+// remember the extra step.
+func resolveBackend(cfg *config.Config) (keybackend.Backend, error) {
+	b, err := keybackend.New(cfg.KeyBackend)
+	if err != nil {
+		return nil, err
+	}
+	if rc, ok := b.(keybackend.RecipientConfigurable); ok {
+		b = rc.WithRecipients(cfg.GPGRecipients)
+	}
+	return b, nil
 }
 
 // Key resolves the repo's current symmetric key via the configured backend.
