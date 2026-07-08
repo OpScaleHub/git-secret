@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,9 +16,16 @@ import (
 // buildBinary compiles the current source tree once per test run and
 // returns the path to the resulting executable, so these tests exercise
 // exactly what a user would run — not internal/cli's Go API directly.
+// Windows requires the .exe extension: unlike Unix, Go does not append
+// it automatically for an explicit -o name, and without it neither
+// os/exec nor cmd.exe/PowerShell will resolve the file as executable.
 func buildBinary(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "git-secret")
+	name := "git-secret"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	bin := filepath.Join(t.TempDir(), name)
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build git-secret: %v\n%s", err, out)

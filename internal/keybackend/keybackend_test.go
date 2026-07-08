@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -33,13 +34,19 @@ func TestFileBackendGenerateThenGet(t *testing.T) {
 		t.Fatalf("Get returned %x, want %x", got, key)
 	}
 
-	// Key file must not be world/group readable.
-	info, err := os.Stat(filepath.Join(repoRoot, ".repo-enc/key"))
-	if err != nil {
-		t.Fatalf("stat key file: %v", err)
-	}
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Errorf("key file mode = %o, want 0600", perm)
+	// Key file must not be world/group readable. Windows has no concept
+	// of Unix permission bits (os.Chmod there only toggles a read-only
+	// attribute, always reporting 0666/0777) so this check is meaningless
+	// there; real access control on Windows would need ACL syscalls,
+	// out of scope for a minimal-dependency CLI.
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(repoRoot, ".repo-enc/key"))
+		if err != nil {
+			t.Fatalf("stat key file: %v", err)
+		}
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Errorf("key file mode = %o, want 0600", perm)
+		}
 	}
 }
 

@@ -27,6 +27,13 @@ go build -o git-secret .
 sudo mv git-secret /usr/local/bin/
 ```
 
+On Windows, build with the `.exe` extension explicitly (Go does not add it
+for you) and put the result on `PATH`:
+
+```powershell
+go build -o git-secret.exe .
+```
+
 Once `git-secret` is on your `PATH`, `git secret <command>` works as a git subcommand.
 
 ## Quick start
