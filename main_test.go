@@ -53,6 +53,30 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	return string(out)
 }
 
+// runGitTriggeringHooks is like runGit but strips CI/SECRETIZE_SKIP_HOOKS
+// from the child's environment first. Installed hooks intentionally
+// no-op under those vars (so CI systems don't trip them unexpectedly),
+// but this repo's own test suite runs under CI=true on GitHub Actions and
+// needs the real installed hook to fire to test it.
+func runGitTriggeringHooks(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "CI=") || strings.HasPrefix(e, "SECRETIZE_SKIP_HOOKS=") {
+			continue
+		}
+		env = append(env, e)
+	}
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
 func initGitRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -180,7 +204,7 @@ func TestCLICommitThenCloneDecryptsWithSharedKey(t *testing.T) {
 	os.WriteFile(secretPath, []byte(plaintext), 0o644)
 
 	runGit(t, repoA, "add", "secrets/db.yaml")
-	runGit(t, repoA, "commit", "-q", "-m", "add secret")
+	runGitTriggeringHooks(t, repoA, "commit", "-q", "-m", "add secret")
 
 	if _, stderr, code := runBin(t, bin, repoA, "verify"); code != 0 {
 		t.Fatalf("verify in repoA after hook-processed commit: code=%d stderr=%q", code, stderr)

@@ -43,10 +43,21 @@ func defaults() *Config {
 	}
 }
 
+// GlobalConfigDirEnvVar overrides where GlobalPath looks, bypassing OS
+// convention detection entirely. Useful for reproducible CI/container
+// setups and for tests, which otherwise can't isolate the global config
+// path portably (os.UserConfigDir ignores XDG_CONFIG_HOME on macOS by
+// design, unlike on Linux).
+const GlobalConfigDirEnvVar = "REPO_ENC_CONFIG_DIR"
+
 // GlobalPath returns the path to the user's global override config,
 // respecting OS conventions (XDG on Linux, Application Support on macOS,
-// AppData on Windows) via os.UserConfigDir.
+// AppData on Windows) via os.UserConfigDir, unless GlobalConfigDirEnvVar
+// is set.
 func GlobalPath() (string, error) {
+	if dir := os.Getenv(GlobalConfigDirEnvVar); dir != "" {
+		return filepath.Join(dir, "config.yml"), nil
+	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("config: resolve user config dir: %w", err)

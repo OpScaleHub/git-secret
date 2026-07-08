@@ -53,9 +53,9 @@ func TestLoadRepoLocalOverridesGlobalScalars(t *testing.T) {
 	tmp := t.TempDir()
 	repoRoot := filepath.Join(tmp, "repo")
 	globalDir := filepath.Join(tmp, "globalcfg")
-	t.Setenv("XDG_CONFIG_HOME", globalDir)
+	t.Setenv(GlobalConfigDirEnvVar, globalDir)
 
-	writeFile(t, filepath.Join(globalDir, "repo-enc", "config.yml"), `
+	writeFile(t, filepath.Join(globalDir, "config.yml"), `
 key_backend: env
 key_source: MY_GLOBAL_KEY
 patterns:
@@ -95,9 +95,9 @@ func TestLoadFallsBackToGlobalScalarWhenRepoOmits(t *testing.T) {
 	tmp := t.TempDir()
 	repoRoot := filepath.Join(tmp, "repo")
 	globalDir := filepath.Join(tmp, "globalcfg")
-	t.Setenv("XDG_CONFIG_HOME", globalDir)
+	t.Setenv(GlobalConfigDirEnvVar, globalDir)
 
-	writeFile(t, filepath.Join(globalDir, "repo-enc", "config.yml"), `
+	writeFile(t, filepath.Join(globalDir, "config.yml"), `
 key_backend: env
 key_source: MY_GLOBAL_KEY
 `)

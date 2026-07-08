@@ -95,7 +95,7 @@ key_backend: file          # file | env
 key_source: .repo-enc/key  # path (file backend) or env var name (env backend)
 ```
 
-`patterns`/`exclude` are glob paths relative to the repo root; `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and any `patterns`/`exclude` entries there are unioned with the repo's.
+`patterns`/`exclude` are glob paths relative to the repo root; `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent — set `REPO_ENC_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and any `patterns`/`exclude` entries there are unioned with the repo's.
 
 ### Key backends
 
