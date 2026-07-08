@@ -5,11 +5,11 @@
 ## Features
 
 - **Transparent encryption**: git hooks (`pre-commit`, `post-checkout`, `post-merge`, `pre-push`) encrypt/decrypt automatically as you commit, checkout, merge, and push — no manual encrypt/decrypt step in the common case.
-- **Modern AEAD crypto**: XChaCha20-Poly1305 by default (AES-256-GCM available), no GPG dependency.
+- **Modern AEAD crypto**: XChaCha20-Poly1305 by default (AES-256-GCM available) does the actual file encryption either way — GPG is never in that path, so `file`/`env` need no GPG dependency at all.
 - **Config-driven**: glob `patterns` in a committed `.repo-enc.yml` decide which files are in scope; everything else is left untouched.
-- **Pluggable key backends**: `file` (a local, gitignored key file) or `env` (an environment variable) today; the `Backend` interface makes adding GPG/KMS backends straightforward.
+- **Pluggable key backends**: `file` (a local, gitignored key file), `env` (an environment variable), or `gpg` (wraps the key to one or more existing GPG identities — safe to commit, no out-of-band key transfer needed). The `Backend` interface makes adding KMS backends straightforward too.
 - **Safety net**: `verify` and the `pre-push` hook refuse to let plaintext that slipped past `pre-commit` (e.g. via `--no-verify`) reach a remote.
-- **Cross-platform**: pure Go, no runtime dependencies beyond `git` itself. Installed hooks ship as both POSIX shell and PowerShell scripts.
+- **Cross-platform**: pure Go, no runtime dependencies beyond `git` itself (`gpg` is an optional extra, only needed if you choose that backend). Installed hooks ship as both POSIX shell and PowerShell scripts.
 
 ## Requirements
 
@@ -81,7 +81,10 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 | `decrypt <path...>` | Decrypt specific files in place. |
 | `rotate-keys` | Generate a new key and re-encrypt every config-matched file under it. |
 | `verify` | Check every config-matched file committed at `HEAD` is actually ciphertext; exits 3 if not. |
+| `adduser [recipient]` | `gpg` backend only: grant a recipient access — cheap, re-wraps the existing key without touching any file. Omit the argument to pick interactively from your local public keyring. |
+| `removeuser <recipient>` | `gpg` backend only: revoke a recipient and rotate to a brand new key — a removed recipient already saw the old one, so this re-encrypts every matched file. |
 | `hook <name>` | Internal — invoked by the installed hooks, not typically run by hand. |
+| `version` | Show version, commit, and Go runtime info. |
 
 Exit codes: `0` ok · `1` generic error · `2` key unavailable · `3` `verify` found plaintext in history.
 
@@ -98,16 +101,31 @@ patterns:
   - "*.secret.env"
 exclude:
   - "secrets/public/**"
-key_backend: file          # file | env
-key_source: .repo-enc/key  # path (file backend) or env var name (env backend)
+key_backend: file          # file | env | gpg
+key_source: .repo-enc/key  # path (file/gpg backends) or env var name (env backend)
+gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
+  - AAAABBBBCCCCDDDD1111222233334444AAAABBBB
 ```
 
-`patterns`/`exclude` are glob paths relative to the repo root; `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent — set `REPO_ENC_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and any `patterns`/`exclude` entries there are unioned with the repo's.
+`patterns`/`exclude` are glob paths relative to the repo root; `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent — set `REPO_ENC_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and any `patterns`/`exclude`/`gpg_recipients` entries there are unioned with the repo's.
 
 ### Key backends
 
-- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`.
+- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`. Giving a teammate access means copying this raw key to them out-of-band.
 - **`env`**: the key is read from the environment variable named by `key_source`. `init`/`rotate-keys` print an `export VAR=<hex>` line when they generate a new one — this backend can't persist anything to disk for you, so copy that value down before the process exits.
+- **`gpg`**: the same random 32-byte key, but wrapped (GPG-encrypted) to one or more recipients instead of stored raw. The wrapped blob (default `.repo-enc/key.gpg`) is **safe to commit** — unlike the `file` backend's key — since only a matching GPG private key can unwrap it. This solves the onboarding pain point above: a teammate who's already a configured recipient just needs `git secret init` (installs hooks; the committed config already has everything else) and their own existing keyring does the rest, no manual key transfer required.
+
+  ```bash
+  git secret init --key-backend gpg                      # picks interactively from your local GPG keys
+  git secret init --key-backend gpg --gpg-recipient <fpr> # or specify one directly (repeatable), e.g. for CI
+
+  git secret adduser <teammate-fingerprint>   # cheap: re-wraps the existing key, no file re-encryption
+  git secret removeuser <fingerprint>         # forces a full rotate-keys — the removed person already saw the old key
+  ```
+
+  Both `adduser`/`removeuser` require `key_backend: gpg` and error otherwise. `status` additionally lists current recipients for this backend.
+
+  **CI/automation caveat**: `gpg --decrypt`/`--encrypt` may need gpg-agent/pinentry, which isn't available in a non-interactive session (CI, hooks with no TTY). Either keep a passphrase-less secret key in a CI-local ephemeral keyring, or prefer `env`/`file` for CI and reserve `gpg` for interactive developer machines.
 
 ## How it works
 

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/OpScaleHub/git-secret/internal/crypto"
+	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 )
 
 // buildBinary compiles the current source tree once per test run and
@@ -124,6 +125,24 @@ func TestCLIHelpAndUnknownCommand(t *testing.T) {
 	_, stderr, code := runBin(t, bin, dir, "bogus-command")
 	if code != 1 || !strings.Contains(stderr, "Unknown command") {
 		t.Fatalf("unknown command: code=%d stderr=%q", code, stderr)
+	}
+}
+
+func TestCLIVersion(t *testing.T) {
+	bin := buildBinary(t)
+	dir := t.TempDir()
+
+	for _, arg := range []string{"version", "--version", "-v"} {
+		out, stderr, code := runBin(t, bin, dir, arg)
+		if code != 0 {
+			t.Fatalf("%s: code=%d stderr=%q", arg, code, stderr)
+		}
+		if !strings.Contains(out, "git-secret") {
+			t.Fatalf("%s: output missing name: %q", arg, out)
+		}
+		if !strings.Contains(out, "go:") {
+			t.Fatalf("%s: output missing go runtime line: %q", arg, out)
+		}
 	}
 }
 
@@ -296,5 +315,59 @@ func TestCLIRotateKeysThenUnlockAcrossBinary(t *testing.T) {
 	data, _ := os.ReadFile(secretPath)
 	if string(data) != plaintext {
 		t.Fatalf("unlock after rotate-keys gave wrong content: %q", data)
+	}
+}
+
+func TestCLIInitGPGBackendNonInteractive(t *testing.T) {
+	if !gpgutil.Available() {
+		t.Skip("gpg not installed")
+	}
+	bin := buildBinary(t)
+	withBinOnPath(t, bin)
+	repo := initGitRepo(t)
+
+	t.Setenv("GNUPGHOME", t.TempDir())
+	genCmd := exec.Command(gpgutil.Binary, "--batch", "--passphrase", "", "--quick-generate-key", "Test <test@example.com>", "default", "default", "never")
+	if out, err := genCmd.CombinedOutput(); err != nil {
+		t.Fatalf("generate test gpg key: %v: %s", err, out)
+	}
+	keys, err := gpgutil.ListSecretKeys()
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("ListSecretKeys: keys=%v err=%v", keys, err)
+	}
+	fpr := keys[0].Fingerprint
+
+	out, stderr, code := runBin(t, bin, repo, "init", "--key-backend", "gpg", "--gpg-recipient", fpr, "secrets/**")
+	if code != 0 {
+		t.Fatalf("init --key-backend gpg: code=%d out=%q stderr=%q", code, out, stderr)
+	}
+	if !strings.Contains(out, "safe to commit") {
+		t.Fatalf("init output missing commit guidance: %q", out)
+	}
+
+	secretPath := filepath.Join(repo, "secrets", "db.yaml")
+	os.MkdirAll(filepath.Dir(secretPath), 0o755)
+	os.WriteFile(secretPath, []byte("password: hunter2\n"), 0o644)
+
+	if _, _, code := runBin(t, bin, repo, "lock"); code != 0 {
+		t.Fatalf("lock failed")
+	}
+	locked, _ := os.ReadFile(secretPath)
+	if !crypto.IsEnvelope(locked) {
+		t.Fatalf("file not encrypted after lock: %q", locked)
+	}
+
+	if _, _, code := runBin(t, bin, repo, "unlock"); code != 0 {
+		t.Fatalf("unlock failed")
+	}
+	unlocked, _ := os.ReadFile(secretPath)
+	if string(unlocked) != "password: hunter2\n" {
+		t.Fatalf("unlock gave wrong content: %q", unlocked)
+	}
+
+	// The wrapped key file must not have been gitignored.
+	gitignore, _ := os.ReadFile(filepath.Join(repo, ".gitignore"))
+	if strings.Contains(string(gitignore), ".repo-enc/key.gpg") {
+		t.Fatalf("gpg key blob should not be gitignored: %q", gitignore)
 	}
 }

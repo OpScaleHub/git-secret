@@ -52,7 +52,7 @@ func writeRepoFile(t *testing.T, root, relPath, content string) {
 func TestInitCreatesConfigKeyAndHooks(t *testing.T) {
 	root := newTestRepo(t)
 
-	result, err := Init([]string{"secrets/**"})
+	result, err := Init(InitOptions{Patterns: []string{"secrets/**"}})
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestInitCreatesConfigKeyAndHooks(t *testing.T) {
 
 	// Re-running Init must be idempotent: same config path, key untouched.
 	keyBefore, _ := os.ReadFile(filepath.Join(root, ".repo-enc", "key"))
-	result2, err := Init([]string{"ignored-on-second-run/**"})
+	result2, err := Init(InitOptions{Patterns: []string{"ignored-on-second-run/**"}})
 	if err != nil {
 		t.Fatalf("second Init: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestInitCreatesConfigKeyAndHooks(t *testing.T) {
 
 func TestLockUnlockRoundTrip(t *testing.T) {
 	root := newTestRepo(t)
-	if _, err := Init([]string{"secrets/**"}); err != nil {
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
@@ -151,7 +151,7 @@ func TestLockUnlockRoundTrip(t *testing.T) {
 
 func TestStatusReportsStates(t *testing.T) {
 	root := newTestRepo(t)
-	if _, err := Init([]string{"secrets/**"}); err != nil {
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/a.yaml", "a")
@@ -183,7 +183,7 @@ func TestStatusReportsStates(t *testing.T) {
 
 func TestHookPreCommitEncryptsIndexOnlyLeavesWorkingTreePlaintext(t *testing.T) {
 	root := newTestRepo(t)
-	if _, err := Init([]string{"secrets/**"}); err != nil {
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
@@ -222,7 +222,7 @@ func TestHookPreCommitEncryptsIndexOnlyLeavesWorkingTreePlaintext(t *testing.T) 
 
 func TestVerifyAndPrePushDetectLeakedPlaintext(t *testing.T) {
 	root := newTestRepo(t)
-	if _, err := Init([]string{"secrets/**"}); err != nil {
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
@@ -250,7 +250,7 @@ func TestVerifyAndPrePushDetectLeakedPlaintext(t *testing.T) {
 
 func TestRotateKeysReencryptsAndInvalidatesOldKey(t *testing.T) {
 	root := newTestRepo(t)
-	if _, err := Init([]string{"secrets/**"}); err != nil {
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
@@ -304,7 +304,7 @@ func TestRotateKeysReencryptsAndInvalidatesOldKey(t *testing.T) {
 
 func TestDecryptAfterGitOperationSkipsWithoutFailingWhenKeyMissing(t *testing.T) {
 	root := newTestRepo(t)
-	if _, err := Init([]string{"secrets/**"}); err != nil {
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")

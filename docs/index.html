@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>git-secret — plaintext on disk, ciphertext in history</title>
-<meta name="description" content="git-secret transparently encrypts pattern-matched files in a git repository via installed hooks. Modern AEAD crypto, no GPG, one cross-platform binary." />
+<meta name="description" content="git-secret transparently encrypts pattern-matched files in a git repository via installed hooks. Modern AEAD crypto, no GPG required, one cross-platform binary." />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2310151A'/%3E%3Ctext x='32' y='42' font-family='Georgia,serif' font-size='30' fill='%23B8873F' text-anchor='middle'%3E%C2%A7%3C/text%3E%3C/svg%3E" />
 <style>
   /* ============ Tokens ============ */
@@ -362,7 +362,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Transparent repository encryption</p>
         <h1>Plaintext on disk.<br><span class="accent">Ciphertext in history.</span></h1>
-        <p class="lede">git-secret installs four git hooks that quietly encrypt what you commit and decrypt what you check out — modern authenticated encryption, no GPG, no server, nothing to remember to run.</p>
+        <p class="lede">git-secret installs four git hooks that quietly encrypt what you commit and decrypt what you check out — modern authenticated encryption, no server, nothing to remember to run. GPG is entirely optional, for teams who'd rather wrap the key to existing identities than pass around a raw one.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#quickstart">Read the quick start</a>
           <a class="btn btn-ghost" href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">View on GitHub</a>
@@ -399,7 +399,7 @@
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">AEAD</span>
-          <div><h3>Modern authenticated crypto</h3><p>XChaCha20-Poly1305 by default, AES-256-GCM available. No GPG binary, no keyring, no agent to manage.</p></div>
+          <div><h3>Modern authenticated crypto</h3><p>XChaCha20-Poly1305 by default, AES-256-GCM available. This is what encrypts every file, whichever key backend you pick — GPG is never in that path.</p></div>
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">SCOPE</span>
@@ -407,7 +407,7 @@
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">KEYS</span>
-          <div><h3>Pluggable, never committed</h3><p>A local gitignored key file or an environment variable. The interface is open for GPG or KMS backends later.</p></div>
+          <div><h3>Pluggable, optionally committed</h3><p>A gitignored local file, an env var, or GPG — wrap the key to existing identities and commit the wrapped blob, no out-of-band transfer needed.</p></div>
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">VERIFY</span>
@@ -489,7 +489,10 @@ git commit -m "add db credentials"
             <tr><td><code>decrypt &lt;path...&gt;</code></td><td>Decrypt specific files in place.</td></tr>
             <tr><td><code>rotate-keys</code></td><td>Generate a new key and re-encrypt every matched file under it.</td></tr>
             <tr><td><code>verify</code></td><td>Check every matched file committed at <code>HEAD</code> is ciphertext.</td></tr>
+            <tr><td><code>adduser [recipient]</code></td><td><code>gpg</code> backend only — grant access cheaply (re-wraps the key, no file re-encryption). Omit the argument to pick interactively.</td></tr>
+            <tr><td><code>removeuser &lt;recipient&gt;</code></td><td><code>gpg</code> backend only — revoke access and rotate to a new key (the removed recipient already saw the old one).</td></tr>
             <tr><td><code>hook &lt;name&gt;</code></td><td>Internal — invoked by the installed hooks.</td></tr>
+            <tr><td><code>version</code></td><td>Show version, commit, and Go runtime info.</td></tr>
           </tbody>
         </table>
       </div>
@@ -516,8 +519,10 @@ patterns:
   - <span class="str">"*.secret.env"</span>
 exclude:
   - <span class="str">"secrets/public/**"</span>
-key_backend: file
-key_source: .repo-enc/key</pre>
+key_backend: gpg
+key_source: .repo-enc/key.gpg
+gpg_recipients:
+  - <span class="str">AAAABBBBCCCCDDDD...</span></pre>
         </div>
         <div class="panel">
           <span class="panel-label">Key backends</span>
@@ -526,9 +531,14 @@ key_source: .repo-enc/key</pre>
 
 <span class="comment">env</span>   key read from the env var named
       by key_source. init/rotate-keys
-      print export VAR=&lt;hex&gt; once.</pre>
+      print export VAR=&lt;hex&gt; once.
+
+<span class="comment">gpg</span>   key wrapped to gpg_recipients,
+      safe to commit -- only a matching
+      GPG secret key can unwrap it.</pre>
         </div>
       </div>
+      <p class="lede" style="margin-top:var(--sp-3)"><code>git secret init --key-backend gpg</code> picks a recipient interactively from your local GPG keys (or pass <code>--gpg-recipient &lt;fingerprint&gt;</code> directly). GPG operations need <code>gpg-agent</code>/pinentry, which isn't available in a non-interactive session — prefer <code>file</code>/<code>env</code> for CI.</p>
     </div>
   </section>
 

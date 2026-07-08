@@ -35,10 +35,23 @@ type Backend interface {
 	Generate(repoRoot, ref string) ([]byte, error)
 }
 
+// RecipientConfigurable is implemented by backends whose Generate needs
+// identifiers beyond ref — currently just GPGBackend, whose Generate
+// must know who the key is wrapped for. Callers that resolve a Backend
+// from config type-assert for this interface and call WithRecipients
+// before using it. FileBackend/EnvBackend do not implement it: growing
+// Backend.Get/Generate itself to carry a recipients parameter would
+// force every backend (including future ones) to accept a parameter
+// that's meaningless to most of them.
+type RecipientConfigurable interface {
+	WithRecipients(recipients []string) Backend
+}
+
 // registry maps a config's key_backend name to its implementation.
 var registry = map[string]Backend{
 	FileBackend{}.Name(): FileBackend{},
 	EnvBackend{}.Name():  EnvBackend{},
+	GPGBackend{}.Name():  GPGBackend{},
 }
 
 // New returns the registered backend for name (e.g. from Config.KeyBackend).
