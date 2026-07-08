@@ -10,6 +10,33 @@ import (
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
 )
 
+// commitTriggeringHooks is like runGit(t, root, "commit", ...) but
+// strips CI/SECRETIZE_SKIP_HOOKS from the child's environment first.
+// Installed hooks intentionally no-op under those vars (so CI systems
+// don't trip them unexpectedly), but this repo's own test suite runs
+// under CI=true on GitHub Actions and these tests need the real
+// installed pre-commit hook to fire so the committed content is
+// genuinely encrypted -- otherwise Unlock finds nothing to decrypt and
+// never sets skip-worktree, which is exactly what's under test here.
+func commitTriggeringHooks(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	env := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "CI=") || strings.HasPrefix(e, "SECRETIZE_SKIP_HOOKS=") {
+			continue
+		}
+		env = append(env, e)
+	}
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+	}
+	return string(out)
+}
+
 func TestUnlockHidesFileFromGitStatus(t *testing.T) {
 	root := newTestRepo(t)
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
@@ -17,7 +44,7 @@ func TestUnlockHidesFileFromGitStatus(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secret") // hook-processed: commits ciphertext
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret") // hook-processed: commits ciphertext
 
 	ctx, err := Load()
 	if err != nil {
@@ -56,7 +83,7 @@ func TestLockClearsSkipWorktree(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secret")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
 
 	ctx, err := Load()
 	if err != nil {
@@ -83,8 +110,8 @@ func TestLockClearsSkipWorktree(t *testing.T) {
 // merely cosmetic — it makes `git add`/`commit -a`/`commit <path>` all
 // treat the path as if it has no local changes at all. A plain `git add`
 // on a skip-worktree'd file fails loudly with a sparse-checkout-flavored
-// error in modern git (2.53), even though this repo never touched sparse
-// checkout. `git secret lock` sidesteps this entirely: it re-encrypts
+// error in recent git versions, even though this repo never touched
+// sparse checkout. `git secret lock` sidesteps this entirely: it re-encrypts
 // straight from the current working-tree content (not through `git add`)
 // and clears skip-worktree itself, so the resulting `git add` — of
 // already-identical ciphertext — works normally. The supported edit
@@ -96,7 +123,7 @@ func TestEditAfterUnlockRequiresLockBeforeGitAdd(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secret")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
 
 	ctx, err := Load()
 	if err != nil {
@@ -121,7 +148,7 @@ func TestEditAfterUnlockRequiresLockBeforeGitAdd(t *testing.T) {
 		t.Fatalf("Lock: %v", err)
 	}
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "rotate password")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "rotate password")
 
 	problems, err := ctx.Verify()
 	if err != nil {
@@ -161,7 +188,7 @@ func TestHookPreCommitReappliesSkipWorktree(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secret")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
 
 	ctx, err := Load()
 	if err != nil {
@@ -213,7 +240,7 @@ func TestSkipWorktreeSurvivesUnrelatedCommit(t *testing.T) {
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	writeRepoFile(t, root, "secrets/other.yaml", "other: value\n")
 	runGit(t, root, "add", "secrets/db.yaml", "secrets/other.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secrets")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secrets")
 
 	ctx, err := Load()
 	if err != nil {
@@ -229,7 +256,7 @@ func TestSkipWorktreeSurvivesUnrelatedCommit(t *testing.T) {
 		t.Fatalf("EncryptPaths: %v", err)
 	}
 	runGit(t, root, "add", "secrets/other.yaml")
-	runGit(t, root, "commit", "-q", "-m", "update other secret")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "update other secret")
 
 	hidden, err := gitutil.IsSkipWorktree(root, "secrets/db.yaml")
 	if err != nil {
@@ -252,7 +279,7 @@ func TestHookPostCheckoutSetsSkipWorktreeOnFreshDecrypt(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secret")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
 
 	ctx, err := Load()
 	if err != nil {
@@ -283,7 +310,7 @@ func TestEncryptExplicitPathsClearsSkipWorktree(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secret")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
 
 	ctx, err := Load()
 	if err != nil {
@@ -312,7 +339,7 @@ func TestRotateKeysClearsSkipWorktree(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "add secret")
+	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
 
 	ctx, err := Load()
 	if err != nil {
