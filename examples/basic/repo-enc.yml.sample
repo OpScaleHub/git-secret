@@ -1,0 +1,8 @@
+version: 1
+patterns:
+  - "secrets/**"
+  - "*.secret.env"
+exclude:
+  - "secrets/public/**"
+key_backend: file
+key_source: .repo-enc/key

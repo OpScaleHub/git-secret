@@ -27,7 +27,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.21' # Or your desired Go version
+          go-version: '1.25' # must match the `go` directive in go.mod
 
       - name: Build binary
         env:
