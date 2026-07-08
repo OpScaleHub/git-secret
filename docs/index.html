@@ -1,125 +1,593 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>git-secret &mdash; transparent repo encryption for Git</title>
-  <meta name="description" content="git-secret transparently encrypts pattern-matched files in a Git repository via installed hooks. Modern AEAD crypto, no GPG dependency, single cross-platform binary.">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css">
-  <style>
-    body { max-width: 760px; margin: 2rem auto; }
-    header, footer { text-align: center; }
-    pre, code { background: #f6f8fa; border-radius: 4px; }
-    .logo { font-size: 2.2rem; font-weight: bold; margin-bottom: 0.2em; }
-    .tagline { color: #555; margin-bottom: 1.5em; }
-    nav a { margin: 0 0.5em; }
-    table { font-size: 0.95em; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>git-secret — plaintext on disk, ciphertext in history</title>
+<meta name="description" content="git-secret transparently encrypts pattern-matched files in a git repository via installed hooks. Modern AEAD crypto, no GPG, one cross-platform binary." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2310151A'/%3E%3Ctext x='32' y='42' font-family='Georgia,serif' font-size='30' fill='%23B8873F' text-anchor='middle'%3E%C2%A7%3C/text%3E%3C/svg%3E" />
+<style>
+  /* ============ Tokens ============ */
+  :root{
+    --ink:        #10151A;
+    --ink-soft:   #3C4740;
+    --paper:      #E8ECE4;
+    --paper-raise:#DEE3D9;
+    --line:       #C7CEC0;
+    --brass:      #96702F;
+    --brass-ink:  #7C5C26;
+    --verdigris:  #3F6759;
+
+    --text:       var(--ink);
+    --text-soft:  var(--ink-soft);
+    --bg:         var(--paper);
+    --bg-raise:   var(--paper-raise);
+    --rule:       var(--line);
+    --accent:     var(--brass);
+    --accent-ink: var(--brass-ink);
+    --accent-2:   var(--verdigris);
+    --grain:      var(--ink);
+
+    --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "URW Palladio L", "Book Antiqua", Georgia, "Noto Serif", serif;
+    --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+    --font-mono: "JetBrains Mono", "SF Mono", "Cascadia Code", "Fira Code", ui-monospace, Consolas, "DejaVu Sans Mono", monospace;
+
+    --measure: 62ch;
+    --container: 1120px;
+    --sp-1: 0.5rem;
+    --sp-2: 0.875rem;
+    --sp-3: 1.5rem;
+    --sp-4: 2.5rem;
+    --sp-5: 4rem;
+    --sp-6: 6.5rem;
+    --radius: 3px;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root{
+      --text:      #ECE7DA;
+      --text-soft: #B9B2A0;
+      --bg:        #10151A;
+      --bg-raise:  #171E24;
+      --rule:      #2B343A;
+      --accent:    #CB9B4F;
+      --accent-ink:#E7C077;
+      --accent-2:  #6FA890;
+      --grain:     #ECE7DA;
+    }
+  }
+  :root[data-theme="dark"]{
+    --text:      #ECE7DA;
+    --text-soft: #B9B2A0;
+    --bg:        #10151A;
+    --bg-raise:  #171E24;
+    --rule:      #2B343A;
+    --accent:    #CB9B4F;
+    --accent-ink:#E7C077;
+    --accent-2:  #6FA890;
+    --grain:     #ECE7DA;
+  }
+  :root[data-theme="light"]{
+    --text:      var(--ink);
+    --text-soft: var(--ink-soft);
+    --bg:        var(--paper);
+    --bg-raise:  var(--paper-raise);
+    --rule:      var(--line);
+    --accent:    var(--brass);
+    --accent-ink: var(--brass-ink);
+    --accent-2:  var(--verdigris);
+    --grain:     var(--ink);
+  }
+
+  /* ============ Reset ============ */
+  *,*::before,*::after{ box-sizing:border-box; }
+  html{ color-scheme: light dark; }
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font-body);
+    font-size:16px;
+    line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+    transition:background .25s ease, color .25s ease;
+  }
+  img,svg{ display:block; max-width:100%; }
+  a{ color:inherit; }
+  h1,h2,h3,p,figure{ margin:0; }
+  ul{ margin:0; padding:0; list-style:none; }
+  table{ border-collapse:collapse; width:100%; }
+  :focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{ animation-duration:0.001ms !important; animation-iteration-count:1 !important; transition-duration:0.001ms !important; scroll-behavior:auto !important; }
+  }
+
+  .container{ max-width:var(--container); margin-inline:auto; padding-inline:var(--sp-4); }
+  @media (max-width:640px){ .container{ padding-inline:var(--sp-3); } }
+
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:0.72rem;
+    letter-spacing:0.16em;
+    text-transform:uppercase;
+    color:var(--text-soft);
+  }
+  .eyebrow em{ font-style:normal; color:var(--accent-ink); }
+
+  h1,h2,h3{ font-family:var(--font-display); font-weight:600; text-wrap:balance; color:var(--text); }
+  code, .mono{ font-family:var(--font-mono); }
+  .lede{ font-size:1.125rem; color:var(--text-soft); max-width:var(--measure); text-wrap:pretty; }
+
+  /* ============ Skip link ============ */
+  .skip-link{
+    position:absolute; left:-999px; top:auto;
+    background:var(--bg); color:var(--text); padding:0.75em 1.25em;
+    border:1px solid var(--rule); z-index:100;
+  }
+  .skip-link:focus{ left:var(--sp-3); top:var(--sp-3); }
+
+  /* ============ Header ============ */
+  header.site{
+    position:sticky; top:0; z-index:20;
+    background:color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--rule);
+  }
+  .nav-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding-block:var(--sp-2);
+    gap:var(--sp-3);
+  }
+  .wordmark{
+    font-family:var(--font-mono); font-weight:700; font-size:1rem;
+    letter-spacing:0.02em;
+    display:flex; align-items:baseline; gap:0.4em;
+    text-decoration:none;
+  }
+  .wordmark .mark{ color:var(--accent); }
+  nav.links{ display:flex; align-items:center; gap:var(--sp-3); }
+  nav.links a{
+    font-size:0.85rem; text-decoration:none; color:var(--text-soft);
+    position:relative; padding-bottom:2px;
+  }
+  nav.links a::after{
+    content:""; position:absolute; left:0; right:0; bottom:0; height:1px;
+    background:var(--accent); transform:scaleX(0); transform-origin:left;
+    transition:transform .2s ease;
+  }
+  nav.links a:hover::after, nav.links a:focus-visible::after{ transform:scaleX(1); }
+  nav.links a:hover, nav.links a:focus-visible{ color:var(--text); }
+  @media (max-width:760px){ nav.links .hide-narrow{ display:none; } }
+
+  .theme-toggle{
+    width:2.1rem; height:2.1rem; border-radius:50%;
+    border:1px solid var(--rule); background:var(--bg-raise);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer; color:var(--text-soft);
+  }
+  .theme-toggle:hover{ color:var(--accent-ink); border-color:var(--accent); }
+  .theme-toggle svg{ width:1.05rem; height:1.05rem; }
+  .theme-toggle .moon{ display:none; }
+  :root[data-theme="dark"] .theme-toggle .sun{ display:none; }
+  :root[data-theme="dark"] .theme-toggle .moon{ display:block; }
+  @media (prefers-color-scheme: dark){
+    .theme-toggle .sun{ display:none; }
+    .theme-toggle .moon{ display:block; }
+  }
+  :root[data-theme="light"] .theme-toggle .sun{ display:block; }
+  :root[data-theme="light"] .theme-toggle .moon{ display:none; }
+
+  /* ============ Hero ============ */
+  .hero{ position:relative; overflow:hidden; border-bottom:1px solid var(--rule); }
+  .hero .container{
+    display:grid; grid-template-columns:1.05fr 0.95fr; gap:var(--sp-5);
+    align-items:center;
+    padding-block:var(--sp-6);
+  }
+  @media (max-width:900px){
+    .hero .container{ grid-template-columns:1fr; padding-block:var(--sp-5); }
+  }
+  .hero-grain{ position:absolute; inset:0; opacity:0.05; pointer-events:none; color:var(--grain); }
+
+  .hero h1{
+    font-size:clamp(2.35rem, 4.6vw, 3.7rem);
+    line-height:1.08;
+    margin-block:var(--sp-2) var(--sp-3);
+  }
+  .hero h1 .accent{ color:var(--accent-ink); font-style:italic; }
+  .cta-row{ display:flex; flex-wrap:wrap; gap:var(--sp-2); margin-top:var(--sp-4); align-items:center; }
+
+  .btn{
+    display:inline-flex; align-items:center; gap:0.5em;
+    padding:0.75em 1.4em; text-decoration:none;
+    font-family:var(--font-mono); font-size:0.85rem; letter-spacing:0.02em;
+    border-radius:var(--radius);
+    transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  .btn-primary{ background:var(--accent); color:#141008; font-weight:700; }
+  .btn-primary:hover{ background:var(--accent-ink); transform:translateY(-1px); }
+  .btn-ghost{ border:1px solid var(--rule); color:var(--text); }
+  .btn-ghost:hover{ border-color:var(--accent); color:var(--accent-ink); }
+  .footnote-link{ font-size:0.85rem; color:var(--text-soft); text-decoration:underline; text-underline-offset:3px; }
+
+  /* ---- Receipt panel ---- */
+  .receipt{
+    position:relative;
+    background:var(--bg-raise);
+    border:1px solid var(--rule);
+    clip-path:polygon(
+      0% 0%, 100% 0%, 100% 96%,
+      96% 100%, 92% 96%, 88% 100%, 84% 96%, 80% 100%, 76% 96%, 72% 100%,
+      68% 96%, 64% 100%, 60% 96%, 56% 100%, 52% 96%, 48% 100%, 44% 96%,
+      40% 100%, 36% 96%, 32% 100%, 28% 96%, 24% 100%, 20% 96%, 16% 100%,
+      12% 96%, 8% 100%, 4% 96%, 0% 100%
+    );
+    padding:var(--sp-3) var(--sp-3) var(--sp-4);
+    box-shadow:0 18px 40px -22px rgba(0,0,0,0.35);
+  }
+  .receipt-head{
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:var(--font-mono); font-size:0.68rem; letter-spacing:0.1em;
+    color:var(--text-soft); text-transform:uppercase;
+    border-bottom:1px dashed var(--rule); padding-bottom:var(--sp-1); margin-bottom:var(--sp-2);
+  }
+  .receipt pre{
+    margin:0; font-family:var(--font-mono); font-size:0.82rem; line-height:1.85;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .receipt .ln{ display:block; opacity:0; transform:translateY(4px); animation:print .45s ease forwards; }
+  .receipt .prompt{ color:var(--text-soft); }
+  .receipt .cmd{ color:var(--text); font-weight:600; }
+  .receipt .out{ color:var(--text-soft); }
+  .receipt .cipher{ color:var(--accent-ink); }
+  .receipt .plain{ color:var(--accent-2); }
+  @keyframes print{ to{ opacity:1; transform:translateY(0); } }
+
+  /* ============ Sections ============ */
+  section{ padding-block:var(--sp-6); border-bottom:1px solid var(--rule); }
+  section:last-of-type{ border-bottom:none; }
+  .section-head{ display:flex; flex-direction:column; gap:var(--sp-1); margin-bottom:var(--sp-4); max-width:var(--measure); }
+  .section-head h2{ font-size:1.9rem; }
+
+  /* ---- Ledger feature list ---- */
+  .ledger{ display:grid; grid-template-columns:repeat(2, 1fr); }
+  @media (max-width:760px){ .ledger{ grid-template-columns:1fr; } }
+  .ledger-entry{
+    display:grid; grid-template-columns:6.5rem 1fr; gap:var(--sp-3);
+    padding:var(--sp-3) 0; border-top:1px solid var(--rule);
+  }
+  .ledger-entry:nth-child(2n){ border-left:1px solid var(--rule); padding-left:var(--sp-3); }
+  @media (max-width:760px){ .ledger-entry:nth-child(2n){ border-left:none; padding-left:0; } }
+  .ledger-code{ font-family:var(--font-mono); font-size:0.78rem; letter-spacing:0.06em; color:var(--accent-ink); padding-top:0.15em; }
+  .ledger-entry h3{ font-family:var(--font-body); font-size:1.02rem; font-weight:700; margin-bottom:0.3em; }
+  .ledger-entry p{ color:var(--text-soft); font-size:0.95rem; }
+
+  /* ---- How it works ---- */
+  .timeline{ display:flex; flex-direction:column; }
+  .step{ display:grid; grid-template-columns:3.5rem 1fr; gap:var(--sp-3); padding-block:var(--sp-3); position:relative; }
+  .step + .step{ border-top:1px solid var(--rule); }
+  .step-no{
+    font-family:var(--font-display); font-size:1.6rem; color:var(--accent-ink);
+    line-height:1;
+  }
+  .step h3{ font-size:1.05rem; margin-bottom:0.3em; }
+  .step p{ color:var(--text-soft); max-width:var(--measure); }
+  .step code{ background:var(--bg-raise); padding:0.1em 0.4em; border-radius:2px; font-size:0.88em; }
+
+  /* ---- Code panels ---- */
+  .panel{
+    background:var(--bg-raise); border:1px solid var(--rule); border-radius:var(--radius);
+    padding:var(--sp-3); overflow-x:auto;
+  }
+  .panel pre{ margin:0; font-family:var(--font-mono); font-size:0.86rem; line-height:1.75; }
+  .panel-label{
+    font-family:var(--font-mono); font-size:0.68rem; letter-spacing:0.12em; text-transform:uppercase;
+    color:var(--text-soft); margin-bottom:var(--sp-2); display:block;
+  }
+  .stack{ display:grid; gap:var(--sp-3); }
+  .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-3); }
+  @media (max-width:760px){ .two-col{ grid-template-columns:1fr; } }
+  .comment{ color:var(--text-soft); }
+  .str{ color:var(--accent-2); }
+
+  /* ---- Table ---- */
+  .table-wrap{ overflow-x:auto; border:1px solid var(--rule); border-radius:var(--radius); }
+  table.commands{ font-size:0.92rem; }
+  table.commands th, table.commands td{
+    text-align:left; padding:0.8em 1em; border-bottom:1px solid var(--rule);
+    vertical-align:top;
+  }
+  table.commands thead th{
+    font-family:var(--font-mono); font-size:0.7rem; letter-spacing:0.1em; text-transform:uppercase;
+    color:var(--text-soft); background:var(--bg-raise);
+  }
+  table.commands tbody tr:last-child td{ border-bottom:none; }
+  table.commands tbody tr:hover{ background:color-mix(in srgb, var(--accent) 6%, transparent); }
+  table.commands code{ font-size:0.88em; white-space:nowrap; }
+  .exit-codes{ display:flex; flex-wrap:wrap; gap:var(--sp-3); margin-top:var(--sp-3); font-family:var(--font-mono); font-size:0.85rem; font-variant-numeric:tabular-nums; }
+  .exit-codes span b{ color:var(--accent-ink); }
+
+  /* ---- Install ---- */
+  .install-grid{ display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-4); }
+  @media (max-width:760px){ .install-grid{ grid-template-columns:1fr; } }
+  .install-grid h3{ font-size:1.05rem; margin-bottom:var(--sp-2); }
+  .req-list{ margin-top:var(--sp-3); font-size:0.9rem; color:var(--text-soft); }
+  .req-list li{ display:flex; gap:0.6em; padding-block:0.2em; }
+  .req-list li::before{ content:"—"; color:var(--accent-ink); }
+
+  /* ---- Footer ---- */
+  footer.site{ padding-block:var(--sp-4); }
+  .footer-row{
+    display:flex; justify-content:space-between; align-items:center; gap:var(--sp-3);
+    flex-wrap:wrap; font-size:0.85rem; color:var(--text-soft);
+  }
+  .footer-mark{ font-family:var(--font-display); color:var(--accent-ink); font-size:1.1rem; }
+  footer.site a{ color:var(--text-soft); text-decoration:underline; text-underline-offset:3px; }
+  footer.site a:hover{ color:var(--accent-ink); }
+</style>
 </head>
 <body>
-  <header>
-    <div class="logo">git-secret</div>
-    <div class="tagline">Transparent, hook-driven file encryption for Git repositories</div>
-    <nav>
-      <a href="#features">Features</a>
-      <a href="#install">Install</a>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site">
+  <div class="container nav-row">
+    <a class="wordmark" href="#top"><span class="mark">§</span>git-secret</a>
+    <nav class="links" aria-label="Primary">
+      <a class="hide-narrow" href="#features">Features</a>
+      <a class="hide-narrow" href="#how">How it works</a>
       <a href="#quickstart">Quick start</a>
-      <a href="#commands">Commands</a>
-      <a href="#config">Config</a>
-      <a href="https://github.com/OpScaleHub/git-secret" target="_blank">GitHub</a>
+      <a class="hide-narrow" href="#commands">Commands</a>
+      <a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a>
+      <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle color theme">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/></svg>
+      </button>
     </nav>
-  </header>
-  <main>
-    <section id="features">
-      <h2>Features</h2>
-      <ul>
-        <li>🔒 <b>Transparent encryption</b> &mdash; git hooks (<code>pre-commit</code>, <code>post-checkout</code>, <code>post-merge</code>, <code>pre-push</code>) encrypt/decrypt automatically; your working tree stays plaintext, only commits hold ciphertext</li>
-        <li>🔑 <b>Modern AEAD crypto</b> &mdash; XChaCha20-Poly1305 by default (AES-256-GCM available), no GPG dependency</li>
-        <li>⚙️ <b>Config-driven</b> &mdash; glob <code>patterns</code> in a committed <code>.repo-enc.yml</code> decide what's in scope; everything else is left untouched</li>
-        <li>🗝️ <b>Pluggable key backends</b> &mdash; a local gitignored key file or an environment variable today, extensible to GPG/KMS</li>
-        <li>🛡️ <b>Safety net</b> &mdash; <code>verify</code> and the <code>pre-push</code> hook block plaintext that slipped past <code>pre-commit</code> (e.g. via <code>--no-verify</code>) from ever reaching a remote</li>
-        <li>🌐 <b>Cross-platform</b> &mdash; single Go binary, no runtime dependencies beyond <code>git</code>; hooks ship as both POSIX shell and PowerShell scripts</li>
-      </ul>
-    </section>
-    <section id="install">
-      <h2>Installation</h2>
-      <ol>
-        <li>
-          <b>Download a prebuilt binary:</b><br>
-          <a href="https://github.com/OpScaleHub/git-secret/releases" target="_blank">GitHub Releases</a>
-        </li>
-        <li>
-          <b>Or build from source:</b>
-          <pre><code>git clone https://github.com/OpScaleHub/git-secret.git
+  </div>
+</header>
+
+<main id="main">
+
+  <section class="hero" id="top">
+    <svg class="hero-grain" aria-hidden="true" focusable="false">
+      <defs>
+        <pattern id="hexgrain" width="120" height="46" patternUnits="userSpaceOnUse" patternTransform="rotate(-8)">
+          <text x="0" y="16" font-family="ui-monospace, monospace" font-size="13" fill="currentColor">4F 7A 6C 9E 03 B8</text>
+          <text x="18" y="38" font-family="ui-monospace, monospace" font-size="13" fill="currentColor">1D 96 70 2F C4 6B</text>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#hexgrain)"/>
+    </svg>
+    <div class="container">
+      <div class="hero-copy">
+        <p class="eyebrow">Transparent repository encryption</p>
+        <h1>Plaintext on disk.<br><span class="accent">Ciphertext in history.</span></h1>
+        <p class="lede">git-secret installs four git hooks that quietly encrypt what you commit and decrypt what you check out — modern authenticated encryption, no GPG, no server, nothing to remember to run.</p>
+        <div class="cta-row">
+          <a class="btn btn-primary" href="#quickstart">Read the quick start</a>
+          <a class="btn btn-ghost" href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">View on GitHub</a>
+        </div>
+      </div>
+
+      <div class="receipt" aria-label="Example session">
+        <div class="receipt-head"><span>secrets/db.yaml</span><span>session</span></div>
+        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">git secret init</span></span>
+<span class="ln" style="animation-delay:.35s"><span class="out">Installed hooks: pre-commit, post-checkout, post-merge, pre-push</span></span>
+<span class="ln" style="animation-delay:.65s"><span class="prompt">$ </span><span class="cmd">cat secrets/db.yaml</span></span>
+<span class="ln" style="animation-delay:.95s"><span class="plain">password: hunter2</span></span>
+<span class="ln" style="animation-delay:1.25s"><span class="prompt">$ </span><span class="cmd">git commit -m "add db credentials"</span></span>
+<span class="ln" style="animation-delay:1.55s"><span class="out">pre-commit: encrypted 1 file for commit</span></span>
+<span class="ln" style="animation-delay:1.85s"><span class="prompt">$ </span><span class="cmd">git show HEAD:secrets/db.yaml</span></span>
+<span class="ln" style="animation-delay:2.15s"><span class="cipher">RENCxchacha20poly1305·h␛T·?··E·קּ,[··S···En··</span></span>
+<span class="ln" style="animation-delay:2.45s"><span class="prompt">$ </span><span class="cmd">cat secrets/db.yaml</span></span>
+<span class="ln" style="animation-delay:2.75s"><span class="plain">password: hunter2</span></span></pre>
+      </div>
+    </div>
+  </section>
+
+  <section id="features">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">What's actually different</p>
+        <h2>Six facts, not adjectives</h2>
+        <p class="lede">No "secure" or "seamless." Here's what the tool does and how.</p>
+      </div>
+      <div class="ledger">
+        <div class="ledger-entry">
+          <span class="ledger-code">HOOKS</span>
+          <div><h3>Automatic, not manual</h3><p><code>pre-commit</code>, <code>post-checkout</code>, <code>post-merge</code>, and <code>pre-push</code> do the work. There's no encrypt step to forget.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">AEAD</span>
+          <div><h3>Modern authenticated crypto</h3><p>XChaCha20-Poly1305 by default, AES-256-GCM available. No GPG binary, no keyring, no agent to manage.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">SCOPE</span>
+          <div><h3>Glob patterns, committed</h3><p>A versioned <code>.repo-enc.yml</code> decides what's in scope. Everything outside the pattern is left alone.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">KEYS</span>
+          <div><h3>Pluggable, never committed</h3><p>A local gitignored key file or an environment variable. The interface is open for GPG or KMS backends later.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">VERIFY</span>
+          <div><h3>A backstop against <code>--no-verify</code></h3><p><code>verify</code> and <code>pre-push</code> refuse to let plaintext that slipped past a bypassed hook reach a remote.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">PORTABLE</span>
+          <div><h3>One binary, three platforms</h3><p>Pure Go, no runtime dependency but <code>git</code> itself. Hooks ship as POSIX shell and PowerShell.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">The mechanism</p>
+        <h2>How it works</h2>
+        <p class="lede">In the order git actually calls them.</p>
+      </div>
+      <div class="timeline">
+        <div class="step">
+          <span class="step-no">1</span>
+          <div><h3>pre-commit</h3><p>Encrypts the <em>staged</em> content of each matched file and repoints the index at the ciphertext blob — your working-tree copy is never touched.</p></div>
+        </div>
+        <div class="step">
+          <span class="step-no">2</span>
+          <div><h3>post-checkout / post-merge</h3><p>Decrypts matched files that checkout or merge just populated with ciphertext, if a key is available. No key just means it stays encrypted — the checkout itself never fails.</p></div>
+        </div>
+        <div class="step">
+          <span class="step-no">3</span>
+          <div><h3>pre-push</h3><p>Runs the same check as <code>verify</code> against <code>HEAD</code> and blocks the push if a bypassed <code>pre-commit</code> ever let plaintext through.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quickstart">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">First five minutes</p>
+        <h2>Quick start</h2>
+      </div>
+      <div class="stack">
+        <div class="panel">
+          <span class="panel-label">Bootstrap</span>
+          <pre><span class="comment"># writes .repo-enc.yml, generates a key, installs hooks</span>
+git secret init
+git add .repo-enc.yml .gitignore
+git commit -m "chore: configure repo-enc"</pre>
+        </div>
+        <div class="panel">
+          <span class="panel-label">Just use git</span>
+          <pre>echo <span class="str">"password: hunter2"</span> &gt; secrets/db.yaml
+git add secrets/db.yaml
+git commit -m "add db credentials"
+<span class="comment"># pre-commit encrypts what's staged; your working copy stays plaintext</span></pre>
+        </div>
+      </div>
+      <p class="lede" style="margin-top:var(--sp-3)">A teammate cloning the repo gets ciphertext in their working tree — that's what's committed. They need the key transferred out of band before <code>unlock</code> can decrypt it for them.</p>
+    </div>
+  </section>
+
+  <section id="commands">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Reference</p>
+        <h2>Commands</h2>
+      </div>
+      <div class="table-wrap">
+        <table class="commands">
+          <thead><tr><th>Command</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td><code>init [pattern...]</code></td><td>Bootstrap: write <code>.repo-enc.yml</code> (idempotent), generate a key if missing, install hooks.</td></tr>
+            <tr><td><code>status</code></td><td>Show which matched files are plaintext vs encrypted right now.</td></tr>
+            <tr><td><code>lock</code></td><td>Encrypt every matched file in place — end of session.</td></tr>
+            <tr><td><code>unlock</code></td><td>Decrypt every matched file in place — start of session.</td></tr>
+            <tr><td><code>encrypt &lt;path...&gt;</code></td><td>Encrypt specific files in place.</td></tr>
+            <tr><td><code>decrypt &lt;path...&gt;</code></td><td>Decrypt specific files in place.</td></tr>
+            <tr><td><code>rotate-keys</code></td><td>Generate a new key and re-encrypt every matched file under it.</td></tr>
+            <tr><td><code>verify</code></td><td>Check every matched file committed at <code>HEAD</code> is ciphertext.</td></tr>
+            <tr><td><code>hook &lt;name&gt;</code></td><td>Internal — invoked by the installed hooks.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="exit-codes">
+        <span><b>0</b> ok</span><span><b>1</b> error</span><span><b>2</b> key unavailable</span><span><b>3</b> verify found plaintext in history</span>
+      </div>
+      <p class="lede" style="margin-top:var(--sp-3)">Set <code>SECRETIZE_SKIP_HOOKS=1</code> (or run under <code>CI=1</code>) to make every installed hook exit 0 immediately.</p>
+    </div>
+  </section>
+
+  <section id="config">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Configuration</p>
+        <h2><code>.repo-enc.yml</code></h2>
+        <p class="lede">Committed at the repo root — this is how a teammate's clone knows what to encrypt.</p>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <span class="panel-label">Repo config</span>
+          <pre>version: 1
+patterns:
+  - <span class="str">"secrets/**"</span>
+  - <span class="str">"*.secret.env"</span>
+exclude:
+  - <span class="str">"secrets/public/**"</span>
+key_backend: file
+key_source: .repo-enc/key</pre>
+        </div>
+        <div class="panel">
+          <span class="panel-label">Key backends</span>
+          <pre><span class="comment">file</span>  32-byte hex key at key_source,
+      gitignored automatically by init.
+
+<span class="comment">env</span>   key read from the env var named
+      by key_source. init/rotate-keys
+      print export VAR=&lt;hex&gt; once.</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Get it</p>
+        <h2>Install</h2>
+      </div>
+      <div class="install-grid">
+        <div>
+          <h3>Prebuilt binary</h3>
+          <p class="lede"><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">GitHub Releases</a> — linux, macOS, and Windows, amd64 and arm64.</p>
+          <ul class="req-list">
+            <li>Rename to <code>git-secret</code> (<code>git-secret.exe</code> on Windows) and put it on <code>PATH</code></li>
+            <li><code>git secret</code> then works as a native git subcommand</li>
+          </ul>
+        </div>
+        <div>
+          <h3>Build from source</h3>
+          <div class="panel">
+            <pre>git clone https://github.com/OpScaleHub/git-secret.git
 cd git-secret
 go build -o git-secret .
-sudo mv git-secret /usr/local/bin/</code></pre>
-          <p>On Windows, build with the <code>.exe</code> extension explicitly (Go does not add it for you): <code>go build -o git-secret.exe .</code></p>
-        </li>
-        <li>
-          <b>Verify installation:</b>
-          <pre><code>git secret help</code></pre>
-        </li>
-      </ol>
-      <p><b>Requirements:</b> Go 1.25+ (to build from source), Git.</p>
-    </section>
-    <section id="quickstart">
-      <h2>Quick start</h2>
-      <pre><code>cd your-repo
-git secret init                      # writes .repo-enc.yml, generates a key, installs hooks
-git add .repo-enc.yml .gitignore
-git commit -m "chore: configure repo-enc"
+sudo mv git-secret /usr/local/bin/</pre>
+          </div>
+          <ul class="req-list">
+            <li>Go 1.25+, git</li>
+            <li>Windows: build with <code>-o git-secret.exe</code> explicitly</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
 
-echo "password: hunter2" > secrets/db.yaml
-git add secrets/db.yaml
-git commit -m "add db credentials"   # pre-commit hook encrypts what's staged;
-                                      # your working copy stays plaintext</code></pre>
-      <p><code>git show HEAD:secrets/db.yaml</code> shows ciphertext. <code>cat secrets/db.yaml</code> on disk still shows plaintext &mdash; that's the point.</p>
-      <p>A teammate cloning the repo gets ciphertext in their working tree (that's what's committed); they need the key transferred out-of-band before <code>unlock</code>/<code>post-checkout</code> can decrypt it for them.</p>
-    </section>
-    <section id="commands">
-      <h2>Commands</h2>
-      <table>
-        <thead><tr><th>Command</th><th>Effect</th></tr></thead>
-        <tbody>
-          <tr><td><code>init [pattern...]</code></td><td>Bootstrap: write <code>.repo-enc.yml</code> (idempotent), generate a key if missing, install hooks.</td></tr>
-          <tr><td><code>status</code></td><td>Show which matched files are plaintext vs encrypted right now.</td></tr>
-          <tr><td><code>lock</code></td><td>Encrypt every matched file in place &mdash; end of session.</td></tr>
-          <tr><td><code>unlock</code></td><td>Decrypt every matched file in place &mdash; start of session.</td></tr>
-          <tr><td><code>encrypt &lt;path...&gt;</code></td><td>Encrypt specific files in place.</td></tr>
-          <tr><td><code>decrypt &lt;path...&gt;</code></td><td>Decrypt specific files in place.</td></tr>
-          <tr><td><code>rotate-keys</code></td><td>Generate a new key and re-encrypt every matched file under it.</td></tr>
-          <tr><td><code>verify</code></td><td>Check every matched file committed at <code>HEAD</code> is ciphertext; exits 3 if not.</td></tr>
-          <tr><td><code>hook &lt;name&gt;</code></td><td>Internal &mdash; invoked by the installed hooks.</td></tr>
-        </tbody>
-      </table>
-      <p>Exit codes: <code>0</code> ok &middot; <code>1</code> error &middot; <code>2</code> key unavailable &middot; <code>3</code> <code>verify</code> found plaintext in history.</p>
-      <p>Set <code>SECRETIZE_SKIP_HOOKS=1</code> (or run under <code>CI=1</code>) to make every installed hook exit 0 immediately &mdash; useful in CI.</p>
-    </section>
-    <section id="config">
-      <h2>Configuration (<code>.repo-enc.yml</code>)</h2>
-      <p>Committed at the repo root:</p>
-      <pre><code>version: 1
-patterns:
-  - "secrets/**"
-  - "*.secret.env"
-exclude:
-  - "secrets/public/**"
-key_backend: file          # file | env
-key_source: .repo-enc/key  # path (file backend) or env var name (env backend)</code></pre>
-      <p><code>patterns</code>/<code>exclude</code> are glob paths relative to the repo root, <code>**</code> matches any depth. A machine-local <code>~/.config/repo-enc/config.yml</code> can set personal defaults for <code>key_backend</code>/<code>key_source</code>, and any <code>patterns</code>/<code>exclude</code> there are unioned with the repo's.</p>
-      <p>See the <a href="https://github.com/OpScaleHub/git-secret#configuration-repo-encyml" target="_blank">README</a> for full details, and <a href="https://github.com/OpScaleHub/git-secret/tree/main/examples/basic" target="_blank">examples/basic</a> for a runnable walkthrough.</p>
-    </section>
-    <section id="docs">
-      <h2>Documentation &amp; Website</h2>
-      <p>This site is published via <b>GitHub Pages</b> from the <code>docs/</code> folder.<br>
-      Main site: <a href="https://git-secret.opscale.ir">https://git-secret.opscale.ir</a></p>
-      <p>To update, push changes to <code>docs/</code> on the main branch.</p>
-    </section>
-  </main>
-  <footer>
-    <hr>
-    <p>MIT License &mdash; <a href="https://github.com/OpScaleHub/git-secret">GitHub</a></p>
-  </footer>
+</main>
+
+<footer class="site">
+  <div class="container footer-row">
+    <span><span class="footer-mark">§</span> git-secret — MIT License</span>
+    <span><a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/OpScaleHub/git-secret/tree/main/examples/basic" target="_blank" rel="noopener">Examples</a> · <a href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">Releases</a></span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var root = document.documentElement;
+  var btn = document.getElementById('themeToggle');
+  var stored = localStorage.getItem('theme');
+  if (stored) root.setAttribute('data-theme', stored);
+  btn.addEventListener('click', function(){
+    var current = root.getAttribute('data-theme');
+    var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    var isDark = current ? current === 'dark' : prefersDark;
+    var next = isDark ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+  });
+})();
+</script>
 </body>
 </html>
