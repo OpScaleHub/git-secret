@@ -484,7 +484,7 @@ git commit -m "add db credentials"
             <tr><td><code>init [pattern...]</code></td><td>Bootstrap: write <code>.repo-enc.yml</code> (idempotent), generate a key if missing, install hooks.</td></tr>
             <tr><td><code>status</code></td><td>Show which matched files are plaintext vs encrypted right now.</td></tr>
             <tr><td><code>lock</code></td><td>Encrypt every matched file in place — end of session.</td></tr>
-            <tr><td><code>unlock</code></td><td>Decrypt every matched file in place — start of session.</td></tr>
+            <tr><td><code>unlock</code></td><td>Decrypt every matched file in place — start of session. Marks files <code>skip-worktree</code> so <code>git status</code> stays quiet while you view them.</td></tr>
             <tr><td><code>encrypt &lt;path...&gt;</code></td><td>Encrypt specific files in place.</td></tr>
             <tr><td><code>decrypt &lt;path...&gt;</code></td><td>Decrypt specific files in place.</td></tr>
             <tr><td><code>rotate-keys</code></td><td>Generate a new key and re-encrypt every matched file under it.</td></tr>
@@ -500,6 +500,7 @@ git commit -m "add db credentials"
         <span><b>0</b> ok</span><span><b>1</b> error</span><span><b>2</b> key unavailable</span><span><b>3</b> verify found plaintext in history</span>
       </div>
       <p class="lede" style="margin-top:var(--sp-3)">Set <code>SECRETIZE_SKIP_HOOKS=1</code> (or run under <code>CI=1</code>) to make every installed hook exit 0 immediately.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Editing an unlocked file? Run <code>lock</code> before <code>git add</code> — recent git versions refuse a plain <code>git add</code> on a <code>skip-worktree</code>'d path outright. <code>lock</code> re-encrypts straight from the working tree and clears the flag, so <code>git add</code>/<code>git commit</code> work normally right after.</p>
     </div>
   </section>
 

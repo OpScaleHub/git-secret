@@ -308,7 +308,11 @@ func cmdStatus() int {
 		return exitOK
 	}
 	for _, s := range states {
-		fmt.Printf("  %-10s %s\n", s.State, s.Path)
+		hidden := ""
+		if s.Hidden {
+			hidden = "  (hidden from git status)"
+		}
+		fmt.Printf("  %-10s %s%s\n", s.State, s.Path, hidden)
 	}
 	if ctx.Config.KeyBackend == "gpg" {
 		fmt.Println("GPG recipients:")
@@ -329,6 +333,10 @@ func cmdLockUnlock(verb string, fn func(*cli.Context) ([]string, error)) int {
 		return fail(err)
 	}
 	reportTouched(verb, touched)
+	if verb == "Decrypted" && len(touched) > 0 {
+		fmt.Println("git status will stay quiet about these while you view them.")
+		fmt.Println("If you edit one, run `git secret lock` before `git add` — a plain `git add` on a still-unlocked file will be refused by git.")
+	}
 	return exitOK
 }
 

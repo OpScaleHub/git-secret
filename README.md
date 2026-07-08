@@ -76,7 +76,7 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 | `init [pattern...]` | Bootstrap: write `.repo-enc.yml` (idempotent), generate a key if missing, install hooks. |
 | `status` | Show which config-matched files are plaintext vs encrypted in the working tree right now. |
 | `lock` | Encrypt every config-matched file in place — end of session. |
-| `unlock` | Decrypt every config-matched file in place — start of session. |
+| `unlock` | Decrypt every config-matched file in place — start of session. Marks each file `skip-worktree` so `git status` stays quiet while you view them (see below). |
 | `encrypt <path...>` | Encrypt specific files in place. |
 | `decrypt <path...>` | Decrypt specific files in place. |
 | `rotate-keys` | Generate a new key and re-encrypt every config-matched file under it. |
@@ -89,6 +89,12 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 Exit codes: `0` ok · `1` generic error · `2` key unavailable · `3` `verify` found plaintext in history.
 
 CI note: set `SECRETIZE_SKIP_HOOKS=1` (or run under `CI=1`, already common) to make every installed hook exit 0 immediately without running.
+
+### `unlock` and `git status`
+
+`unlock` marks each decrypted file `skip-worktree`, so `git status`/`git diff` won't flag it as modified just because you're viewing it locally with plaintext on disk while the index holds ciphertext (that divergence is intentional — see "How it works" below). `lock` clears the flag again.
+
+If you edit an unlocked file and want to commit the change, **run `git secret lock` before `git add`** — this isn't just tidiness: recent git versions refuse a plain `git add` on a `skip-worktree`'d path outright (with a confusing sparse-checkout-flavored error, even in repos that never touched sparse-checkout), and `commit -a`/`commit <path>` silently see no change at all, since `skip-worktree` tells git's own diff machinery there's nothing there to look at. `git secret lock` sidesteps this entirely — it reads the current working-tree content directly (not through `git add`), re-encrypts it, and clears the flag itself, so the `git add`/`git commit` that follows behaves normally. The supported edit flow is: `unlock` → edit → `lock` → `git add` → `git commit` (as usual — `pre-commit` sees the content is already encrypted and just commits it).
 
 ## Configuration (`.repo-enc.yml`)
 

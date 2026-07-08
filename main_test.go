@@ -203,6 +203,9 @@ func TestCLIInitLockStatusUnlockCycle(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("unlock: code=%d out=%q", code, out)
 	}
+	if !strings.Contains(out, "git secret lock") {
+		t.Fatalf("unlock output missing the lock-before-git-add guidance: %q", out)
+	}
 	data, _ = os.ReadFile(secretPath)
 	if string(data) != plaintext {
 		t.Fatalf("unlock did not restore plaintext: %q", data)

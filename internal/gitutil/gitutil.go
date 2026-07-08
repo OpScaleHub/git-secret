@@ -99,6 +99,35 @@ func UpdateIndexBlob(repoRoot, sha, path string) error {
 	return nil
 }
 
+// SetSkipWorktree sets or clears the skip-worktree bit on path, telling
+// git to stop reporting/diffing local content differences for it. Used
+// so a decrypted-for-viewing file doesn't show as "modified" in `git
+// status` merely because plaintext-on-disk differs from ciphertext-in-
+// the-index by design. Note: `git update-index --cacheinfo` (used by
+// UpdateIndexBlob) silently clears this bit as a side effect of
+// replacing the index entry — callers that re-point an index entry at a
+// new blob must re-apply skip-worktree afterward if they want it kept.
+func SetSkipWorktree(repoRoot, path string, skip bool) error {
+	flag := "--no-skip-worktree"
+	if skip {
+		flag = "--skip-worktree"
+	}
+	if _, err := run(&repoRoot, "update-index", flag, path); err != nil {
+		return fmt.Errorf("gitutil: update-index %s %s: %w", flag, path, err)
+	}
+	return nil
+}
+
+// IsSkipWorktree reports whether path currently has the skip-worktree
+// bit set.
+func IsSkipWorktree(repoRoot, path string) (bool, error) {
+	out, err := run(&repoRoot, "ls-files", "-v", "--", path)
+	if err != nil {
+		return false, fmt.Errorf("gitutil: ls-files -v %s: %w", path, err)
+	}
+	return strings.HasPrefix(out, "S "), nil
+}
+
 func run(dir *string, args ...string) (string, error) {
 	b, err := runBytes(dir, args...)
 	return string(b), err

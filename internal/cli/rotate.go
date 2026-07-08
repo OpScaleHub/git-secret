@@ -103,6 +103,10 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		if sha, err := gitutil.HashObjectWrite(c.RepoRoot, sealed[pl.path]); err == nil {
 			_ = gitutil.UpdateIndexBlob(c.RepoRoot, sha, pl.path)
 		}
+		// Working tree now holds ciphertext matching the index (unlike
+		// Encrypt/DecryptPaths, rotation always writes ciphertext to the
+		// working tree directly) — no longer needs hiding from status.
+		_ = gitutil.SetSkipWorktree(c.RepoRoot, pl.path, false)
 	}
 
 	if persistsKeyToDisk(c.Config.KeyBackend) {

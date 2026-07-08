@@ -56,6 +56,13 @@ func (c *Context) HookPreCommit() error {
 		if err := gitutil.UpdateIndexBlob(c.RepoRoot, sha, p); err != nil {
 			return fmt.Errorf("pre-commit: stage encrypted %s: %w", p, err)
 		}
+		// update-index --cacheinfo (inside UpdateIndexBlob) replaces the
+		// index entry outright, which silently clears any skip-worktree
+		// bit a prior `unlock` had set on this path. Re-apply it: the
+		// working tree is still plaintext post-commit (by design, it's
+		// never touched here), so it should stay hidden from `git
+		// status` exactly as it was before the commit. Best-effort.
+		_ = gitutil.SetSkipWorktree(c.RepoRoot, p, true)
 	}
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/OpScaleHub/git-secret/internal/crypto"
+	"github.com/OpScaleHub/git-secret/internal/gitutil"
 )
 
 // EncryptPaths encrypts each working-tree file in place, skipping any
@@ -35,6 +36,10 @@ func (c *Context) EncryptPaths(paths []string) (touched []string, err error) {
 		if err := crypto.WriteFileAtomic(abs, env, info.Mode().Perm()); err != nil {
 			return touched, fmt.Errorf("write %s: %w", p, err)
 		}
+		// Working tree now matches what's tracked (ciphertext); no
+		// longer needs hiding from `git status`. Best-effort: harmless
+		// no-op for untracked files, and not worth failing Lock over.
+		_ = gitutil.SetSkipWorktree(c.RepoRoot, p, false)
 		touched = append(touched, p)
 	}
 	return touched, nil
@@ -67,6 +72,10 @@ func (c *Context) DecryptPaths(paths []string) (touched []string, err error) {
 		if err := crypto.WriteFileAtomic(abs, plain, info.Mode().Perm()); err != nil {
 			return touched, fmt.Errorf("write %s: %w", p, err)
 		}
+		// The working tree is now intentionally plaintext while the
+		// index/HEAD holds ciphertext — tell git not to report that as
+		// a modification. Best-effort, see EncryptPaths.
+		_ = gitutil.SetSkipWorktree(c.RepoRoot, p, true)
 		touched = append(touched, p)
 	}
 	return touched, nil
