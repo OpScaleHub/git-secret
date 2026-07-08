@@ -1,144 +1,119 @@
 # Git Secret Manager (`git-secret`)
 
-`git-secret` is a command-line tool (a Git plugin) designed to help developers manage sensitive information (secrets) securely within their Git repositories. It allows for encryption and decryption of specified files, integrating directly with Git. Encryption can be performed using GnuPG (GPG) keys or SSH keys.
+`git-secret` is a single-binary Git plugin that transparently encrypts sensitive files in a repository. You keep working with plaintext in your working tree; the installed git hooks make sure only ciphertext ever reaches your commit history.
 
 ## Features
 
-- **Secure Secret Management**: Encrypts sensitive files before they are committed to Git.
-- **Git Integration**: Works as a `git secret` subcommand.
-- **Flexible Configuration**: Supports global (`~/.gitconfig`) and per-repository (`.git/config`) settings.
-- **Multiple Encryption Backends**: Supports GPG (fully implemented) and SSH (planned) for encryption/decryption.
-- **User Management**: Easily add or remove users (via their public keys or GPG IDs) who can access the secrets.
-- **Cross-Platform**: Designed to work on Linux, macOS, and Windows.
+- **Transparent encryption**: git hooks (`pre-commit`, `post-checkout`, `post-merge`, `pre-push`) encrypt/decrypt automatically as you commit, checkout, merge, and push — no manual encrypt/decrypt step in the common case.
+- **Modern AEAD crypto**: XChaCha20-Poly1305 by default (AES-256-GCM available), no GPG dependency.
+- **Config-driven**: glob `patterns` in a committed `.repo-enc.yml` decide which files are in scope; everything else is left untouched.
+- **Pluggable key backends**: `file` (a local, gitignored key file) or `env` (an environment variable) today; the `Backend` interface makes adding GPG/KMS backends straightforward.
+- **Safety net**: `verify` and the `pre-push` hook refuse to let plaintext that slipped past `pre-commit` (e.g. via `--no-verify`) reach a remote.
+- **Cross-platform**: pure Go, no runtime dependencies beyond `git` itself. Installed hooks ship as both POSIX shell and PowerShell scripts.
 
 ## Requirements
 
-- **Go** 1.21 or newer (for building from source)
-- **Git** (for configuration and usage)
-- **GPG** (for encryption/decryption; must be in your `PATH` or specify with config)
-- (Optional) **SSH** (for future SSH backend support)
+- **Go** 1.25 or newer (for building from source)
+- **Git** (for hooks, config discovery, and blob storage)
 
 ## Installation
 
-You can install `git-secret` by downloading the appropriate binary for your operating system and architecture from the latest GitHub release, or by building from source.
-
-### Download Prebuilt Binary
-
-1.  **Download the Binary**:
-    - Navigate to the [Releases](https://github.com/OpScaleHub/git-secret/releases) page.
-    - Download the archive or binary for your OS and architecture (e.g., `git-secret-linux-amd64`, `git-secret-darwin-arm64`, `git-secret-windows-amd64.exe`).
-
-2.  **Extract and Place in PATH**:
-    - Extract the binary if it's in an archive.
-    - Rename the binary to `git-secret` (or `git-secret.exe` for Windows).
-    - Move this binary to a directory that is part of your system's `PATH`.
-      - **Linux/macOS**:
-        ```bash
-        # Example for Linux amd64
-        wget https://github.com/OpScaleHub/git-secret/releases/latest/download/git-secret-linux-amd64
-        chmod +x git-secret-linux-amd64
-        sudo mv git-secret-linux-amd64 /usr/local/bin/git-secret
-        ```
-      - **Windows**: Place `git-secret.exe` in a folder like `C:\Program Files\git-secret` and add that folder to your `PATH` environment variable, or use a directory already in your `PATH`.
-
-3.  **Verify Installation**:
-    Open a new terminal or command prompt and run:
-    ```bash
-    git secret help
-    ```
-    You should see the help message for `git-secret`.
-
-### Build from Source
+### Build from source
 
 ```bash
-# Clone the repository
- git clone https://github.com/OpScaleHub/git-secret.git
- cd git-secret
-# Build the binary
- go build -o git-secret .
-# Move to a directory in your PATH
- sudo mv git-secret /usr/local/bin/
+git clone https://github.com/OpScaleHub/git-secret.git
+cd git-secret
+go build -o git-secret .
+sudo mv git-secret /usr/local/bin/
 ```
 
-## Usage
+Once `git-secret` is on your `PATH`, `git secret <command>` works as a git subcommand.
 
-Initialize secret management in your repository:
+## Quick start
+
 ```bash
-git secret init
+cd your-repo
+git secret init                 # writes .repo-enc.yml, generates a key, installs hooks
+git add .repo-enc.yml .gitignore
+git commit -m "chore: configure repo-enc"
 ```
 
-Add files to be tracked for encryption:
+`.repo-enc.yml` must be committed — it's how a teammate's clone knows which
+patterns to encrypt/decrypt. The generated key must **not** be committed
+(`init` already gitignores it for the `file` backend); share it with
+collaborators out-of-band instead.
+
+By default `init` seeds `.repo-enc.yml` with the pattern `secrets/**`. Pass your own patterns instead:
+
 ```bash
-git secret add secret.txt config.yaml
+git secret init "secrets/**" "*.secret.env"
 ```
 
-Add a user (by GPG key ID):
+From here, just use git normally:
+
 ```bash
-git secret adduser KEYID
+echo "password: hunter2" > secrets/db.yaml
+git add secrets/db.yaml
+git commit -m "add db credentials"   # pre-commit hook encrypts what's staged;
+                                      # your working copy of secrets/db.yaml stays plaintext
 ```
 
-Encrypt all tracked files:
-```bash
-git secret encrypt
+`git log -p` / `git show` on that commit show ciphertext. `cat secrets/db.yaml` on disk still shows plaintext. That's the point.
+
+When someone else clones the repo, their working tree gets ciphertext (that's what's committed). They need the repo's key transferred out-of-band (it's gitignored, never committed) before `post-checkout`/`unlock` can decrypt it for them.
+
+## Commands
+
+| Command | Effect |
+|---|---|
+| `init [pattern...]` | Bootstrap: write `.repo-enc.yml` (idempotent), generate a key if missing, install hooks. |
+| `status` | Show which config-matched files are plaintext vs encrypted in the working tree right now. |
+| `lock` | Encrypt every config-matched file in place — end of session. |
+| `unlock` | Decrypt every config-matched file in place — start of session. |
+| `encrypt <path...>` | Encrypt specific files in place. |
+| `decrypt <path...>` | Decrypt specific files in place. |
+| `rotate-keys` | Generate a new key and re-encrypt every config-matched file under it. |
+| `verify` | Check every config-matched file committed at `HEAD` is actually ciphertext; exits 3 if not. |
+| `hook <name>` | Internal — invoked by the installed hooks, not typically run by hand. |
+
+Exit codes: `0` ok · `1` generic error · `2` key unavailable · `3` `verify` found plaintext in history.
+
+CI note: set `SECRETIZE_SKIP_HOOKS=1` (or run under `CI=1`, already common) to make every installed hook exit 0 immediately without running.
+
+## Configuration (`.repo-enc.yml`)
+
+Committed at the repo root:
+
+```yaml
+version: 1
+patterns:
+  - "secrets/**"
+  - "*.secret.env"
+exclude:
+  - "secrets/public/**"
+key_backend: file          # file | env
+key_source: .repo-enc/key  # path (file backend) or env var name (env backend)
 ```
 
-Decrypt all tracked files:
-```bash
-git secret decrypt
-```
+`patterns`/`exclude` are glob paths relative to the repo root; `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and any `patterns`/`exclude` entries there are unioned with the repo's.
 
-Remove files from tracking:
-```bash
-git secret rm secret.txt
-```
+### Key backends
 
-List users and tracked files:
-```bash
-git secret list
-```
+- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`.
+- **`env`**: the key is read from the environment variable named by `key_source`. `init`/`rotate-keys` print an `export VAR=<hex>` line when they generate a new one — this backend can't persist anything to disk for you, so copy that value down before the process exits.
 
-Re-encrypt all secrets (after changing users):
-```bash
-git secret rekey
-```
+## How it works
 
-For more commands and options, run:
-```bash
-git secret help
-```
+- **`pre-commit`**: for each staged, pattern-matched file, encrypts the *staged* content and repoints the git index at the ciphertext blob (`git hash-object` + `git update-index --cacheinfo`) — your working-tree file is never touched.
+- **`post-checkout` / `post-merge`**: decrypts pattern-matched working-tree files that checkout/merge just populated with ciphertext, if a key is available. Missing key ⇒ warns, doesn't fail the checkout.
+- **`pre-push`**: runs the same check as `verify` against `HEAD` and blocks the push if any pattern-matched file was committed as plaintext.
+- **`rotate-keys`**: decrypts every matched file under the current key, re-encrypts under a freshly generated one, and only writes anything to disk once every file has round-tripped successfully in memory — a failure partway through never leaves you with an unrecoverable file.
 
-## Configuration
-
-`git-secret` uses Git's own configuration system (`git config`). Settings can be global (in `~/.gitconfig` or `~/.config/git/config`) or local to a repository (in `.git/config`). Local settings override global ones.
-
-**Available Configuration Options (under `[secret]` section):**
-
-- `backend = gpg` (default) or `backend = ssh`
-- `gpg_program = /usr/bin/gpg` (optional, if not in PATH)
-- `ssh_command = /usr/bin/ssh` (optional, for SSH backend)
-- `secret_dir = .gitsecret` (default)
-
-Example:
-```bash
-git config --local secret.backend gpg
-git config --local secret.gpg_program /usr/bin/gpg
-git config --local secret.secret_dir .gitsecret
-```
+See `examples/basic/` for a runnable walkthrough.
 
 ## Publishing & GitHub Pages
 
 The project website is published at: [https://git-secret.opscale.ir](https://git-secret.opscale.ir)
-
-To publish documentation or usage guides to GitHub Pages:
-
-1. Ensure your documentation (e.g., this README or additional docs) is in the repository.
-2. Use GitHub Actions or your preferred CI to build and deploy the site to the `gh-pages` branch.
-3. In your repository settings, set GitHub Pages to use the `gh-pages` branch.
-4. The site will be available at https://git-secret.opscale.ir (custom domain) or the default GitHub Pages URL.
-
-For more details, see the [GitHub Pages documentation](https://docs.github.com/en/pages).
-
----
 
 ## License
 

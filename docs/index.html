@@ -3,26 +3,28 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Git Secret Manager</title>
-  <meta name="description" content="Securely manage secrets in your Git repositories with git-secret. Cross-platform, easy to use, and integrates with Git.">
+  <title>git-secret &mdash; transparent repo encryption for Git</title>
+  <meta name="description" content="git-secret transparently encrypts pattern-matched files in a Git repository via installed hooks. Modern AEAD crypto, no GPG dependency, single cross-platform binary.">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.6/css/pico.min.css">
   <style>
-    body { max-width: 700px; margin: 2rem auto; }
+    body { max-width: 760px; margin: 2rem auto; }
     header, footer { text-align: center; }
     pre, code { background: #f6f8fa; border-radius: 4px; }
     .logo { font-size: 2.2rem; font-weight: bold; margin-bottom: 0.2em; }
     .tagline { color: #555; margin-bottom: 1.5em; }
     nav a { margin: 0 0.5em; }
+    table { font-size: 0.95em; }
   </style>
 </head>
 <body>
   <header>
     <div class="logo">git-secret</div>
-    <div class="tagline">Secure Secret Management for Git Repositories</div>
+    <div class="tagline">Transparent, hook-driven file encryption for Git repositories</div>
     <nav>
       <a href="#features">Features</a>
       <a href="#install">Install</a>
-      <a href="#usage">Usage</a>
+      <a href="#quickstart">Quick start</a>
+      <a href="#commands">Commands</a>
       <a href="#config">Config</a>
       <a href="https://github.com/OpScaleHub/git-secret" target="_blank">GitHub</a>
     </nav>
@@ -31,12 +33,12 @@
     <section id="features">
       <h2>Features</h2>
       <ul>
-        <li>🔒 Encrypts sensitive files before committing to Git</li>
-        <li>🔗 Seamless Git integration as a <code>git secret</code> subcommand</li>
-        <li>⚙️ Flexible global and per-repo configuration</li>
-        <li>🗝️ GPG backend (SSH planned)</li>
-        <li>👥 User management via GPG IDs</li>
-        <li>🌐 Cross-platform: Linux, macOS, Windows</li>
+        <li>🔒 <b>Transparent encryption</b> &mdash; git hooks (<code>pre-commit</code>, <code>post-checkout</code>, <code>post-merge</code>, <code>pre-push</code>) encrypt/decrypt automatically; your working tree stays plaintext, only commits hold ciphertext</li>
+        <li>🔑 <b>Modern AEAD crypto</b> &mdash; XChaCha20-Poly1305 by default (AES-256-GCM available), no GPG dependency</li>
+        <li>⚙️ <b>Config-driven</b> &mdash; glob <code>patterns</code> in a committed <code>.repo-enc.yml</code> decide what's in scope; everything else is left untouched</li>
+        <li>🗝️ <b>Pluggable key backends</b> &mdash; a local gitignored key file or an environment variable today, extensible to GPG/KMS</li>
+        <li>🛡️ <b>Safety net</b> &mdash; <code>verify</code> and the <code>pre-push</code> hook block plaintext that slipped past <code>pre-commit</code> (e.g. via <code>--no-verify</code>) from ever reaching a remote</li>
+        <li>🌐 <b>Cross-platform</b> &mdash; single Go binary, no runtime dependencies beyond <code>git</code>; hooks ship as both POSIX shell and PowerShell scripts</li>
       </ul>
     </section>
     <section id="install">
@@ -58,41 +60,60 @@ sudo mv git-secret /usr/local/bin/</code></pre>
           <pre><code>git secret help</code></pre>
         </li>
       </ol>
-      <p><b>Requirements:</b> Go 1.21+, Git, GPG (in PATH)</p>
+      <p><b>Requirements:</b> Go 1.25+ (to build from source), Git.</p>
     </section>
-    <section id="usage">
-      <h2>Usage</h2>
-      <pre><code># Initialize in your repo
-git secret init
-# Add files to encrypt
-git secret add secret.txt config.yaml
-# Add a user by GPG key ID
-git secret adduser KEYID
-# Encrypt/decrypt
- git secret encrypt
- git secret decrypt
-# Remove file from tracking
-git secret rm secret.txt
-# List users and files
-git secret list
-# Re-encrypt after user changes
-git secret rekey
-</code></pre>
-      <p>For all commands, run <code>git secret help</code>.</p>
+    <section id="quickstart">
+      <h2>Quick start</h2>
+      <pre><code>cd your-repo
+git secret init                      # writes .repo-enc.yml, generates a key, installs hooks
+git add .repo-enc.yml .gitignore
+git commit -m "chore: configure repo-enc"
+
+echo "password: hunter2" > secrets/db.yaml
+git add secrets/db.yaml
+git commit -m "add db credentials"   # pre-commit hook encrypts what's staged;
+                                      # your working copy stays plaintext</code></pre>
+      <p><code>git show HEAD:secrets/db.yaml</code> shows ciphertext. <code>cat secrets/db.yaml</code> on disk still shows plaintext &mdash; that's the point.</p>
+      <p>A teammate cloning the repo gets ciphertext in their working tree (that's what's committed); they need the key transferred out-of-band before <code>unlock</code>/<code>post-checkout</code> can decrypt it for them.</p>
+    </section>
+    <section id="commands">
+      <h2>Commands</h2>
+      <table>
+        <thead><tr><th>Command</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>init [pattern...]</code></td><td>Bootstrap: write <code>.repo-enc.yml</code> (idempotent), generate a key if missing, install hooks.</td></tr>
+          <tr><td><code>status</code></td><td>Show which matched files are plaintext vs encrypted right now.</td></tr>
+          <tr><td><code>lock</code></td><td>Encrypt every matched file in place &mdash; end of session.</td></tr>
+          <tr><td><code>unlock</code></td><td>Decrypt every matched file in place &mdash; start of session.</td></tr>
+          <tr><td><code>encrypt &lt;path...&gt;</code></td><td>Encrypt specific files in place.</td></tr>
+          <tr><td><code>decrypt &lt;path...&gt;</code></td><td>Decrypt specific files in place.</td></tr>
+          <tr><td><code>rotate-keys</code></td><td>Generate a new key and re-encrypt every matched file under it.</td></tr>
+          <tr><td><code>verify</code></td><td>Check every matched file committed at <code>HEAD</code> is ciphertext; exits 3 if not.</td></tr>
+          <tr><td><code>hook &lt;name&gt;</code></td><td>Internal &mdash; invoked by the installed hooks.</td></tr>
+        </tbody>
+      </table>
+      <p>Exit codes: <code>0</code> ok &middot; <code>1</code> error &middot; <code>2</code> key unavailable &middot; <code>3</code> <code>verify</code> found plaintext in history.</p>
+      <p>Set <code>SECRETIZE_SKIP_HOOKS=1</code> (or run under <code>CI=1</code>) to make every installed hook exit 0 immediately &mdash; useful in CI.</p>
     </section>
     <section id="config">
-      <h2>Configuration</h2>
-      <p>Configure via Git (global or per-repo):</p>
-      <pre><code>git config --local secret.backend gpg
-git config --local secret.gpg_program /usr/bin/gpg
-git config --local secret.secret_dir .gitsecret</code></pre>
-      <p>See <a href="https://github.com/OpScaleHub/git-secret#configuration" target="_blank">README</a> for all options.</p>
+      <h2>Configuration (<code>.repo-enc.yml</code>)</h2>
+      <p>Committed at the repo root:</p>
+      <pre><code>version: 1
+patterns:
+  - "secrets/**"
+  - "*.secret.env"
+exclude:
+  - "secrets/public/**"
+key_backend: file          # file | env
+key_source: .repo-enc/key  # path (file backend) or env var name (env backend)</code></pre>
+      <p><code>patterns</code>/<code>exclude</code> are glob paths relative to the repo root, <code>**</code> matches any depth. A machine-local <code>~/.config/repo-enc/config.yml</code> can set personal defaults for <code>key_backend</code>/<code>key_source</code>, and any <code>patterns</code>/<code>exclude</code> there are unioned with the repo's.</p>
+      <p>See the <a href="https://github.com/OpScaleHub/git-secret#configuration-repo-encyml" target="_blank">README</a> for full details, and <a href="https://github.com/OpScaleHub/git-secret/tree/main/examples/basic" target="_blank">examples/basic</a> for a runnable walkthrough.</p>
     </section>
     <section id="docs">
       <h2>Documentation &amp; Website</h2>
       <p>This site is published via <b>GitHub Pages</b> from the <code>docs/</code> folder.<br>
       Main site: <a href="https://git-secret.opscale.ir">https://git-secret.opscale.ir</a></p>
-      <p>To update, push changes to <code>docs/</code> in the main branch.</p>
+      <p>To update, push changes to <code>docs/</code> on the main branch.</p>
     </section>
   </main>
   <footer>
