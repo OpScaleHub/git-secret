@@ -501,6 +501,7 @@ git commit -m "add db credentials"
       </div>
       <p class="lede" style="margin-top:var(--sp-3)">Set <code>SECRETIZE_SKIP_HOOKS=1</code> (or run under <code>CI=1</code>) to make every installed hook exit 0 immediately.</p>
       <p class="lede" style="margin-top:var(--sp-3)">Editing an unlocked file? Run <code>lock</code> before <code>git add</code> — recent git versions refuse a plain <code>git add</code> on a <code>skip-worktree</code>'d path outright. <code>lock</code> re-encrypts straight from the working tree and clears the flag, so <code>git add</code>/<code>git commit</code> work normally right after.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">If a teammate changes a file you currently have unlocked, <code>git pull</code> will refuse with git's standard "local changes would be overwritten" error. Recovery (if you were only viewing, not editing): <code>git secret lock</code>, then <code>SECRETIZE_SKIP_HOOKS=1 git checkout -- &lt;path&gt;</code> to discard your view without the <code>post-checkout</code> hook immediately re-decrypting it, then <code>git pull</code>. See the <a href="https://github.com/OpScaleHub/git-secret#unlock-and-git-status" target="_blank" rel="noopener">README</a> for the full explanation.</p>
     </div>
   </section>
 

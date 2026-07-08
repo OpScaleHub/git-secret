@@ -298,6 +298,116 @@ func TestCLICommitThenCloneDecryptsWithSharedKey(t *testing.T) {
 	}
 }
 
+// TestPullConflictsWithUnlockedFileThenRecovers is the real end-to-end
+// version of a scenario earlier only sanity-checked with raw `git`
+// commands on *unchanged* content by hand -- which turned out to miss
+// the actual risk. When teammate B has a file genuinely unlocked
+// (working tree plaintext deliberately diverged from the committed
+// ciphertext, which is the normal state the instant you run `unlock`)
+// and teammate A pushes a change to that same file, B's `git pull`
+// does NOT silently go stale -- it hard-fails with git's standard
+// "local changes would be overwritten by merge" error, because the
+// skip-worktree bit suppresses status/diff reporting but does not
+// suppress git's real uncommitted-change protection during a merge.
+// There is no pre-pull/pre-merge hook to intervene before this check
+// runs, so it can't be engineered away -- only documented with a safe
+// recovery. This test pins both halves: the conflict really happens,
+// and the documented recovery really works: lock (clears skip-worktree;
+// the working tree is now disposable ciphertext), discard it with our
+// own hooks suppressed (git checkout -- <path> fires post-checkout even
+// for a single-path restore in this git version, which would otherwise
+// immediately re-decrypt what checkout just restored and reintroduce
+// the exact divergence that blocks the pull), then pull.
+func TestPullConflictsWithUnlockedFileThenRecovers(t *testing.T) {
+	bin := buildBinary(t)
+	withBinOnPath(t, bin)
+	repoA := initGitRepo(t)
+
+	if _, _, code := runBin(t, bin, repoA, "init", "secrets/**"); code != 0 {
+		t.Fatalf("init in repoA failed")
+	}
+	secretPath := filepath.Join(repoA, "secrets", "db.yaml")
+	os.MkdirAll(filepath.Dir(secretPath), 0o755)
+	os.WriteFile(secretPath, []byte("password: hunter2\n"), 0o644)
+	runGit(t, repoA, "add", "secrets/db.yaml")
+	runGitTriggeringHooks(t, repoA, "commit", "-q", "-m", "add secret")
+
+	keyBytes, err := os.ReadFile(filepath.Join(repoA, ".repo-enc", "key"))
+	if err != nil {
+		t.Fatalf("read repoA key: %v", err)
+	}
+
+	repoB := filepath.Join(t.TempDir(), "clone")
+	runGit(t, filepath.Dir(repoB), "clone", "-q", repoA, repoB)
+	if _, _, code := runBin(t, bin, repoB, "init"); code != 0 {
+		t.Fatalf("init in repoB (hook install) failed")
+	}
+	os.MkdirAll(filepath.Join(repoB, ".repo-enc"), 0o700)
+	os.WriteFile(filepath.Join(repoB, ".repo-enc", "key"), keyBytes, 0o600)
+	if _, stderr, code := runBin(t, bin, repoB, "hook", "post-checkout"); code != 0 {
+		t.Fatalf("hook post-checkout in repoB: code=%d stderr=%q", code, stderr)
+	}
+
+	// B now has their own decrypted, skip-worktree'd copy with no local
+	// edits -- confirm the starting state before A changes anything.
+	data, _ := os.ReadFile(filepath.Join(repoB, "secrets", "db.yaml"))
+	if string(data) != "password: hunter2\n" {
+		t.Fatalf("repoB initial content wrong: %q", data)
+	}
+	if out := runGit(t, repoB, "status", "--short"); strings.Contains(out, "secrets/db.yaml") {
+		t.Fatalf("repoB should be clean before the pull, got: %q", out)
+	}
+
+	// A rotates the secret, following the documented edit flow:
+	// edit -> lock -> add -> commit.
+	os.WriteFile(secretPath, []byte("password: hunter3\n"), 0o644)
+	if _, _, code := runBin(t, bin, repoA, "lock"); code != 0 {
+		t.Fatalf("lock in repoA failed")
+	}
+	runGit(t, repoA, "add", "secrets/db.yaml")
+	runGitTriggeringHooks(t, repoA, "commit", "-q", "-m", "rotate password")
+
+	// B's plain `git pull` must fail loudly, not silently stay stale.
+	cmd := exec.Command("git", "pull", "-q")
+	cmd.Dir = repoB
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("expected `git pull` to conflict with B's unlocked (diverged) file, but it succeeded: %s", out)
+	}
+	if !strings.Contains(string(out), "would be overwritten") {
+		t.Fatalf("expected git's local-changes-would-be-overwritten error, got: %s", out)
+	}
+
+	// Documented recovery: lock (clears skip-worktree; the working tree
+	// is now disposable ciphertext, not the secret itself), then
+	// discard it back to what's committed with our own hooks
+	// suppressed -- `git checkout -- <path>` fires post-checkout in
+	// this git version even for a single-path restore, which would
+	// otherwise immediately re-decrypt what checkout just restored and
+	// put us right back in a diverged, pull-blocking state -- then pull.
+	if _, _, code := runBin(t, bin, repoB, "lock"); code != 0 {
+		t.Fatalf("lock in repoB failed")
+	}
+	checkoutCmd := exec.Command("git", "checkout", "--", "secrets/db.yaml")
+	checkoutCmd.Dir = repoB
+	checkoutCmd.Env = append(os.Environ(), "SECRETIZE_SKIP_HOOKS=1")
+	if out, err := checkoutCmd.CombinedOutput(); err != nil {
+		t.Fatalf("checkout -- secrets/db.yaml: %v\n%s", err, out)
+	}
+	runGitTriggeringHooks(t, repoB, "pull", "-q")
+
+	data, err = os.ReadFile(filepath.Join(repoB, "secrets", "db.yaml"))
+	if err != nil {
+		t.Fatalf("read repoB secret after recovery+pull: %v", err)
+	}
+	if string(data) != "password: hunter3\n" {
+		t.Fatalf("repoB did not refresh to the rotated password after recovery: %q", data)
+	}
+	if out := runGit(t, repoB, "status", "--short"); strings.Contains(out, "secrets/db.yaml") {
+		t.Fatalf("repoB should be clean after recovery, got: %q", out)
+	}
+}
+
 func TestCLIRotateKeysThenUnlockAcrossBinary(t *testing.T) {
 	bin := buildBinary(t)
 	withBinOnPath(t, bin)
