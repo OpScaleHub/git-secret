@@ -10,31 +10,26 @@ import (
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
 )
 
-// commitTriggeringHooks is like runGit(t, root, "commit", ...) but
-// strips CI/SECRETIZE_SKIP_HOOKS from the child's environment first.
-// Installed hooks intentionally no-op under those vars (so CI systems
-// don't trip them unexpectedly), but this repo's own test suite runs
-// under CI=true on GitHub Actions and these tests need the real
-// installed pre-commit hook to fire so the committed content is
-// genuinely encrypted -- otherwise Unlock finds nothing to decrypt and
-// never sets skip-worktree, which is exactly what's under test here.
-func commitTriggeringHooks(t *testing.T, dir string, args ...string) string {
+// commitViaHook stages paths, invokes HookPreCommit directly, then
+// finalizes the commit. These are internal/cli package-level tests, not
+// black-box binary tests (that's main_test.go's job), so the compiled
+// git-secret binary is never built or put on PATH here — the *installed*
+// pre-commit hook script (which execs that binary) can't run. Calling
+// HookPreCommit directly is the established pattern this package already
+// uses (see TestHookPreCommitEncryptsIndexOnlyLeavesWorkingTreePlaintext)
+// to get real encryption without depending on it.
+func commitViaHook(t *testing.T, root, msg string, paths ...string) *Context {
 	t.Helper()
-	cmd := exec.Command("git", args...)
-	cmd.Dir = dir
-	env := make([]string, 0, len(os.Environ()))
-	for _, e := range os.Environ() {
-		if strings.HasPrefix(e, "CI=") || strings.HasPrefix(e, "SECRETIZE_SKIP_HOOKS=") {
-			continue
-		}
-		env = append(env, e)
-	}
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
+	runGit(t, root, append([]string{"add"}, paths...)...)
+	ctx, err := Load()
 	if err != nil {
-		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, out)
+		t.Fatalf("Load: %v", err)
 	}
-	return string(out)
+	if err := ctx.HookPreCommit(); err != nil {
+		t.Fatalf("HookPreCommit: %v", err)
+	}
+	runGit(t, root, "commit", "-q", "-m", msg)
+	return ctx
 }
 
 func TestUnlockHidesFileFromGitStatus(t *testing.T) {
@@ -43,13 +38,8 @@ func TestUnlockHidesFileFromGitStatus(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
-	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret") // hook-processed: commits ciphertext
+	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	if _, err := ctx.Unlock(); err != nil {
 		t.Fatalf("Unlock: %v", err)
 	}
@@ -82,13 +72,8 @@ func TestLockClearsSkipWorktree(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
-	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
+	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	if _, err := ctx.Unlock(); err != nil {
 		t.Fatalf("Unlock: %v", err)
 	}
@@ -111,24 +96,20 @@ func TestLockClearsSkipWorktree(t *testing.T) {
 // treat the path as if it has no local changes at all. A plain `git add`
 // on a skip-worktree'd file fails loudly with a sparse-checkout-flavored
 // error in recent git versions, even though this repo never touched
-// sparse checkout. `git secret lock` sidesteps this entirely: it re-encrypts
-// straight from the current working-tree content (not through `git add`)
-// and clears skip-worktree itself, so the resulting `git add` — of
-// already-identical ciphertext — works normally. The supported edit
-// workflow is therefore: unlock, edit, lock, then add/commit as usual.
+// sparse checkout. `git secret lock` sidesteps this entirely: it
+// re-encrypts straight from the current working-tree content (not
+// through `git add`) and clears skip-worktree itself, so the resulting
+// `git add` — of already-identical ciphertext — works normally. The
+// supported edit workflow is therefore: unlock, edit, lock, then
+// add/commit as usual.
 func TestEditAfterUnlockRequiresLockBeforeGitAdd(t *testing.T) {
 	root := newTestRepo(t)
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
-	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
+	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	if _, err := ctx.Unlock(); err != nil {
 		t.Fatalf("Unlock: %v", err)
 	}
@@ -148,7 +129,7 @@ func TestEditAfterUnlockRequiresLockBeforeGitAdd(t *testing.T) {
 		t.Fatalf("Lock: %v", err)
 	}
 	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "rotate password")
+	runGit(t, root, "commit", "-q", "-m", "rotate password")
 
 	problems, err := ctx.Verify()
 	if err != nil {
@@ -187,13 +168,8 @@ func TestHookPreCommitReappliesSkipWorktree(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
-	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
+	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	if _, err := ctx.Unlock(); err != nil {
 		t.Fatalf("Unlock: %v", err)
 	}
@@ -239,13 +215,8 @@ func TestSkipWorktreeSurvivesUnrelatedCommit(t *testing.T) {
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	writeRepoFile(t, root, "secrets/other.yaml", "other: value\n")
-	runGit(t, root, "add", "secrets/db.yaml", "secrets/other.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secrets")
+	ctx := commitViaHook(t, root, "add secrets", "secrets/db.yaml", "secrets/other.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	if _, err := ctx.Unlock(); err != nil {
 		t.Fatalf("Unlock: %v", err)
 	}
@@ -256,7 +227,7 @@ func TestSkipWorktreeSurvivesUnrelatedCommit(t *testing.T) {
 		t.Fatalf("EncryptPaths: %v", err)
 	}
 	runGit(t, root, "add", "secrets/other.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "update other secret")
+	runGit(t, root, "commit", "-q", "-m", "update other secret")
 
 	hidden, err := gitutil.IsSkipWorktree(root, "secrets/db.yaml")
 	if err != nil {
@@ -278,13 +249,8 @@ func TestHookPostCheckoutSetsSkipWorktreeOnFreshDecrypt(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
-	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
+	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	// Simulate a fresh clone: the file is committed ciphertext with no
 	// skip-worktree state at all yet (HookPostCheckout's normal path).
 	if _, err := ctx.EncryptPaths([]string{"secrets/db.yaml"}); err != nil {
@@ -309,13 +275,8 @@ func TestEncryptExplicitPathsClearsSkipWorktree(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
-	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
+	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	if _, err := ctx.DecryptPaths([]string{"secrets/db.yaml"}); err != nil {
 		t.Fatalf("DecryptPaths: %v", err)
 	}
@@ -338,13 +299,8 @@ func TestRotateKeysClearsSkipWorktree(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
-	runGit(t, root, "add", "secrets/db.yaml")
-	commitTriggeringHooks(t, root, "commit", "-q", "-m", "add secret")
+	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
-	ctx, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
 	if _, err := ctx.Unlock(); err != nil {
 		t.Fatalf("Unlock: %v", err)
 	}
