@@ -337,6 +337,7 @@
       <a class="hide-narrow" href="#how">How it works</a>
       <a href="#quickstart">Quick start</a>
       <a class="hide-narrow" href="#commands">Commands</a>
+      <a class="hide-narrow" href="#k8s">Kubernetes</a>
       <a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a>
       <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle color theme">
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>
@@ -541,6 +542,50 @@ gpg_recipients:
         </div>
       </div>
       <p class="lede" style="margin-top:var(--sp-3)"><code>git secret init --key-backend gpg</code> picks a recipient interactively from your local GPG keys (or pass <code>--gpg-recipient &lt;fingerprint&gt;</code> directly). GPG operations need <code>gpg-agent</code>/pinentry, which isn't available in a non-interactive session — prefer <code>file</code>/<code>env</code> for CI.</p>
+    </div>
+  </section>
+
+  <section id="k8s">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">A practical use case, not a second product</p>
+        <h2>The same core, one Kubernetes <code>Secret</code></h2>
+        <p class="lede">A real <code>Secret</code> manifest is rarely one credential — it's a dozen unrelated ones (an OIDC client secret, payment gateway keys, a webhook signing key...) in one <code>stringData</code> map. Whole-file encryption means rotating any single one means decrypting all of them, and every re-encryption rewrites the whole file, so the diff never tells you which key actually changed. <code>kubectl-secret</code> is a companion <code>kubectl</code> plugin, built on this project's exact same crypto core and key backends, that encrypts one value at a time instead.</p>
+      </div>
+
+      <div class="receipt" aria-label="kubectl-secret example session">
+        <div class="receipt-head"><span>deploy/app-secret.yaml</span><span>session</span></div>
+        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">kubectl secret encrypt-value -f deploy/app-secret.yaml -k OIDC_CLIENT_SECRET "..."</span></span>
+<span class="ln" style="animation-delay:.35s"><span class="cipher">repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K...</span></span>
+<span class="ln" style="animation-delay:.65s"><span class="prompt">$ </span><span class="cmd">cat deploy/app-secret.yaml</span></span>
+<span class="ln" style="animation-delay:.95s"><span class="out">stringData:</span></span>
+<span class="ln" style="animation-delay:1.15s">  <span class="out">OIDC_CLIENT_SECRET: </span><span class="cipher">"repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K..."</span></span>
+<span class="ln" style="animation-delay:1.35s">  <span class="out">WEBHOOK_SIGNING_KEY: </span><span class="cipher">"repo-enc:v1:8f3Nk2QpL9xVrTcMh7bYs2..."</span></span>
+<span class="ln" style="animation-delay:1.55s">  <span class="out">DEBUG: </span><span class="plain">"true"</span></span>
+<span class="ln" style="animation-delay:1.85s"><span class="prompt">$ </span><span class="cmd">kubectl secret apply -f deploy/app-secret.yaml</span></span>
+<span class="ln" style="animation-delay:2.15s"><span class="out">secret/app-credentials configured</span></span></pre>
+      </div>
+
+      <div class="ledger" style="margin-top:var(--sp-4)">
+        <div class="ledger-entry">
+          <span class="ledger-code">PER-KEY</span>
+          <div><h3>Not per-file</h3><p>Only the keys you actually encrypt change ciphertext — a plaintext <code>DEBUG</code> value sits right next to an encrypted <code>OIDC_CLIENT_SECRET</code> in the same map.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">BOUND</span>
+          <div><h3>To the file <em>and</em> the key</h3><p>Ciphertext for one key can't be swapped for another's in the same manifest and still decrypt — the authentication tag is bound to both.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">IN MEMORY</span>
+          <div><h3><code>apply</code>/<code>create</code> pipe straight to kubectl</h3><p>Decryption happens in this process only; the plaintext manifest goes to <code>kubectl</code> over stdin, never touching disk.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">ROTATE</span>
+          <div><h3><code>rotate-keys</code> covers it too</h3><p>Per-value manifests are re-encrypted right alongside whole files — key rotation isn't partial just because you're using this.</p></div>
+        </div>
+      </div>
+
+      <p class="lede" style="margin-top:var(--sp-3)">Opt a manifest in with <code>k8s_secret_paths</code> in <code>.repo-enc.yml</code> — see the <a href="https://github.com/OpScaleHub/git-secret#kubectl-secret" target="_blank" rel="noopener">README</a> for the full verb reference.</p>
     </div>
   </section>
 
