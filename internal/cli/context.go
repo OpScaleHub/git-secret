@@ -9,7 +9,7 @@ import (
 
 	"github.com/OpScaleHub/git-secret/internal/config"
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
-	"github.com/OpScaleHub/git-secret/internal/keybackend"
+	"github.com/OpScaleHub/git-secret/keybackend"
 )
 
 // Context bundles everything a command needs: where the repo is, its

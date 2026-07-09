@@ -1,5 +1,5 @@
 // Package gpgutil shells out to the gpg binary to list local keys and to
-// wrap/unwrap the small data-encryption-key that internal/keybackend's
+// wrap/unwrap the small data-encryption-key that keybackend's
 // "gpg" backend stores. It mirrors internal/gitutil's exec-wrapper
 // pattern: a fixed binary name, captured stdout/stderr, stderr-annotated
 // errors.

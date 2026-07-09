@@ -7,7 +7,7 @@ import (
 
 	"github.com/OpScaleHub/git-secret/internal/config"
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
-	"github.com/OpScaleHub/git-secret/internal/keybackend"
+	"github.com/OpScaleHub/git-secret/keybackend"
 )
 
 // InitOptions configures a bootstrap run. KeyBackend/GPGRecipients only

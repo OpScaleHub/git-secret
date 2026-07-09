@@ -16,7 +16,7 @@ import (
 
 	"github.com/OpScaleHub/git-secret/internal/cli"
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
-	"github.com/OpScaleHub/git-secret/internal/keybackend"
+	"github.com/OpScaleHub/git-secret/keybackend"
 )
 
 // version is stamped at build time via:

@@ -29,6 +29,12 @@ type Config struct {
 	// identifiers — so this is committed as part of the repo config,
 	// same as Patterns/Exclude.
 	GPGRecipients []string `yaml:"gpg_recipients,omitempty"`
+	// K8sSecretPaths are repo-relative paths (not globs — an explicit
+	// list, since expected usage is a handful of manifests) opted into
+	// kubectl-secret's per-value encryption instead of git-secret's
+	// whole-file encryption. Independent of Patterns: a repo can use
+	// either, both, or neither.
+	K8sSecretPaths []string `yaml:"k8s_secret_paths,omitempty"`
 }
 
 // validBackends are the key_backend values recognized by this build.
@@ -143,6 +149,7 @@ func mergeInto(base, overlay *Config) {
 	base.Patterns = unionDedup(base.Patterns, overlay.Patterns)
 	base.Exclude = unionDedup(base.Exclude, overlay.Exclude)
 	base.GPGRecipients = unionDedup(base.GPGRecipients, overlay.GPGRecipients)
+	base.K8sSecretPaths = unionDedup(base.K8sSecretPaths, overlay.K8sSecretPaths)
 }
 
 func unionDedup(a, b []string) []string {
@@ -163,8 +170,8 @@ func (c *Config) Validate() error {
 	if c.Version != CurrentVersion {
 		return fmt.Errorf("config: unsupported version %d (expected %d)", c.Version, CurrentVersion)
 	}
-	if len(c.Patterns) == 0 {
-		return fmt.Errorf("config: at least one entry in 'patterns' is required")
+	if len(c.Patterns) == 0 && len(c.K8sSecretPaths) == 0 {
+		return fmt.Errorf("config: at least one entry in 'patterns' or 'k8s_secret_paths' is required")
 	}
 	if !validBackends[c.KeyBackend] {
 		return fmt.Errorf("config: unknown key_backend %q", c.KeyBackend)

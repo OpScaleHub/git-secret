@@ -130,11 +130,51 @@ func TestValidateRejectsBadConfig(t *testing.T) {
 		{Version: 1, Patterns: []string{"a"}, KeyBackend: "bogus", KeySource: "k"},
 		{Version: 1, Patterns: []string{"a"}, KeyBackend: "file", KeySource: ""},
 		{Version: 1, Patterns: []string{"a"}, KeyBackend: "gpg", KeySource: "k"}, // gpg requires gpg_recipients
+		{Version: 1, Patterns: nil, K8sSecretPaths: nil, KeyBackend: "file", KeySource: "k"},
 	}
 	for i, cfg := range cases {
 		if err := cfg.Validate(); err == nil {
 			t.Errorf("case %d: expected validation error, got nil", i)
 		}
+	}
+}
+
+func TestValidateAcceptsK8sSecretPathsWithoutPatterns(t *testing.T) {
+	cfg := &Config{
+		Version:        CurrentVersion,
+		K8sSecretPaths: []string{"deploy/api-secrets.yaml"},
+		KeyBackend:     "file",
+		KeySource:      ".repo-enc/key",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: unexpected error with only k8s_secret_paths set: %v", err)
+	}
+}
+
+func TestMergeIntoUnionsK8sSecretPaths(t *testing.T) {
+	base := &Config{K8sSecretPaths: []string{"a.yaml"}}
+	overlay := &Config{K8sSecretPaths: []string{"b.yaml", "a.yaml"}}
+	mergeInto(base, overlay)
+	if len(base.K8sSecretPaths) != 2 {
+		t.Fatalf("K8sSecretPaths = %v, want union-deduped [a.yaml b.yaml]", base.K8sSecretPaths)
+	}
+}
+
+func TestLoadRoundTripsK8sSecretPaths(t *testing.T) {
+	tmp := t.TempDir()
+	writeFile(t, filepath.Join(tmp, FileName), `
+version: 1
+k8s_secret_paths:
+  - "deploy/api-secrets.yaml"
+key_backend: file
+key_source: .repo-enc/key
+`)
+	cfg, err := Load(tmp)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.K8sSecretPaths) != 1 || cfg.K8sSecretPaths[0] != "deploy/api-secrets.yaml" {
+		t.Fatalf("K8sSecretPaths = %v, want [deploy/api-secrets.yaml]", cfg.K8sSecretPaths)
 	}
 }
 

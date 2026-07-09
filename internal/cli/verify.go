@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"github.com/OpScaleHub/git-secret/internal/crypto"
+	"github.com/OpScaleHub/git-secret/crypto"
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
 )
 

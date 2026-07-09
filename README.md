@@ -152,6 +152,65 @@ gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
 
 See `examples/basic/` for a runnable walkthrough.
 
+## kubectl-secret
+
+`git-secret` encrypts whole files — the right grain for a single-purpose
+credential file, but the wrong grain for a Kubernetes `Secret` manifest that
+bundles several unrelated credentials in one `stringData` map: rotating one
+key means decrypting/re-encrypting all of them, and every re-encryption
+produces a full-file diff since AEAD ciphers use a fresh nonce each time.
+
+`kubectl-secret` is a companion `kubectl` plugin, built from the same source
+tree, that encrypts **individual `stringData` values** instead of the whole
+file, reusing `git-secret`'s crypto core and key backends unchanged.
+
+### Install
+
+```bash
+go build -o kubectl-secret ./cmd/kubectl-secret
+sudo mv kubectl-secret /usr/local/bin/
+```
+
+Once `kubectl-secret` is on `PATH`, `kubectl` discovers it automatically and
+`kubectl secret <verb>` works as a `kubectl` subcommand.
+
+### Config: `k8s_secret_paths`
+
+Opt specific manifests into per-value mode by listing them (explicit
+repo-relative paths, not globs) in `.repo-enc.yml`, independent of `patterns`:
+
+```yaml
+k8s_secret_paths:
+  - "deploy/api-secrets.yaml"
+```
+
+### Verbs
+
+| Verb | Effect |
+|---|---|
+| `apply -f FILE [-n NAMESPACE]` | Decrypt matched `stringData` values in memory and `kubectl apply` the result. Never writes plaintext to disk. |
+| `create -f FILE [-n NAMESPACE]` | Same, but `kubectl create`. |
+| `view -f FILE` | Print the fully-decrypted manifest to stdout. Never writes it to disk. |
+| `encrypt-value -f FILE -k KEY <value>` | Emit a `repo-enc:v1:...` blob bound to that file and key, to paste into `stringData` by hand. |
+
+A value is ciphertext if it starts with `repo-enc:v1:`; anything else is left
+untouched, so plaintext and ciphertext values coexist freely in the same
+`stringData` map — only encrypt the keys that are actually secret.
+
+v1 scope: `stringData` only (not `data`, which is base64-encoded — a marker
+placed there would itself look like valid base64 and silently decode to
+garbage rather than failing loudly), and single-document manifests (no `---`
+multi-doc files).
+
+### The footgun this doesn't fully solve
+
+If someone runs plain `kubectl apply -f file.yaml` on a per-value-encrypted
+manifest — i.e. forgets the plugin — the ciphertext strings get applied *as
+the literal secret values*. This fails safe from a leak perspective
+(ciphertext isn't a secret leak) but breaks the application silently: no
+credential leaked, just garbage values in a real `Secret`. Watch for this if
+you're introducing `kubectl-secret` to a team that's used to plain `kubectl`.
+
 ## Publishing & GitHub Pages
 
 The project website is published at: [https://git-secret.opscale.ir](https://git-secret.opscale.ir)

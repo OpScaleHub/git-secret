@@ -1,0 +1,225 @@
+// Command kubectl-secret is a kubectl plugin (invoked as `kubectl secret
+// <verb>`) that lets a Kubernetes Secret manifest carry per-key ciphertext
+// for its stringData entries, instead of git-secret's whole-file
+// encryption. It reuses git-secret's crypto core and key backends
+// unchanged. See proposals/0001-kubectl-secret-plugin.md for the design.
+package main
+
+import (
+	"bytes"
+	"errors"
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/OpScaleHub/git-secret/internal/cli"
+	"github.com/OpScaleHub/git-secret/keybackend"
+)
+
+const helpText = `kubectl-secret - per-value encryption for Kubernetes Secret manifests
+
+Usage: kubectl secret <verb> [args]
+
+Verbs:
+  apply         -f FILE [-n NAMESPACE]   Decrypt matched stringData values
+                                          in memory and 'kubectl apply' the
+                                          result. Never writes plaintext to
+                                          disk.
+  create        -f FILE [-n NAMESPACE]   Same, but 'kubectl create'.
+  view          -f FILE                  Print the fully-decrypted manifest
+                                          to stdout. Never writes it to disk.
+  encrypt-value -f FILE -k KEY <value>   Emit a repo-enc:v1:... blob bound
+                                          to FILE/KEY, to paste into the
+                                          manifest's stringData by hand.
+  help                                   Show this help.
+
+FILE must be listed under k8s_secret_paths in .repo-enc.yml.
+
+Exit codes: 0 ok, 1 error, 2 key unavailable.
+`
+
+// Exit codes, mirroring git-secret's own (minus exitVerifyFound, which
+// has no equivalent here).
+const (
+	exitOK         = 0
+	exitError      = 1
+	exitKeyMissing = 2
+)
+
+func main() {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	if len(args) == 0 {
+		fmt.Print(helpText)
+		return exitError
+	}
+	switch args[0] {
+	case "help", "-h", "--help":
+		fmt.Print(helpText)
+		return exitOK
+	case "apply":
+		return cmdApplyCreate("apply", args[1:])
+	case "create":
+		return cmdApplyCreate("create", args[1:])
+	case "view":
+		return cmdView(args[1:])
+	case "encrypt-value":
+		return cmdEncryptValue(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown verb: %s\n\n", args[0])
+		fmt.Print(helpText)
+		return exitError
+	}
+}
+
+// cmdApplyCreate implements both `apply` and `create`: decrypt the
+// manifest's stringData values in memory, then pipe the result to the
+// real kubectl binary on PATH. Plaintext exists only in this process's
+// memory and the pipe to the kubectl child — it is never written to disk.
+func cmdApplyCreate(verb string, args []string) int {
+	fs := flag.NewFlagSet(verb, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	file := fs.String("f", "", "path to the Secret manifest (required)")
+	namespace := fs.String("n", "", "namespace to pass through to kubectl")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitError
+	}
+	if *file == "" {
+		fmt.Fprintln(os.Stderr, "Error: -f FILE is required")
+		return exitError
+	}
+
+	kubectlPath, err := exec.LookPath("kubectl")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error: kubectl not found on PATH")
+		return exitError
+	}
+
+	ctx, err := cli.Load()
+	if err != nil {
+		return fail(err)
+	}
+	relPath, err := repoRelativePath(ctx.RepoRoot, *file)
+	if err != nil {
+		return fail(err)
+	}
+	decrypted, err := ctx.DecryptK8sManifest(relPath)
+	if err != nil {
+		return fail(err)
+	}
+
+	kubectlArgs := []string{verb, "-f", "-"}
+	if *namespace != "" {
+		kubectlArgs = append(kubectlArgs, "-n", *namespace)
+	}
+	cmd := exec.Command(kubectlPath, kubectlArgs...)
+	cmd.Stdin = bytes.NewReader(decrypted)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: kubectl %s failed: %v\n", verb, err)
+		return exitError
+	}
+	return exitOK
+}
+
+// cmdView decrypts the manifest and prints it to stdout, never touching
+// disk or invoking kubectl — useful for eyeballing what apply would send.
+func cmdView(args []string) int {
+	fs := flag.NewFlagSet("view", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	file := fs.String("f", "", "path to the Secret manifest (required)")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitError
+	}
+	if *file == "" {
+		fmt.Fprintln(os.Stderr, "Error: -f FILE is required")
+		return exitError
+	}
+
+	ctx, err := cli.Load()
+	if err != nil {
+		return fail(err)
+	}
+	relPath, err := repoRelativePath(ctx.RepoRoot, *file)
+	if err != nil {
+		return fail(err)
+	}
+	decrypted, err := ctx.DecryptK8sManifest(relPath)
+	if err != nil {
+		return fail(err)
+	}
+	os.Stdout.Write(decrypted)
+	return exitOK
+}
+
+// cmdEncryptValue seals a single plaintext value for a specific (file,
+// key) pair and prints the repo-enc:v1:... blob for the user to paste
+// into the manifest by hand. -f/-k are required (rather than just taking
+// a bare plaintext argument) because per-value ciphertext is bound to
+// both the destination file and stringData key as AAD, blocking
+// ciphertext from being swapped between keys within the same manifest.
+func cmdEncryptValue(args []string) int {
+	fs := flag.NewFlagSet("encrypt-value", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	file := fs.String("f", "", "path to the Secret manifest (required)")
+	key := fs.String("k", "", "stringData key this value will be stored under (required)")
+	if err := fs.Parse(args); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitError
+	}
+	plaintextArgs := fs.Args()
+	if *file == "" || *key == "" || len(plaintextArgs) != 1 {
+		fmt.Fprintln(os.Stderr, "Error: usage: encrypt-value -f FILE -k KEY <value>")
+		return exitError
+	}
+
+	ctx, err := cli.Load()
+	if err != nil {
+		return fail(err)
+	}
+	relPath, err := repoRelativePath(ctx.RepoRoot, *file)
+	if err != nil {
+		return fail(err)
+	}
+	blob, err := ctx.EncryptK8sValue(relPath, *key, plaintextArgs[0])
+	if err != nil {
+		return fail(err)
+	}
+	fmt.Println(blob)
+	return exitOK
+}
+
+// repoRelativePath resolves f (absolute, or relative to the current
+// working directory) to a slash-separated path relative to repoRoot —
+// the same form k8s_secret_paths entries in .repo-enc.yml use.
+func repoRelativePath(repoRoot, f string) (string, error) {
+	abs, err := filepath.Abs(f)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s: %w", f, err)
+	}
+	rel, err := filepath.Rel(repoRoot, abs)
+	if err != nil {
+		return "", fmt.Errorf("resolve %s relative to repo root: %w", f, err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("%s is outside the repo root %s", f, repoRoot)
+	}
+	return filepath.ToSlash(rel), nil
+}
+
+func fail(err error) int {
+	fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	if errors.Is(err, keybackend.ErrKeyNotFound) {
+		return exitKeyMissing
+	}
+	return exitError
+}

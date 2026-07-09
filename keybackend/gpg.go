@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	renccrypto "github.com/OpScaleHub/git-secret/internal/crypto"
+	renccrypto "github.com/OpScaleHub/git-secret/crypto"
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 )
 
