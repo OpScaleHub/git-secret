@@ -8,7 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
-	renccrypto "github.com/OpScaleHub/git-secret/internal/crypto"
+	renccrypto "github.com/OpScaleHub/git-secret/crypto"
 )
 
 // FileBackend stores the key as hex text in a file, resolved relative to

@@ -9,7 +9,7 @@ import (
 )
 
 // KeySize is the key length every backend must produce. Both ciphers in
-// internal/crypto use 32-byte keys, so backends don't need to know which
+// the crypto package use 32-byte keys, so backends don't need to know which
 // cipher is active.
 const KeySize = 32
 

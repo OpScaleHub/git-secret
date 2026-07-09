@@ -1,6 +1,7 @@
 # Go build artifacts
 /git-secret
 /git-secret.exe
+/bin/
 
 # If `git secret init` is ever run against this repo itself
 .repo-enc/key

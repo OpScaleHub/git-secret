@@ -1,13 +1,36 @@
 package cli
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
 
-	"github.com/OpScaleHub/git-secret/internal/crypto"
+	"github.com/OpScaleHub/git-secret/crypto"
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
+	"gopkg.in/yaml.v3"
 )
+
+// k8sValuePlan is one decrypted stringData entry awaiting re-encryption
+// under the new key. valNode is mutated in place once the new ciphertext
+// is ready; the containing document (see k8sFilePlan) is what actually
+// gets re-marshaled and written.
+type k8sValuePlan struct {
+	path      string
+	mapKey    string
+	valNode   *yaml.Node
+	plaintext []byte
+}
+
+// k8sFilePlan is one k8s_secret_paths manifest that had at least one
+// matched ciphertext value and so needs to be re-marshaled and written
+// back once its values are re-sealed.
+type k8sFilePlan struct {
+	path    string
+	mode    os.FileMode
+	doc     *yaml.Node
+	matched int
+}
 
 // RotateResult reports what RotateKeys did.
 type RotateResult struct {
@@ -70,6 +93,44 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		plans = append(plans, plan{path: p, mode: info.Mode().Perm(), plaintext: plaintext})
 	}
 
+	var k8sValuePlans []k8sValuePlan
+	var k8sFilePlans []*k8sFilePlan
+	for _, p := range c.Config.K8sSecretPaths {
+		abs := c.abs(p)
+		data, err := os.ReadFile(abs)
+		if err != nil {
+			return nil, fmt.Errorf("rotate-keys: read %s: %w", p, err)
+		}
+		info, err := os.Stat(abs)
+		if err != nil {
+			return nil, fmt.Errorf("rotate-keys: stat %s: %w", p, err)
+		}
+		doc, stringData, err := parseK8sManifest(data, p)
+		if err != nil {
+			return nil, fmt.Errorf("rotate-keys: %w", err)
+		}
+		fp := &k8sFilePlan{path: p, mode: info.Mode().Perm(), doc: doc}
+		for i := 0; i+1 < len(stringData.Content); i += 2 {
+			keyNode, valNode := stringData.Content[i], stringData.Content[i+1]
+			raw, isCiphertext, err := decodeK8sValue(valNode.Value)
+			if err != nil {
+				return nil, fmt.Errorf("rotate-keys: %s#%s: %w", p, keyNode.Value, err)
+			}
+			if !isCiphertext {
+				continue
+			}
+			plain, err := crypto.Open(raw, oldKey, k8sAAD(p, keyNode.Value))
+			if err != nil {
+				return nil, fmt.Errorf("rotate-keys: decrypt %s#%s with current key: %w", p, keyNode.Value, err)
+			}
+			k8sValuePlans = append(k8sValuePlans, k8sValuePlan{path: p, mapKey: keyNode.Value, valNode: valNode, plaintext: plain})
+			fp.matched++
+		}
+		if fp.matched > 0 {
+			k8sFilePlans = append(k8sFilePlans, fp)
+		}
+	}
+
 	stagingRef := c.Config.KeySource + ".new"
 	newKey, err := c.Backend.Generate(c.RepoRoot, stagingRef)
 	if err != nil {
@@ -95,6 +156,15 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		sealed[pl.path] = env
 	}
 
+	for _, vp := range k8sValuePlans {
+		env, err := crypto.Seal(crypto.Default, vp.plaintext, newKey, k8sAAD(vp.path, vp.mapKey))
+		if err != nil {
+			cleanupStagingKey(c, stagingRef)
+			return result, fmt.Errorf("rotate-keys: encrypt %s#%s under new key: %w", vp.path, vp.mapKey, err)
+		}
+		vp.valNode.Value = k8sValuePrefix + base64.StdEncoding.EncodeToString(env)
+	}
+
 	for _, pl := range plans {
 		if err := crypto.WriteFileAtomic(c.abs(pl.path), sealed[pl.path], pl.mode); err != nil {
 			return result, fmt.Errorf("rotate-keys: write %s (files already rotated: %v — safe to re-run once fixed): %w", pl.path, result.RotatedFiles, err)
@@ -107,6 +177,21 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		// Encrypt/DecryptPaths, rotation always writes ciphertext to the
 		// working tree directly) — no longer needs hiding from status.
 		_ = gitutil.SetSkipWorktree(c.RepoRoot, pl.path, false)
+	}
+
+	for _, fp := range k8sFilePlans {
+		out, err := yaml.Marshal(fp.doc)
+		if err != nil {
+			return result, fmt.Errorf("rotate-keys: marshal %s: %w", fp.path, err)
+		}
+		if err := crypto.WriteFileAtomic(c.abs(fp.path), out, fp.mode); err != nil {
+			return result, fmt.Errorf("rotate-keys: write %s (files already rotated: %v — safe to re-run once fixed): %w", fp.path, result.RotatedFiles, err)
+		}
+		result.RotatedFiles = append(result.RotatedFiles, fp.path)
+		if sha, err := gitutil.HashObjectWrite(c.RepoRoot, out); err == nil {
+			_ = gitutil.UpdateIndexBlob(c.RepoRoot, sha, fp.path)
+		}
+		_ = gitutil.SetSkipWorktree(c.RepoRoot, fp.path, false)
 	}
 
 	if persistsKeyToDisk(c.Config.KeyBackend) {

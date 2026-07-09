@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
-	"github.com/OpScaleHub/git-secret/internal/keybackend"
+	"github.com/OpScaleHub/git-secret/keybackend"
 )
 
 // shortTempDir returns a short-path temp directory suitable for

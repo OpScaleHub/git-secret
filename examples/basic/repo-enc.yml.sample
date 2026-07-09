@@ -6,3 +6,8 @@ exclude:
   - "secrets/public/**"
 key_backend: file
 key_source: .repo-enc/key
+# k8s_secret_paths opts specific Kubernetes Secret manifests into
+# kubectl-secret's per-value encryption (see README's "kubectl-secret"
+# section) instead of whole-file encryption. Independent of 'patterns'.
+# k8s_secret_paths:
+#   - "deploy/api-secrets.yaml"
