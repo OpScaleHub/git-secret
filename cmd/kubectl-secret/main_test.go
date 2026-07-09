@@ -154,6 +154,24 @@ func TestKubectlSecretHelpAndUnknownVerb(t *testing.T) {
 	}
 }
 
+func TestKubectlSecretVersion(t *testing.T) {
+	bin := buildKubectlSecret(t)
+	dir := t.TempDir()
+
+	for _, arg := range []string{"version", "--version", "-v"} {
+		out, stderr, code := runBin(t, bin, dir, arg)
+		if code != 0 {
+			t.Fatalf("%s: code=%d stderr=%q", arg, code, stderr)
+		}
+		if !strings.Contains(out, "kubectl-secret") {
+			t.Fatalf("%s: output missing name: %q", arg, out)
+		}
+		if !strings.Contains(out, "go:") {
+			t.Fatalf("%s: output missing go runtime line: %q", arg, out)
+		}
+	}
+}
+
 func TestKubectlSecretEncryptValueThenView(t *testing.T) {
 	gitSecretBin := buildGitSecret(t)
 	kubectlSecretBin := buildKubectlSecret(t)

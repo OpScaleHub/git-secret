@@ -14,11 +14,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/OpScaleHub/git-secret/internal/cli"
 	"github.com/OpScaleHub/git-secret/keybackend"
 )
+
+// version is stamped at build time via:
+//
+//	go build -ldflags "-X main.version=v1.2.3" ./cmd/kubectl-secret
+//
+// A plain `go build` leaves it at "dev"; cmdVersion falls back to Go's own
+// build info (module version/vcs revision) in that case.
+var version = "dev"
 
 const helpText = `kubectl-secret - per-value encryption for Kubernetes Secret manifests
 
@@ -35,6 +45,7 @@ Verbs:
   encrypt-value -f FILE -k KEY <value>   Emit a repo-enc:v1:... blob bound
                                           to FILE/KEY, to paste into the
                                           manifest's stringData by hand.
+  version                                Show version information.
   help                                   Show this help.
 
 FILE must be listed under k8s_secret_paths in .repo-enc.yml.
@@ -63,6 +74,8 @@ func run(args []string) int {
 	case "help", "-h", "--help":
 		fmt.Print(helpText)
 		return exitOK
+	case "version", "-v", "--version":
+		return cmdVersion()
 	case "apply":
 		return cmdApplyCreate("apply", args[1:])
 	case "create":
@@ -76,6 +89,45 @@ func run(args []string) int {
 		fmt.Print(helpText)
 		return exitError
 	}
+}
+
+// cmdVersion prints the release version when this binary was built with
+// -ldflags, or falls back to Go's own build info (module version, VCS
+// revision/dirty state) for a plain `go build`.
+func cmdVersion() int {
+	v := version
+	var commit, buildTime string
+	dirty := false
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		if v == "dev" && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+			v = bi.Main.Version
+		}
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				commit = s.Value
+			case "vcs.time":
+				buildTime = s.Value
+			case "vcs.modified":
+				dirty = s.Value == "true"
+			}
+		}
+	}
+	fmt.Printf("kubectl-secret %s\n", v)
+	if commit != "" {
+		if len(commit) > 12 {
+			commit = commit[:12]
+		}
+		if dirty {
+			commit += "-dirty"
+		}
+		fmt.Printf("  commit:  %s\n", commit)
+	}
+	if buildTime != "" {
+		fmt.Printf("  built:   %s\n", buildTime)
+	}
+	fmt.Printf("  go:      %s %s/%s\n", runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	return exitOK
 }
 
 // cmdApplyCreate implements both `apply` and `create`: decrypt the
