@@ -583,6 +583,10 @@ gpg_recipients:
           <span class="ledger-code">ROTATE</span>
           <div><h3><code>rotate-keys</code> covers it too</h3><p>Per-value manifests are re-encrypted right alongside whole files — key rotation isn't partial just because you're using this.</p></div>
         </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">GITOPS</span>
+          <div><h3>ArgoCD decrypts it too — as part of the sync itself</h3><p>A Config Management Plugin sidecar on <code>argocd-repo-server</code> runs <code>kubectl-secret view</code> as ArgoCD's own manifest source, so a drifted live value shows up as ordinary <code>OutOfSync</code> instead of silently diverging from git. Proven in a real GitOps deployment, not a paper design — see the <a href="https://github.com/OpScaleHub/git-secret#argocd-integration-config-management-plugin" target="_blank" rel="noopener">README</a> for the full plugin/sidecar/Application wiring.</p></div>
+        </div>
       </div>
 
       <p class="lede" style="margin-top:var(--sp-3)">Opt a manifest in with <code>k8s_secret_paths</code> in <code>.repo-enc.yml</code> — see the <a href="https://github.com/OpScaleHub/git-secret#kubectl-secret" target="_blank" rel="noopener">README</a> for the full verb reference.</p>
