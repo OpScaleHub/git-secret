@@ -211,6 +211,118 @@ the literal secret values*. This fails safe from a leak perspective
 credential leaked, just garbage values in a real `Secret`. Watch for this if
 you're introducing `kubectl-secret` to a team that's used to plain `kubectl`.
 
+### ArgoCD integration (Config Management Plugin)
+
+The footgun above is worse under GitOps specifically: if ArgoCD applies the
+encrypted manifest directly, it doesn't just break the app once — it
+actively **fights** anything that later corrects the live `Secret` by hand.
+`selfHeal` will keep reverting the live object back to ciphertext on every
+reconcile, since as far as ArgoCD's diffing is concerned, the ciphertext
+*is* the desired state. Worse, a live secret that's fixed out-of-band (a
+quick `kubectl patch` during an incident, say) and never sealed back into
+the file will silently drift from git with no warning — the exact gap that
+motivated this integration in the first place.
+
+The fix is to make ArgoCD decrypt as part of its own sync, via a [Config
+Management Plugin](https://argo-cd.readthedocs.io/en/stable/user-guide/config-management-plugins/)
+(CMP) sidecar on `argocd-repo-server`, so a drifted live value shows up as
+ordinary `OutOfSync` — the same signal ArgoCD already gives you for a
+drifted `Deployment` — instead of failing silently.
+
+**1. Register the plugin.** A `ConfigMap` mounted into the sidecar at
+`/home/argocd/cmp-server/config/plugin.yaml`:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: ConfigManagementPlugin
+metadata:
+  name: kubectl-secret
+spec:
+  version: v1.0
+  generate:
+    command: ["sh", "-c"]
+    args:
+      - "mkdir -p .repo-enc && cp /repo-enc-key/key .repo-enc/key && kubectl-secret view -f secrets.enc.yaml"
+```
+
+The `mkdir`/`cp` prefix isn't optional. `generate.command` runs with `CWD`
+set to a fresh, per-sync ephemeral checkout directory
+(`/tmp/_cmp_server/<uuid>/`), not a fixed path — so a `key_backend: file`
+key mounted at a stable absolute path (via a `Secret` volume, see below)
+has to be staged into the repo-relative location `key_source` expects
+(`.repo-enc/key` by default) before every single invocation.
+
+**2. Add the sidecar.** Same pattern as any other CMP: a sidecar container
+on `argocd-repo-server` running `argocd-cmp-server` against that plugin
+config, plus an initContainer to fetch the `kubectl-secret` binary itself
+(a public, unauthenticated release download — no token needed) into a
+shared `emptyDir`:
+
+```yaml
+initContainers:
+  - name: kubectl-secret-install
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c",
+      "curl -sL -o /kubectl-secret-bin/kubectl-secret https://github.com/OpScaleHub/git-secret/releases/download/v0.4.1/kubectl-secret-linux-amd64 && chmod +x /kubectl-secret-bin/kubectl-secret"]
+    volumeMounts:
+      - {mountPath: /kubectl-secret-bin, name: kubectl-secret-bin}
+containers:
+  - name: kubectl-secret-cmp
+    command: [/var/run/argocd/argocd-cmp-server]
+    image: quay.io/argoproj/argocd:v3.4.5   # match your ArgoCD's own version
+    env:
+      - {name: PATH, value: "/kubectl-secret-bin:/usr/local/bin:/usr/bin:/bin"}
+    securityContext: {runAsNonRoot: true, runAsUser: 999}
+    volumeMounts:
+      - {mountPath: /var/run/argocd, name: var-files}              # existing
+      - {mountPath: /home/argocd/cmp-server/plugins, name: plugins} # existing
+      - {mountPath: /home/argocd/cmp-server/config/plugin.yaml, subPath: plugin.yaml, name: kubectl-secret-cmp-config}
+      - {mountPath: /tmp, name: cmp-tmp}
+      - {mountPath: /kubectl-secret-bin, name: kubectl-secret-bin}
+      - {mountPath: /repo-enc-key, name: repo-enc-key, readOnly: true}
+```
+
+`var-files` and `plugins` are volumes `argocd-repo-server` already has for
+its own built-in plugin support — reuse them rather than adding new ones.
+`repo-enc-key` is a new `Secret` volume holding the raw key file content
+(`key_backend: file`'s `key_source`) — this is the one genuinely sensitive
+step: it moves the decryption key from your local machine into the
+cluster. Scope that `Secret` narrowly (the `argocd` namespace only) and
+treat adding it with the same care as any other production credential
+write.
+
+**3. Point an Application at it.** A second `Application`, separate from
+your main one, with its source path wherever `secrets.enc.yaml` lives
+(often the repo root) and `spec.source.plugin.name` set to
+`<plugin-metadata-name>-<version>` — note the concatenation; the CMP
+server logs the exact string it registered under
+(`argocd-cmp-server ... serving on .../kubectl-secret-v1.0.sock`) if
+you're unsure:
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: my-app-secrets
+spec:
+  source:
+    repoURL: git@github.com:you/your-repo.git
+    targetRevision: stable
+    path: .
+    plugin:
+      name: kubectl-secret-v1.0
+  syncPolicy:
+    automated: {selfHeal: true}   # the whole point -- see above
+```
+
+Keep this `Application` separate from whatever manages the rest of your
+manifests, and make sure **exactly one** of them owns the resulting
+`Secret` object. If your main app's source also happens to include a
+plaintext/placeholder version of the same `Secret` (a common leftover from
+before adopting per-value encryption), exclude it there — two ArgoCD
+`Application`s both claiming the same live object will fight every
+reconcile, each reverting the other's last write.
+
 ## Publishing & GitHub Pages
 
 The project website is published at: [https://git-secret.opscale.ir](https://git-secret.opscale.ir)
