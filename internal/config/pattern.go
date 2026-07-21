@@ -43,7 +43,16 @@ func (c *Config) Matches(relPath string) (bool, error) {
 // A "**" path segment matches zero or more whole segments; other segments
 // are matched with filepath.Match (supporting *, ?, and [...] within a
 // single segment).
+//
+// A leading "/" is stripped first: patterns are always repo-root-relative
+// (there's no other base they could match against), so "/secrets/**" and
+// "secrets/**" are the same pattern. Without this, splitting "/secrets/**"
+// on "/" produces a leading empty segment that can never match a real path
+// segment, silently failing every match — a natural typo that otherwise
+// makes a pattern validate cleanly while matching nothing (hooks/verify
+// fail open with no error).
 func matchGlob(pattern, path string) (bool, error) {
+	pattern = strings.TrimPrefix(pattern, "/")
 	return matchSegments(strings.Split(pattern, "/"), strings.Split(path, "/"))
 }
 

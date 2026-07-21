@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
@@ -262,6 +263,97 @@ func TestAddUserRewrapsWithoutReencrypting(t *testing.T) {
 	}
 	if _, err := bBackend.Get(root, ctx.Config.KeySource); err != nil {
 		t.Fatalf("B should be able to decrypt after AddUser: %v", err)
+	}
+}
+
+// TestAddUserDoesNotGrantAccessWhenConfigSaveFails pins the fix for
+// issue #12: adduser used to rewrite the committed key.gpg (granting the
+// new recipient access) before saving .repo-enc.yml, so a failed config
+// save still left a real, silent access grant. Config save is forced to
+// fail deterministically (independent of permission bits or running as
+// root) by replacing .repo-enc.yml with a directory.
+func TestAddUserDoesNotGrantAccessWhenConfigSaveFails(t *testing.T) {
+	a := newGPGIdentity(t, "A <a@example.com>")
+	root := newTestRepo(t)
+	withGNUPGHome(t, a.home)
+
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}, KeyBackend: "gpg", GPGRecipients: []string{a.fingerprint}}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	ctx, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	keyAbs := filepath.Join(root, ctx.Config.KeySource)
+	keyBefore, err := os.ReadFile(keyAbs)
+	if err != nil {
+		t.Fatalf("read key.gpg before: %v", err)
+	}
+
+	b := newGPGIdentity(t, "B <b@example.com>")
+	withGNUPGHome(t, a.home) // AddUser needs A's access to re-wrap
+
+	cfgPath := filepath.Join(root, ".repo-enc.yml")
+	if err := os.Remove(cfgPath); err != nil {
+		t.Fatalf("remove config: %v", err)
+	}
+	if err := os.Mkdir(cfgPath, 0o755); err != nil {
+		t.Fatalf("replace config with a directory: %v", err)
+	}
+
+	if _, err := ctx.AddUser(b.fingerprint); err == nil {
+		t.Fatalf("expected AddUser to fail when config.Save fails")
+	}
+
+	keyAfter, err := os.ReadFile(keyAbs)
+	if err != nil {
+		t.Fatalf("read key.gpg after: %v", err)
+	}
+	if !bytes.Equal(keyBefore, keyAfter) {
+		t.Fatalf("key.gpg was rewritten even though config.Save failed -- adduser silently granted access on a failed command")
+	}
+}
+
+// TestRemoveUserDoesNotUpdateConfigWhenRotationFails pins the fix for
+// issue #10: removeuser used to save .repo-enc.yml with the recipient
+// already removed before rotation ran, so a failed rotation left a
+// misleading "removed" config while the old key -- still valid for that
+// recipient -- was untouched. Rotation is forced to fail deterministically
+// by deleting key.gpg first (the same "no existing key to rotate from"
+// repro the issue itself used).
+func TestRemoveUserDoesNotUpdateConfigWhenRotationFails(t *testing.T) {
+	a := newGPGIdentity(t, "A <a@example.com>")
+	b := newGPGIdentity(t, "B <b@example.com>")
+	shared := newSharedKeyring(t, a, b)
+
+	root := newTestRepo(t)
+	withGNUPGHome(t, shared)
+
+	if _, err := Init(InitOptions{
+		Patterns: []string{"secrets/**"}, KeyBackend: "gpg",
+		GPGRecipients: []string{a.fingerprint, b.fingerprint},
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	ctx, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if err := os.Remove(filepath.Join(root, ctx.Config.KeySource)); err != nil {
+		t.Fatalf("remove key.gpg: %v", err)
+	}
+
+	if _, err := ctx.RemoveUser(b.fingerprint); err == nil {
+		t.Fatalf("expected RemoveUser to fail when rotation fails")
+	}
+
+	data, err := os.ReadFile(filepath.Join(root, ".repo-enc.yml"))
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(data), b.fingerprint) {
+		t.Fatalf("config no longer lists %s even though rotation (real revocation) failed -- misleading removed state", b.fingerprint)
 	}
 }
 

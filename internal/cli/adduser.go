@@ -2,9 +2,10 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
-	"github.com/OpScaleHub/git-secret/internal/config"
 	"github.com/OpScaleHub/git-secret/crypto"
+	"github.com/OpScaleHub/git-secret/internal/config"
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 )
 
@@ -22,6 +23,9 @@ type AddUserResult struct {
 func (c *Context) AddUser(recipient string) (*AddUserResult, error) {
 	if c.Config.KeyBackend != "gpg" {
 		return nil, fmt.Errorf("adduser: only supported with key_backend: gpg")
+	}
+	if !gpgutil.ValidFingerprint(recipient) {
+		return nil, fmt.Errorf("adduser: %q is not a full GPG fingerprint (40 or 64 hex characters) — short IDs and emails are ambiguous and not accepted", recipient)
 	}
 	for _, r := range c.Config.GPGRecipients {
 		if r == recipient {
@@ -41,14 +45,38 @@ func (c *Context) AddUser(recipient string) (*AddUserResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("adduser: %w", err)
 	}
-	if err := crypto.WriteFileAtomic(c.abs(c.Config.KeySource), wrapped, 0o644); err != nil {
-		return nil, fmt.Errorf("adduser: write %s: %w", c.Config.KeySource, err)
+
+	keyAbs, err := c.abs(c.Config.KeySource)
+	if err != nil {
+		return nil, fmt.Errorf("adduser: %w", err)
+	}
+
+	// Stage the re-wrapped key without touching the real key.gpg yet, so
+	// a config-save failure below can't leave the committed key rewritten
+	// for a recipient .repo-enc.yml never ends up listing — the "failed
+	// command silently grants access" gap. Only after config.Save
+	// succeeds is the staged key promoted into place.
+	tmpKeyPath, err := crypto.StageFileAtomic(keyAbs, wrapped, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("adduser: stage %s: %w", c.Config.KeySource, err)
 	}
 
 	newCfg := *c.Config
 	newCfg.GPGRecipients = updated
 	if err := config.Save(c.RepoRoot, &newCfg); err != nil {
+		os.Remove(tmpKeyPath)
 		return nil, fmt.Errorf("adduser: save config: %w", err)
+	}
+
+	if err := os.Rename(tmpKeyPath, keyAbs); err != nil {
+		// config.Save already succeeded, so .repo-enc.yml now lists
+		// recipient -- meaning a plain re-run would short-circuit on the
+		// AlreadyPresent check above without retrying this step. That's
+		// still fail-safe (the committed key.gpg wasn't touched, so
+		// recipient genuinely can't decrypt anything yet), but it does
+		// need a human to reconcile: either move the staged file into
+		// place by hand, or remove+re-add the recipient.
+		return nil, fmt.Errorf("adduser: %s now lists %s but promoting the re-wrapped key failed (key.gpg was left untouched, so %s does not yet have access) -- move %s into place manually, or removeuser+adduser %s again: %w", config.FileName, recipient, recipient, tmpKeyPath, recipient, err)
 	}
 	c.Config = &newCfg
 

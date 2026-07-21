@@ -369,6 +369,9 @@ func cmdRotateKeys() int {
 	if err != nil {
 		return fail(err)
 	}
+	if err := ctx.PersistGPGRecipients(); err != nil {
+		return fail(fmt.Errorf("rotate-keys: files were rotated, but persisting the effective gpg_recipients failed: %w", err))
+	}
 	fmt.Printf("Rotated %d file(s) to a new key.\n", len(result.RotatedFiles))
 	return exitOK
 }
@@ -411,7 +414,7 @@ func cmdHook(args []string) int {
 	case "post-merge":
 		hookErr = ctx.HookPostMerge()
 	case "pre-push":
-		hookErr = ctx.HookPrePush()
+		hookErr = ctx.HookPrePush(os.Stdin)
 	default:
 		fmt.Fprintf(os.Stderr, "Error: unknown hook %q\n", args[0])
 		return exitError

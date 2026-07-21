@@ -19,8 +19,13 @@ const binaryName = "git-secret"
 const hookMarker = "managed-by: repo-enc"
 
 // SkipEnvVars are environment variables that make every installed hook
-// exit 0 immediately without running, for CI and other automation.
-var SkipEnvVars = []string{"SECRETIZE_SKIP_HOOKS", "CI"}
+// exit 0 immediately without running. Deliberately just one, project-
+// specific var: an ambient variable like CI is set by any CI provider,
+// IDE, or automation wrapper, so honoring it as an implicit bypass would
+// silently disable both encryption and push-protection in exactly the
+// environments most likely to push on someone's behalf. Skipping hooks
+// always requires this explicit, unambiguous opt-in.
+var SkipEnvVars = []string{"SECRETIZE_SKIP_HOOKS"}
 
 // InstallHooks writes wrapper scripts for HookNames into the repo's hooks
 // directory (respecting core.hooksPath). Both a POSIX shell script (the
@@ -71,7 +76,7 @@ func shHookScript(name string) string {
 	return fmt.Sprintf(`#!/bin/sh
 # %s
 # Regenerate with: %s init  (do not edit by hand — edits are lost on re-install)
-if [ -n "$SECRETIZE_SKIP_HOOKS" ] || [ -n "$CI" ]; then
+if [ -n "$SECRETIZE_SKIP_HOOKS" ]; then
   exit 0
 fi
 dir="$(dirname "$0")"
@@ -85,7 +90,7 @@ exec %s hook %s "$@"
 func psHookScript(name string) string {
 	return fmt.Sprintf(`# %s
 # Regenerate with: %s init  (do not edit by hand — edits are lost on re-install)
-if ($env:SECRETIZE_SKIP_HOOKS -or $env:CI) { exit 0 }
+if ($env:SECRETIZE_SKIP_HOOKS) { exit 0 }
 $localHook = Join-Path $PSScriptRoot "%s.local.ps1"
 if (Test-Path $localHook) {
     & $localHook @args

@@ -38,20 +38,91 @@ func HooksDir(repoRoot string) (string, error) {
 // LsFiles lists every file git would track: already-committed files plus
 // untracked files that aren't gitignored. Pattern matching is applied by
 // the caller against this list.
+//
+// Uses -z (NUL-delimited output): without it, git C-quotes "unusual"
+// filenames (e.g. ones containing a literal newline) rather than
+// emitting the raw path, and a plain newline-split would both mis-parse
+// the quoting and be corrupted by the embedded newline itself — letting
+// a maliciously-named protected file slip past pattern matching
+// entirely. See splitNUL.
 func LsFiles(repoRoot string) ([]string, error) {
-	out, err := run(&repoRoot, "ls-files", "--cached", "--others", "--exclude-standard")
+	out, err := run(&repoRoot, "ls-files", "-z", "--cached", "--others", "--exclude-standard")
 	if err != nil {
 		return nil, fmt.Errorf("gitutil: ls-files: %w", err)
 	}
-	return splitLines(out), nil
+	return splitNUL(out), nil
+}
+
+// LsTree lists every path in the tree committed at rev, NUL-delimited
+// for the same reason LsFiles is (see its doc). Unlike LsFiles (which
+// reflects the working tree/index), this reflects exactly what's
+// committed at rev, so it's what revision-pinned verification uses.
+func LsTree(repoRoot, rev string) ([]string, error) {
+	out, err := run(&repoRoot, "ls-tree", "-r", "--name-only", "-z", rev)
+	if err != nil {
+		return nil, fmt.Errorf("gitutil: ls-tree %s: %w", rev, err)
+	}
+	return splitNUL(out), nil
 }
 
 // StagedFiles lists paths staged for the next commit (added/copied/modified),
-// which is what the pre-commit hook needs to inspect.
+// which is what the pre-commit hook needs to inspect. See LsFiles' doc
+// for why -z/splitNUL, not a plain newline split.
 func StagedFiles(repoRoot string) ([]string, error) {
-	out, err := run(&repoRoot, "diff", "--cached", "--name-only", "--diff-filter=ACMR")
+	out, err := run(&repoRoot, "diff", "-z", "--cached", "--name-only", "--diff-filter=ACMR")
 	if err != nil {
 		return nil, fmt.Errorf("gitutil: diff --cached: %w", err)
+	}
+	return splitNUL(out), nil
+}
+
+// ChangedPaths returns the paths that rev adds, modifies, copies, or
+// renames relative to its parent(s) — or, for a root commit, relative to
+// the empty tree (via --root). -m makes a merge commit report the union
+// of per-parent diffs instead of the default empty combined-diff, so a
+// secret reintroduced only by a merge's conflict resolution isn't missed.
+func ChangedPaths(repoRoot, rev string) ([]string, error) {
+	out, err := run(&repoRoot, "diff-tree", "--no-commit-id", "--name-only", "-r", "--root", "-m", "-z", "--diff-filter=ACMR", rev)
+	if err != nil {
+		return nil, fmt.Errorf("gitutil: diff-tree %s: %w", rev, err)
+	}
+	return splitNUL(out), nil
+}
+
+// ZeroOID is the all-zeroes object id git uses in hook protocols (e.g.
+// pre-push ref-update lines) to mean "this ref doesn't exist" — a new
+// ref being created, or an old ref being deleted.
+const ZeroOID = "0000000000000000000000000000000000000000"
+
+// IsZeroOID reports whether s is git's all-zeroes placeholder OID.
+func IsZeroOID(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	for _, r := range s {
+		if r != '0' {
+			return false
+		}
+	}
+	return true
+}
+
+// RevList returns the SHAs of every commit in oldRev..newRev, oldest
+// ancestry last (git's default rev-list order). If oldRev is the
+// all-zero OID (a brand new ref, per the pre-push hook protocol), it
+// instead returns every commit reachable from newRev — mirroring git's
+// own sample pre-push hook, which examines the ref's entire history in
+// that case since there's no prior remote state to diff against.
+func RevList(repoRoot, oldRev, newRev string) ([]string, error) {
+	var args []string
+	if IsZeroOID(oldRev) {
+		args = []string{"rev-list", newRev}
+	} else {
+		args = []string{"rev-list", oldRev + ".." + newRev}
+	}
+	out, err := run(&repoRoot, args...)
+	if err != nil {
+		return nil, fmt.Errorf("gitutil: rev-list: %w", err)
 	}
 	return splitLines(out), nil
 }
@@ -190,4 +261,16 @@ func splitLines(s string) []string {
 		return nil
 	}
 	return strings.Split(s, "\n")
+}
+
+// splitNUL parses -z (NUL-delimited) git output, which — unlike the
+// default newline-delimited form — never quotes/escapes unusual
+// filenames, so every entry is the literal repo-relative path with no
+// further unescaping needed.
+func splitNUL(s string) []string {
+	s = strings.TrimRight(s, "\x00")
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, "\x00")
 }

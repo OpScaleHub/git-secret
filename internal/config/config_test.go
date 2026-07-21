@@ -91,6 +91,27 @@ key_source: .repo-enc/key
 	}
 }
 
+// TestMatchesNormalizesLeadingSlashInPattern pins the fix for issue #20:
+// a root-anchored pattern like "/secrets/**" validated but matched
+// nothing, since splitting on "/" produced a leading empty segment that
+// can never match a real path segment — hooks/verify failed open with
+// no error.
+func TestMatchesNormalizesLeadingSlashInPattern(t *testing.T) {
+	cfg := &Config{
+		Version:    CurrentVersion,
+		Patterns:   []string{"/secrets/**"},
+		KeyBackend: "file",
+		KeySource:  ".repo-enc/key",
+	}
+	matched, err := cfg.Matches("secrets/db.env")
+	if err != nil {
+		t.Fatalf("Matches: %v", err)
+	}
+	if !matched {
+		t.Fatalf("root-anchored pattern /secrets/** should match secrets/db.env, but failed open")
+	}
+}
+
 func TestLoadFallsBackToGlobalScalarWhenRepoOmits(t *testing.T) {
 	tmp := t.TempDir()
 	repoRoot := filepath.Join(tmp, "repo")
@@ -113,6 +134,41 @@ patterns:
 	}
 	if cfg.KeyBackend != "env" || cfg.KeySource != "MY_GLOBAL_KEY" {
 		t.Errorf("expected global scalars to apply, got backend=%q source=%q", cfg.KeyBackend, cfg.KeySource)
+	}
+}
+
+// TestGlobalExcludeCannotWeakenRepoPolicy pins the fix for issue #16: a
+// machine-local global config used to be unioned into repo Exclude,
+// letting a stale/overly-broad global config silently carve a hole out
+// of a repo's committed encryption policy with no diff to review.
+func TestGlobalExcludeCannotWeakenRepoPolicy(t *testing.T) {
+	tmp := t.TempDir()
+	repoRoot := filepath.Join(tmp, "repo")
+	globalDir := filepath.Join(tmp, "globalcfg")
+	t.Setenv(GlobalConfigDirEnvVar, globalDir)
+
+	writeFile(t, filepath.Join(globalDir, "config.yml"), `
+exclude:
+  - "secrets/**"
+`)
+	writeFile(t, filepath.Join(repoRoot, FileName), `
+version: 1
+patterns:
+  - "secrets/**"
+key_backend: file
+key_source: .repo-enc/key
+`)
+
+	cfg, err := Load(repoRoot)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	matched, err := cfg.Matches("secrets/db.env")
+	if err != nil {
+		t.Fatalf("Matches: %v", err)
+	}
+	if !matched {
+		t.Fatalf("a machine-local global exclude silently weakened repo policy: secrets/db.env should still match")
 	}
 }
 
@@ -209,7 +265,7 @@ func TestValidateAcceptsGPGBackendWithRecipients(t *testing.T) {
 	cfg := &Config{
 		Version: CurrentVersion, Patterns: []string{"secrets/**"},
 		KeyBackend: "gpg", KeySource: DefaultKeySourceFor("gpg"),
-		GPGRecipients: []string{"AAAABBBBCCCCDDDD"},
+		GPGRecipients: []string{"AAAABBBBCCCCDDDD1111222233334444AAAABBBB"},
 	}
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate: unexpected error: %v", err)
@@ -227,7 +283,7 @@ func TestWriteConfigIdempotentLikeWriteDefault(t *testing.T) {
 	cfg := &Config{
 		Version: CurrentVersion, Patterns: []string{"secrets/**"},
 		KeyBackend: "gpg", KeySource: DefaultKeySourceFor("gpg"),
-		GPGRecipients: []string{"AAAABBBBCCCCDDDD"},
+		GPGRecipients: []string{"AAAABBBBCCCCDDDD1111222233334444AAAABBBB"},
 	}
 	path1, err := WriteConfig(tmp, cfg)
 	if err != nil {
@@ -262,7 +318,7 @@ func TestSaveOverwritesUnconditionally(t *testing.T) {
 	updated := &Config{
 		Version: CurrentVersion, Patterns: []string{"secrets/**"},
 		KeyBackend: "gpg", KeySource: DefaultKeySourceFor("gpg"),
-		GPGRecipients: []string{"AAAABBBBCCCCDDDD", "1111222233334444"},
+		GPGRecipients: []string{"AAAABBBBCCCCDDDD1111222233334444AAAABBBB", "1111222233334444AAAABBBBCCCCDDDD11112222"},
 	}
 	if err := Save(tmp, updated); err != nil {
 		t.Fatalf("Save: %v", err)

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/OpScaleHub/git-secret/crypto"
+	"github.com/OpScaleHub/git-secret/internal/config"
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
 	"gopkg.in/yaml.v3"
 )
@@ -18,6 +19,7 @@ import (
 type k8sValuePlan struct {
 	path      string
 	mapKey    string
+	id        k8sIdentity
 	valNode   *yaml.Node
 	plaintext []byte
 }
@@ -74,7 +76,13 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 	}
 	plans := make([]plan, 0, len(paths))
 	for _, p := range paths {
-		abs := c.abs(p)
+		abs, err := c.abs(p)
+		if err != nil {
+			return nil, fmt.Errorf("rotate-keys: %w", err)
+		}
+		if err := rejectSymlink(p, abs); err != nil {
+			return nil, fmt.Errorf("rotate-keys: %w", err)
+		}
 		data, err := os.ReadFile(abs)
 		if err != nil {
 			return nil, fmt.Errorf("rotate-keys: read %s: %w", p, err)
@@ -96,7 +104,13 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 	var k8sValuePlans []k8sValuePlan
 	var k8sFilePlans []*k8sFilePlan
 	for _, p := range c.Config.K8sSecretPaths {
-		abs := c.abs(p)
+		abs, err := c.abs(p)
+		if err != nil {
+			return nil, fmt.Errorf("rotate-keys: %w", err)
+		}
+		if err := rejectSymlink(p, abs); err != nil {
+			return nil, fmt.Errorf("rotate-keys: %w", err)
+		}
 		data, err := os.ReadFile(abs)
 		if err != nil {
 			return nil, fmt.Errorf("rotate-keys: read %s: %w", p, err)
@@ -109,6 +123,14 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("rotate-keys: %w", err)
 		}
+		root, err := documentRoot(doc)
+		if err != nil {
+			return nil, fmt.Errorf("rotate-keys: %s: %w", p, err)
+		}
+		id, err := manifestIdentity(root)
+		if err != nil {
+			return nil, fmt.Errorf("rotate-keys: %s: %w", p, err)
+		}
 		fp := &k8sFilePlan{path: p, mode: info.Mode().Perm(), doc: doc}
 		for i := 0; i+1 < len(stringData.Content); i += 2 {
 			keyNode, valNode := stringData.Content[i], stringData.Content[i+1]
@@ -119,11 +141,11 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 			if !isCiphertext {
 				continue
 			}
-			plain, err := crypto.Open(raw, oldKey, k8sAAD(p, keyNode.Value))
+			plain, err := crypto.Open(raw, oldKey, k8sAAD(p, keyNode.Value, id))
 			if err != nil {
 				return nil, fmt.Errorf("rotate-keys: decrypt %s#%s with current key: %w", p, keyNode.Value, err)
 			}
-			k8sValuePlans = append(k8sValuePlans, k8sValuePlan{path: p, mapKey: keyNode.Value, valNode: valNode, plaintext: plain})
+			k8sValuePlans = append(k8sValuePlans, k8sValuePlan{path: p, mapKey: keyNode.Value, id: id, valNode: valNode, plaintext: plain})
 			fp.matched++
 		}
 		if fp.matched > 0 {
@@ -132,6 +154,18 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 	}
 
 	stagingRef := c.Config.KeySource + ".new"
+	if c.Config.KeyBackend == "file" {
+		// The staging key is raw, unwrapped key material for this
+		// backend — exactly as sensitive as key_source itself. Ignore it
+		// before it exists, not after: if a later step in this function
+		// fails, the staging file is left behind deliberately (removing
+		// it could strand any files already rotated onto it — see the
+		// write loop below), so it must never be one `git add .` away
+		// from landing in a commit.
+		if err := ensureGitignored(c.RepoRoot, stagingRef); err != nil {
+			return nil, fmt.Errorf("rotate-keys: gitignore staging key: %w", err)
+		}
+	}
 	newKey, err := c.Backend.Generate(c.RepoRoot, stagingRef)
 	if err != nil {
 		return nil, fmt.Errorf("rotate-keys: generate new key: %w", err)
@@ -157,7 +191,7 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 	}
 
 	for _, vp := range k8sValuePlans {
-		env, err := crypto.Seal(crypto.Default, vp.plaintext, newKey, k8sAAD(vp.path, vp.mapKey))
+		env, err := crypto.Seal(crypto.Default, vp.plaintext, newKey, k8sAAD(vp.path, vp.mapKey, vp.id))
 		if err != nil {
 			cleanupStagingKey(c, stagingRef)
 			return result, fmt.Errorf("rotate-keys: encrypt %s#%s under new key: %w", vp.path, vp.mapKey, err)
@@ -166,7 +200,11 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 	}
 
 	for _, pl := range plans {
-		if err := crypto.WriteFileAtomic(c.abs(pl.path), sealed[pl.path], pl.mode); err != nil {
+		abs, err := c.abs(pl.path)
+		if err != nil {
+			return result, fmt.Errorf("rotate-keys: %w", err)
+		}
+		if err := crypto.WriteFileAtomic(abs, sealed[pl.path], pl.mode); err != nil {
 			return result, fmt.Errorf("rotate-keys: write %s (files already rotated: %v — safe to re-run once fixed): %w", pl.path, result.RotatedFiles, err)
 		}
 		result.RotatedFiles = append(result.RotatedFiles, pl.path)
@@ -184,7 +222,11 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		if err != nil {
 			return result, fmt.Errorf("rotate-keys: marshal %s: %w", fp.path, err)
 		}
-		if err := crypto.WriteFileAtomic(c.abs(fp.path), out, fp.mode); err != nil {
+		abs, err := c.abs(fp.path)
+		if err != nil {
+			return result, fmt.Errorf("rotate-keys: %w", err)
+		}
+		if err := crypto.WriteFileAtomic(abs, out, fp.mode); err != nil {
 			return result, fmt.Errorf("rotate-keys: write %s (files already rotated: %v — safe to re-run once fixed): %w", fp.path, result.RotatedFiles, err)
 		}
 		result.RotatedFiles = append(result.RotatedFiles, fp.path)
@@ -195,12 +237,36 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 	}
 
 	if persistsKeyToDisk(c.Config.KeyBackend) {
-		if err := os.Rename(c.abs(stagingRef), c.abs(c.Config.KeySource)); err != nil {
+		stagingAbs, err := c.abs(stagingRef)
+		if err != nil {
+			return result, fmt.Errorf("rotate-keys: %w", err)
+		}
+		keyAbs, err := c.abs(c.Config.KeySource)
+		if err != nil {
+			return result, fmt.Errorf("rotate-keys: %w", err)
+		}
+		if err := os.Rename(stagingAbs, keyAbs); err != nil {
 			return result, fmt.Errorf("rotate-keys: promote new key (files rotated but key file not swapped — do not re-run; restore %s from %s manually): %w", c.Config.KeySource, stagingRef, err)
 		}
 	}
 
 	return result, nil
+}
+
+// PersistGPGRecipients saves c.Config's current (already-merged, global
+// ∪ repo) gpg_recipients list back to the committed .repo-enc.yml. A
+// no-op for non-gpg backends. Meant to be called right after a
+// successful RotateKeys on a gpg-backed repo: rotation wraps the new key
+// for c.Config.GPGRecipients, and without this, a global config's
+// personal-default recipient would be silently re-applied to the
+// committed key on every rotation without ever showing up as a diff in
+// .repo-enc.yml — the same visibility gap Init's first-time key
+// generation closes for the initial wrap.
+func (c *Context) PersistGPGRecipients() error {
+	if c.Config.KeyBackend != "gpg" {
+		return nil
+	}
+	return config.Save(c.RepoRoot, c.Config)
 }
 
 // persistsKeyToDisk reports whether a backend's Generate writes to a
@@ -213,6 +279,8 @@ func persistsKeyToDisk(backend string) bool {
 
 func cleanupStagingKey(c *Context, stagingRef string) {
 	if persistsKeyToDisk(c.Config.KeyBackend) {
-		os.Remove(c.abs(stagingRef))
+		if abs, err := c.abs(stagingRef); err == nil {
+			os.Remove(abs)
+		}
 	}
 }

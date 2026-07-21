@@ -17,7 +17,13 @@ func (c *Context) EncryptPaths(paths []string) (touched []string, err error) {
 		return nil, err
 	}
 	for _, p := range paths {
-		abs := c.abs(p)
+		abs, err := c.abs(p)
+		if err != nil {
+			return touched, err
+		}
+		if err := rejectSymlink(p, abs); err != nil {
+			return touched, err
+		}
 		data, err := os.ReadFile(abs)
 		if err != nil {
 			return touched, fmt.Errorf("read %s: %w", p, err)
@@ -53,7 +59,13 @@ func (c *Context) DecryptPaths(paths []string) (touched []string, err error) {
 		return nil, err
 	}
 	for _, p := range paths {
-		abs := c.abs(p)
+		abs, err := c.abs(p)
+		if err != nil {
+			return touched, err
+		}
+		if err := rejectSymlink(p, abs); err != nil {
+			return touched, err
+		}
 		data, err := os.ReadFile(abs)
 		if err != nil {
 			return touched, fmt.Errorf("read %s: %w", p, err)
@@ -61,15 +73,19 @@ func (c *Context) DecryptPaths(paths []string) (touched []string, err error) {
 		if !crypto.IsEnvelope(data) {
 			continue
 		}
-		info, err := os.Stat(abs)
-		if err != nil {
-			return touched, fmt.Errorf("stat %s: %w", p, err)
-		}
 		plain, err := crypto.Open(data, key, []byte(p))
 		if err != nil {
 			return touched, fmt.Errorf("decrypt %s: %w", p, err)
 		}
-		if err := crypto.WriteFileAtomic(abs, plain, info.Mode().Perm()); err != nil {
+		// Decrypted plaintext always gets 0600, regardless of the
+		// ciphertext file's own mode (typically 0644 — an ordinary git
+		// checkout, and fine for ciphertext, but not for the secret
+		// itself). Unlike EncryptPaths, which preserves mode because
+		// ciphertext isn't sensitive the same way, plaintext on a
+		// shared/multi-user machine shouldn't be world- or group-
+		// readable just because that's what the tracked blob happened to
+		// be checked out as.
+		if err := crypto.WriteFileAtomic(abs, plain, 0o600); err != nil {
 			return touched, fmt.Errorf("write %s: %w", p, err)
 		}
 		// The working tree is now intentionally plaintext while the

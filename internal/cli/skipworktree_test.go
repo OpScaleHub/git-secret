@@ -37,6 +37,7 @@ func TestUnlockHidesFileFromGitStatus(t *testing.T) {
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	commitInitConfig(t, root)
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
@@ -71,6 +72,7 @@ func TestLockClearsSkipWorktree(t *testing.T) {
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	commitInitConfig(t, root)
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
@@ -107,6 +109,7 @@ func TestEditAfterUnlockRequiresLockBeforeGitAdd(t *testing.T) {
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	commitInitConfig(t, root)
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
@@ -167,6 +170,7 @@ func TestHookPreCommitReappliesSkipWorktree(t *testing.T) {
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	commitInitConfig(t, root)
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
@@ -248,6 +252,7 @@ func TestHookPostCheckoutSetsSkipWorktreeOnFreshDecrypt(t *testing.T) {
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	commitInitConfig(t, root)
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
@@ -274,6 +279,7 @@ func TestEncryptExplicitPathsClearsSkipWorktree(t *testing.T) {
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	commitInitConfig(t, root)
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 
@@ -298,6 +304,7 @@ func TestRotateKeysClearsSkipWorktree(t *testing.T) {
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
+	commitInitConfig(t, root)
 	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
 	ctx := commitViaHook(t, root, "add secret", "secrets/db.yaml")
 

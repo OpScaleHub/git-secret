@@ -32,18 +32,18 @@ func (b GPGBackend) WithRecipients(recipients []string) Backend {
 	return b
 }
 
-func (GPGBackend) resolve(repoRoot, ref string) string {
-	if filepath.IsAbs(ref) {
-		return ref
-	}
-	return filepath.Join(repoRoot, ref)
+func (GPGBackend) resolve(repoRoot, ref string) (string, error) {
+	return resolveConfined(repoRoot, ref)
 }
 
 func (b GPGBackend) Get(repoRoot, ref string) ([]byte, error) {
 	if !gpgutil.Available() {
 		return nil, fmt.Errorf("keybackend(gpg): %w", gpgutil.ErrNotInstalled)
 	}
-	path := b.resolve(repoRoot, ref)
+	path, err := b.resolve(repoRoot, ref)
+	if err != nil {
+		return nil, fmt.Errorf("keybackend(gpg): %w", err)
+	}
 	wrapped, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -76,7 +76,10 @@ func (b GPGBackend) Generate(repoRoot, ref string) ([]byte, error) {
 	if len(b.Recipients) == 0 {
 		return nil, fmt.Errorf("keybackend(gpg): no recipients configured (set gpg_recipients in .repo-enc.yml)")
 	}
-	path := b.resolve(repoRoot, ref)
+	path, err := b.resolve(repoRoot, ref)
+	if err != nil {
+		return nil, fmt.Errorf("keybackend(gpg): %w", err)
+	}
 	key := make([]byte, KeySize)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, fmt.Errorf("keybackend(gpg): generate key: %w", err)
