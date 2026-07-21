@@ -80,7 +80,7 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 | `encrypt <path...>` | Encrypt specific files in place. |
 | `decrypt <path...>` | Decrypt specific files in place. |
 | `rotate-keys` | Generate a new key and re-encrypt every config-matched file under it. |
-| `verify` | Check every config-matched file committed at `HEAD` is actually ciphertext; exits 3 if not. |
+| `verify` | Check every config-matched file and `k8s_secret_paths` manifest committed at `HEAD` is actually, authentically encrypted (and that the raw `file`-backend key isn't committed); exits 3 if not. Requires the key — it fails closed (exit 2) rather than skip the one check that proves anything. |
 | `adduser [recipient]` | `gpg` backend only: grant a recipient access — cheap, re-wraps the existing key without touching any file. Omit the argument to pick interactively from your local public keyring. |
 | `removeuser <recipient>` | `gpg` backend only: revoke a recipient and rotate to a brand new key — a removed recipient already saw the old one, so this re-encrypts every matched file. |
 | `hook <name>` | Internal — invoked by the installed hooks, not typically run by hand. |
@@ -88,7 +88,7 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 
 Exit codes: `0` ok · `1` generic error · `2` key unavailable · `3` `verify` found plaintext in history.
 
-CI note: set `SECRETIZE_SKIP_HOOKS=1` (or run under `CI=1`, already common) to make every installed hook exit 0 immediately without running.
+CI note: set `SECRETIZE_SKIP_HOOKS=1` to make every installed hook exit 0 immediately without running. This is deliberately not tied to the ambient `CI` variable — every CI provider, IDE, and automation wrapper sets `CI=1` by convention, so honoring it implicitly would silently disable both encryption and push-protection in exactly the environments most likely to push on someone's behalf. Opt out explicitly, per invocation.
 
 ### `unlock` and `git status`
 
@@ -123,7 +123,7 @@ gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
   - AAAABBBBCCCCDDDD1111222233334444AAAABBBB
 ```
 
-`patterns`/`exclude` are glob paths relative to the repo root; `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent — set `REPO_ENC_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and any `patterns`/`exclude`/`gpg_recipients` entries there are unioned with the repo's.
+`patterns`/`exclude` are glob paths relative to the repo root (a leading `/` is accepted and normalized away — `/secrets/**` and `secrets/**` are the same pattern); `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent — set `REPO_ENC_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and `patterns`/`gpg_recipients`/`k8s_secret_paths` entries there are unioned with the repo's, since those can only *expand* what's protected. `exclude` and `k8s_plaintext_keys` are the opposite — both can only *shrink* protection — so they're taken from the repo config alone; a global config can never silently carve a hole out of a repo's committed policy.
 
 ### Key backends
 
@@ -147,7 +147,7 @@ gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
 
 - **`pre-commit`**: for each staged, pattern-matched file, encrypts the *staged* content and repoints the git index at the ciphertext blob (`git hash-object` + `git update-index --cacheinfo`) — your working-tree file is never touched.
 - **`post-checkout` / `post-merge`**: decrypts pattern-matched working-tree files that checkout/merge just populated with ciphertext, if a key is available. Missing key ⇒ warns, doesn't fail the checkout.
-- **`pre-push`**: runs the same check as `verify` against `HEAD` and blocks the push if any pattern-matched file was committed as plaintext.
+- **`pre-push`**: runs the same authenticated check as `verify` against `HEAD`, *and* walks every commit actually being pushed (reading git's ref-update protocol from stdin) that the remote doesn't already have, so a plaintext commit earlier in the range can't reach the remote just because a later commit fixed `HEAD`. The range walk validates envelope structure rather than fully authenticating (a commit deep in history may be sealed under a since-rotated key that the current key can no longer open), which is still enough to catch content that was never encrypted at all.
 - **`rotate-keys`**: decrypts every matched file under the current key, re-encrypts under a freshly generated one, and only writes anything to disk once every file has round-tripped successfully in memory — a failure partway through never leaves you with an unrecoverable file.
 
 See `examples/basic/` for a runnable walkthrough.
@@ -182,20 +182,42 @@ repo-relative paths, not globs) in `.repo-enc.yml`, independent of `patterns`:
 ```yaml
 k8s_secret_paths:
   - "deploy/api-secrets.yaml"
+k8s_plaintext_keys:            # optional: stringData keys allowed to stay
+  deploy/api-secrets.yaml:     # plaintext in a given manifest, e.g. a
+    - "PLAIN_NOTE"             # non-secret placeholder living alongside
+                                # real credentials in the same map
 ```
+
+`git-secret`'s `verify`/`pre-commit` enforce `k8s_secret_paths` the same as
+whole-file `patterns`: any `stringData` value that's neither a `repo-enc:v1:`
+blob nor listed in `k8s_plaintext_keys` is treated as an accidentally-leaked
+secret and blocks the commit/fails verification — not just an all-or-nothing
+"is *everything* plaintext" check, so one unencrypted value sitting next to
+several real ciphertext ones is still caught.
 
 ### Verbs
 
 | Verb | Effect |
 |---|---|
-| `apply -f FILE [-n NAMESPACE]` | Decrypt matched `stringData` values in memory and `kubectl apply` the result. Never writes plaintext to disk. |
+| `apply -f FILE [-n NAMESPACE]` | Decrypt matched `stringData` values in memory and `kubectl apply` the result. Never writes plaintext to disk. Warns if the object carries an `argocd.argoproj.io/instance` label (see ArgoCD footgun below). |
 | `create -f FILE [-n NAMESPACE]` | Same, but `kubectl create`. |
 | `view -f FILE` | Print the fully-decrypted manifest to stdout. Never writes it to disk. |
-| `encrypt-value -f FILE -k KEY <value>` | Emit a `repo-enc:v1:...` blob bound to that file and key, to paste into `stringData` by hand. |
+| `encrypt-value -f FILE -k KEY` (value on stdin) | Emit a `repo-enc:v1:...` blob bound to that file, key, and the manifest's object identity, to paste into `stringData` by hand. `--allow-argv <value>` uses a bare CLI argument instead — leaves the value in shell history/process listings, so prefer stdin. |
 
 A value is ciphertext if it starts with `repo-enc:v1:`; anything else is left
 untouched, so plaintext and ciphertext values coexist freely in the same
 `stringData` map — only encrypt the keys that are actually secret.
+
+**Ciphertext is bound to the object it lives in**, not just the file and key:
+`encrypt-value` reads `apiVersion`/`kind`/`metadata.name`/`metadata.namespace`
+from `FILE` (which must already declare them) and folds them into the seal.
+Moving valid ciphertext into a manifest with a different name or namespace —
+or an `apply -n` that targets a namespace the value wasn't sealed for — fails
+to decrypt instead of silently authenticating onto the wrong object. YAML
+anchors on an encrypted `stringData` value are rejected outright, since
+decrypting would copy the plaintext into every place in the document that
+aliases it (`stringData` is write-only in Kubernetes; an aliased annotation
+elsewhere isn't).
 
 v1 scope: `stringData` only (not `data`, which is base64-encoded — a marker
 placed there would itself look like valid base64 and silently decode to
@@ -229,6 +251,22 @@ Management Plugin](https://argo-cd.readthedocs.io/en/stable/user-guide/config-ma
 ordinary `OutOfSync` — the same signal ArgoCD already gives you for a
 drifted `Deployment` — instead of failing silently.
 
+> **This is manifest-generation secret injection, with the risks ArgoCD's
+> own docs describe.** A CMP `generate` command that emits decrypted
+> `Secret` YAML means the plugin's output stream — the *fully decrypted*
+> manifest — flows through ArgoCD's normal generated-manifest pipeline,
+> where ArgoCD's [secret management
+> docs](https://argo-cd.readthedocs.io/en/stable/operator-manual/secret-management/#argo-cd-manifest-generation-based-secret-management)
+> say it can be cached in Redis and is reachable by anyone with repo-server
+> API access — not just anyone with `kubectl get secret` on the cluster.
+> Read their [mitigation
+> guidance](https://argo-cd.readthedocs.io/en/stable/operator-manual/secret-management/#mitigating-risks-of-secret-injection-plugins)
+> before adopting this pattern for anything sensitive, and prefer a
+> destination-cluster secret management approach (e.g. decrypting outside
+> ArgoCD entirely, so the repo-server never holds the key or the plaintext)
+> wherever that's an option. What follows documents the CMP pattern as-is,
+> not as an endorsement that it's the safest option available.
+
 **1. Register the plugin.** A `ConfigMap` mounted into the sidecar at
 `/home/argocd/cmp-server/config/plugin.yaml`:
 
@@ -242,7 +280,7 @@ spec:
   generate:
     command: ["sh", "-c"]
     args:
-      - "mkdir -p .repo-enc && cp /repo-enc-key/key .repo-enc/key && kubectl-secret view -f secrets.enc.yaml"
+      - "mkdir -p .repo-enc && rm -f .repo-enc/key && cp /repo-enc-key/key .repo-enc/key && kubectl-secret view -f secrets.enc.yaml"
 ```
 
 The `mkdir`/`cp` prefix isn't optional. `generate.command` runs with `CWD`
@@ -252,18 +290,39 @@ key mounted at a stable absolute path (via a `Secret` volume, see below)
 has to be staged into the repo-relative location `key_source` expects
 (`.repo-enc/key` by default) before every single invocation.
 
+The `rm -f .repo-enc/key` immediately before `cp` isn't optional either.
+`CWD` here is the *repo checkout* — attacker-controlled content, from
+ArgoCD's point of view, if anyone can land a commit — so a committed
+symlink at `.repo-enc/key` (e.g. pointing at `/proc/self/fd/1` to print
+the raw key into plugin output, or elsewhere in the pod filesystem) would
+otherwise make `cp` follow it and write the decryption key wherever that
+symlink points, instead of to a fresh regular file. `rm -f` unlinks
+whatever is currently at that path — symlink or not, without following
+it — so `cp` always creates a clean regular file afterward.
+
 **2. Add the sidecar.** Same pattern as any other CMP: a sidecar container
 on `argocd-repo-server` running `argocd-cmp-server` against that plugin
 config, plus an initContainer to fetch the `kubectl-secret` binary itself
-(a public, unauthenticated release download — no token needed) into a
-shared `emptyDir`:
+into a shared `emptyDir`. **Verify the checksum before executing it** —
+release binaries are unsigned, so this at least confirms the download
+matches what CI built and published, rather than trusting an unauthenticated
+`curl | chmod +x` sight unseen for a binary that will hold the repo's
+decryption key:
 
 ```yaml
 initContainers:
   - name: kubectl-secret-install
     image: curlimages/curl:8.10.1
-    command: ["sh", "-c",
-      "curl -sL -o /kubectl-secret-bin/kubectl-secret https://github.com/OpScaleHub/git-secret/releases/download/v0.4.1/kubectl-secret-linux-amd64 && chmod +x /kubectl-secret-bin/kubectl-secret"]
+    command: ["sh", "-c"]
+    args:
+      - |
+        set -eu
+        cd /kubectl-secret-bin
+        curl -sSL -O https://github.com/OpScaleHub/git-secret/releases/download/v0.4.1/kubectl-secret-linux-amd64
+        curl -sSL -O https://github.com/OpScaleHub/git-secret/releases/download/v0.4.1/kubectl-secret-linux-amd64.sha256
+        sha256sum -c kubectl-secret-linux-amd64.sha256
+        mv kubectl-secret-linux-amd64 kubectl-secret
+        chmod +x kubectl-secret
     volumeMounts:
       - {mountPath: /kubectl-secret-bin, name: kubectl-secret-bin}
 containers:
