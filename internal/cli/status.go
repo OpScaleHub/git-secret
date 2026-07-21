@@ -36,7 +36,12 @@ func (c *Context) Status() ([]FileState, error) {
 	for _, p := range paths {
 		hidden, _ := gitutil.IsSkipWorktree(c.RepoRoot, p) // best-effort; false (and no error surfaced) for untracked files
 
-		data, err := os.ReadFile(c.abs(p))
+		abs, err := c.abs(p)
+		if err != nil {
+			out = append(out, FileState{Path: p, State: StateUnreadable, Hidden: hidden})
+			continue
+		}
+		data, err := os.ReadFile(abs)
 		if err != nil {
 			out = append(out, FileState{Path: p, State: StateUnreadable, Hidden: hidden})
 			continue

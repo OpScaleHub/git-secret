@@ -220,6 +220,8 @@ func TestCLIVerifyExitsNonZeroOnLeakedPlaintext(t *testing.T) {
 	if _, _, code := runBin(t, bin, repo, "init", "secrets/**"); code != 0 {
 		t.Fatalf("init failed")
 	}
+	runGit(t, repo, "add", ".repo-enc.yml", ".gitignore")
+	runGit(t, repo, "commit", "-q", "-m", "repo-enc: init")
 	secretPath := filepath.Join(repo, "secrets", "db.yaml")
 	os.MkdirAll(filepath.Dir(secretPath), 0o755)
 	os.WriteFile(secretPath, []byte("password: hunter2\n"), 0o644)
@@ -244,6 +246,8 @@ func TestCLICommitThenCloneDecryptsWithSharedKey(t *testing.T) {
 	if _, _, code := runBin(t, bin, repoA, "init", "secrets/**"); code != 0 {
 		t.Fatalf("init in repoA failed")
 	}
+	runGit(t, repoA, "add", ".repo-enc.yml", ".gitignore")
+	runGit(t, repoA, "commit", "-q", "-m", "repo-enc: init")
 	secretPath := filepath.Join(repoA, "secrets", "db.yaml")
 	os.MkdirAll(filepath.Dir(secretPath), 0o755)
 	const plaintext = "password: hunter2\n"

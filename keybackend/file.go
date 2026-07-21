@@ -12,22 +12,25 @@ import (
 )
 
 // FileBackend stores the key as hex text in a file, resolved relative to
-// the repo root unless ref is already absolute. This file must never be
-// committed: `init` adds it to .gitignore, and `verify` flags it if it
-// ever ends up tracked.
+// the repo root — key_source is documented as repo-relative, so this
+// rejects an absolute path or one that cleans to somewhere outside
+// repoRoot (see resolveConfined), rather than silently reading/writing
+// files anywhere on disk a committed .repo-enc.yml points it at. This
+// file must never be committed: `init` adds it to .gitignore, and
+// `verify` flags it if it ever ends up tracked.
 type FileBackend struct{}
 
 func (FileBackend) Name() string { return "file" }
 
-func (FileBackend) resolve(repoRoot, ref string) string {
-	if filepath.IsAbs(ref) {
-		return ref
-	}
-	return filepath.Join(repoRoot, ref)
+func (FileBackend) resolve(repoRoot, ref string) (string, error) {
+	return resolveConfined(repoRoot, ref)
 }
 
 func (b FileBackend) Get(repoRoot, ref string) ([]byte, error) {
-	path := b.resolve(repoRoot, ref)
+	path, err := b.resolve(repoRoot, ref)
+	if err != nil {
+		return nil, fmt.Errorf("keybackend(file): %w", err)
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -43,7 +46,10 @@ func (b FileBackend) Get(repoRoot, ref string) ([]byte, error) {
 }
 
 func (b FileBackend) Generate(repoRoot, ref string) ([]byte, error) {
-	path := b.resolve(repoRoot, ref)
+	path, err := b.resolve(repoRoot, ref)
+	if err != nil {
+		return nil, fmt.Errorf("keybackend(file): %w", err)
+	}
 	key := make([]byte, KeySize)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {
 		return nil, fmt.Errorf("keybackend(file): generate key: %w", err)

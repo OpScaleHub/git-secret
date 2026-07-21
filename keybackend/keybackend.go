@@ -6,6 +6,8 @@ package keybackend
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 )
 
 // KeySize is the key length every backend must produce. Both ciphers in
@@ -52,6 +54,26 @@ var registry = map[string]Backend{
 	FileBackend{}.Name(): FileBackend{},
 	EnvBackend{}.Name():  EnvBackend{},
 	GPGBackend{}.Name():  GPGBackend{},
+}
+
+// resolveConfined resolves ref against repoRoot for backends whose key
+// material is a filesystem path ("file", "gpg"). key_source is
+// documented as repo-relative, so this rejects an absolute ref and any
+// ref that cleans to somewhere outside repoRoot — without it, a
+// committed .repo-enc.yml setting key_source to an absolute path or a
+// "../"-escaping one would make `init`/`rotate-keys` read or write key
+// material anywhere on disk the config author chose, not just inside
+// the repository this tool is scoped to.
+func resolveConfined(repoRoot, ref string) (string, error) {
+	if filepath.IsAbs(ref) {
+		return "", fmt.Errorf("key_source %q must be repo-relative, not absolute", ref)
+	}
+	joined := filepath.Join(repoRoot, ref)
+	root := filepath.Clean(repoRoot)
+	if joined != root && !strings.HasPrefix(joined, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("key_source %q escapes the repository root", ref)
+	}
+	return joined, nil
 }
 
 // New returns the registered backend for name (e.g. from Config.KeyBackend).

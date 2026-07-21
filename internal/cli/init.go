@@ -79,6 +79,21 @@ func Init(opts InitOptions) (*InitResult, error) {
 	result := &InitResult{ConfigPath: cfgPath, KeySource: cfg.KeySource, KeyIsCommittable: cfg.KeyBackend == "gpg"}
 
 	if _, err := backend.Get(root, cfg.KeySource); errors.Is(err, keybackend.ErrKeyNotFound) {
+		if cfg.KeyBackend == "gpg" {
+			// cfg.GPGRecipients is already the *merged* list (a machine-
+			// local global config's personal-default recipients unioned
+			// with whatever's in the just-written .repo-enc.yml) — and
+			// that merged list is exactly what Generate below wraps the
+			// key for. Persist it back now, before generating, so the
+			// committed config never silently lags behind the real
+			// access list: a global recipient contributing here becomes
+			// a visible, committed line instead of an invisible addition
+			// every clone with that global config would otherwise redo
+			// identically and silently.
+			if err := config.Save(root, cfg); err != nil {
+				return nil, fmt.Errorf("init: persist merged gpg_recipients: %w", err)
+			}
+		}
 		key, err := backend.Generate(root, cfg.KeySource)
 		if err != nil {
 			return nil, fmt.Errorf("init: generate key: %w", err)

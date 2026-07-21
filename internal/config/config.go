@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -35,6 +36,13 @@ type Config struct {
 	// whole-file encryption. Independent of Patterns: a repo can use
 	// either, both, or neither.
 	K8sSecretPaths []string `yaml:"k8s_secret_paths,omitempty"`
+	// K8sPlaintextKeys allowlists specific stringData keys, per
+	// K8sSecretPaths path, that are intentionally left unencrypted (e.g.
+	// a non-secret placeholder living alongside real credentials in the
+	// same manifest). verify/hooks treat any stringData value that is
+	// neither repo-enc:v1: ciphertext nor listed here as an accidental
+	// plaintext leak.
+	K8sPlaintextKeys map[string][]string `yaml:"k8s_plaintext_keys,omitempty"`
 }
 
 // validBackends are the key_backend values recognized by this build.
@@ -91,14 +99,52 @@ func GlobalPath() (string, error) {
 
 // Load reads the repo-local config at repoRoot/.repo-enc.yml, merges in
 // the global override file if present, and validates the result.
+func Load(repoRoot string) (*Config, error) {
+	repoPath := filepath.Join(repoRoot, FileName)
+	data, err := os.ReadFile(repoPath)
+	if err != nil {
+		return nil, fmt.Errorf("config: read %s: %w", repoPath, err)
+	}
+	repo, err := ParseBytes(data)
+	if err != nil {
+		return nil, fmt.Errorf("config: read %s: %w", repoPath, err)
+	}
+	return MergeGlobal(repo)
+}
+
+// ParseBytes parses raw YAML into a Config, without merging global
+// config or validating. Exposed so callers that source repo config from
+// somewhere other than the checked-out working tree — e.g. revision-
+// pinned verification, which reads .repo-enc.yml as committed at a
+// specific git revision rather than off disk — can still go through the
+// same merge/validate path MergeGlobal provides.
+func ParseBytes(data []byte) (*Config, error) {
+	var c Config
+	if err := yaml.Unmarshal(data, &c); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	return &c, nil
+}
+
+// MergeGlobal layers the machine-local global override config (if
+// present) under repo, following the precedence rules below, and
+// validates the result.
 //
 // Merge semantics: scalar fields (key_backend, key_source) are repo-local
-// if set there, else global, else built-in default. List fields
-// (patterns, exclude, gpg_recipients) are the union of global and
+// if set there, else global, else built-in default. Patterns,
+// gpg_recipients, and k8s_secret_paths are the union of global and
 // repo-local entries, so a user's personal defaults (e.g. "*.secret.*"
 // patterns, or always including their own key as a gpg recipient) apply
-// everywhere without needing to be copy-pasted into every repo.
-func Load(repoRoot string) (*Config, error) {
+// everywhere without needing to be copy-pasted into every repo — since
+// these fields only ever *expand* what's protected or who can decrypt,
+// a global addition can't weaken repo policy.
+//
+// exclude and k8s_plaintext_keys are different: both can only *shrink*
+// the effectively-protected set, so unioning a global entry into them
+// would let a machine-local config silently carve a hole out of a
+// repository's committed protection. These two fields are therefore
+// taken from repo alone, never merged with a global value.
+func MergeGlobal(repo *Config) (*Config, error) {
 	cfg := defaults()
 
 	if globalPath, err := GlobalPath(); err == nil {
@@ -108,13 +154,9 @@ func Load(repoRoot string) (*Config, error) {
 			return nil, fmt.Errorf("config: read global config: %w", err)
 		}
 	}
-
-	repoPath := filepath.Join(repoRoot, FileName)
-	repo, err := loadFile(repoPath)
-	if err != nil {
-		return nil, fmt.Errorf("config: read %s: %w", repoPath, err)
-	}
 	mergeInto(cfg, repo)
+	cfg.Exclude = append([]string{}, repo.Exclude...)
+	cfg.K8sPlaintextKeys = repo.K8sPlaintextKeys
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -127,15 +169,12 @@ func loadFile(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	var c Config
-	if err := yaml.Unmarshal(data, &c); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	return &c, nil
+	return ParseBytes(data)
 }
 
-// mergeInto layers overlay onto base in place, following Load's documented
-// precedence rules.
+// mergeInto layers overlay onto base in place for the fields where a
+// global contribution is safe (see MergeGlobal's doc) — Exclude and
+// K8sPlaintextKeys are handled separately by the caller.
 func mergeInto(base, overlay *Config) {
 	if overlay.Version != 0 {
 		base.Version = overlay.Version
@@ -147,7 +186,6 @@ func mergeInto(base, overlay *Config) {
 		base.KeySource = overlay.KeySource
 	}
 	base.Patterns = unionDedup(base.Patterns, overlay.Patterns)
-	base.Exclude = unionDedup(base.Exclude, overlay.Exclude)
 	base.GPGRecipients = unionDedup(base.GPGRecipients, overlay.GPGRecipients)
 	base.K8sSecretPaths = unionDedup(base.K8sSecretPaths, overlay.K8sSecretPaths)
 }
@@ -181,6 +219,11 @@ func (c *Config) Validate() error {
 	}
 	if c.KeyBackend == "gpg" && len(c.GPGRecipients) == 0 {
 		return fmt.Errorf("config: key_backend \"gpg\" requires at least one entry in gpg_recipients")
+	}
+	for _, r := range c.GPGRecipients {
+		if !gpgutil.ValidFingerprint(r) {
+			return fmt.Errorf("config: gpg_recipients entry %q is not a full GPG fingerprint (40 or 64 hex characters) — short IDs and emails are ambiguous and not accepted", r)
+		}
 	}
 	for _, p := range append(append([]string{}, c.Patterns...), c.Exclude...) {
 		if _, err := filepath.Match(lastSegment(p), "x"); err != nil {

@@ -5,7 +5,10 @@
 package cli
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/OpScaleHub/git-secret/internal/config"
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
@@ -81,7 +84,41 @@ func (c *Context) MatchedFiles() ([]string, error) {
 	return out, nil
 }
 
-// abs resolves a repo-relative path against RepoRoot.
-func (c *Context) abs(relPath string) string {
-	return filepath.Join(c.RepoRoot, relPath)
+// abs resolves a repo-relative path against RepoRoot, rejecting any path
+// that would escape it — via ".." traversal or by being absolute.
+// Every path this tool touches (key_source, k8s_secret_paths, and
+// explicit `encrypt`/`decrypt` CLI arguments) is documented as repo-
+// relative; without this check, a committed key_source like
+// "../outside-key", or an `encrypt ../outside.txt` CLI argument, would
+// read or write files outside the repository the tool is supposed to be
+// scoped to.
+func (c *Context) abs(relPath string) (string, error) {
+	if filepath.IsAbs(relPath) {
+		return "", fmt.Errorf("path %q must be repo-relative, not absolute", relPath)
+	}
+	joined := filepath.Join(c.RepoRoot, relPath)
+	root := filepath.Clean(c.RepoRoot)
+	if joined != root && !strings.HasPrefix(joined, root+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes the repository root", relPath)
+	}
+	return joined, nil
+}
+
+// rejectSymlink errors out if abs (the resolved path for relPath) is a
+// symlink. Every caller that processes a matched path — EncryptPaths,
+// DecryptPaths, RotateKeys — must check this before reading it: plain
+// os.ReadFile/os.Stat follow symlinks, so a repo-controlled symlink
+// committed under a protected pattern (e.g. "secrets/leak.env ->
+// ~/.ssh/id_rsa") would otherwise make the tool read an arbitrary local
+// file outside the repo and commit its contents as ciphertext the next
+// time someone runs `lock`/`rotate-keys`.
+func rejectSymlink(relPath, abs string) error {
+	fi, err := os.Lstat(abs)
+	if err != nil {
+		return fmt.Errorf("lstat %s: %w", relPath, err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s: refusing to follow symlink under a protected path", relPath)
+	}
+	return nil
 }

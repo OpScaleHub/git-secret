@@ -20,6 +20,7 @@ import (
 
 	"github.com/OpScaleHub/git-secret/internal/cli"
 	"github.com/OpScaleHub/git-secret/keybackend"
+	"gopkg.in/yaml.v3"
 )
 
 // version is stamped at build time via:
@@ -38,17 +39,26 @@ Verbs:
   apply         -f FILE [-n NAMESPACE]   Decrypt matched stringData values
                                           in memory and 'kubectl apply' the
                                           result. Never writes plaintext to
-                                          disk.
+                                          disk. -n must match the namespace
+                                          each value was encrypted for, or
+                                          decryption fails closed.
   create        -f FILE [-n NAMESPACE]   Same, but 'kubectl create'.
   view          -f FILE                  Print the fully-decrypted manifest
                                           to stdout. Never writes it to disk.
-  encrypt-value -f FILE -k KEY <value>   Emit a repo-enc:v1:... blob bound
-                                          to FILE/KEY, to paste into the
-                                          manifest's stringData by hand.
+  encrypt-value -f FILE -k KEY            Emit a repo-enc:v1:... blob bound
+    < plaintext                          to FILE/KEY/the object identity
+                                          (apiVersion/kind/name/namespace),
+                                          to paste into stringData by hand.
+                                          Reads the value from stdin;
+                                          --allow-argv uses a CLI argument
+                                          instead (visible in shell
+                                          history/process listings).
   version                                Show version information.
   help                                   Show this help.
 
-FILE must be listed under k8s_secret_paths in .repo-enc.yml.
+FILE must be listed under k8s_secret_paths in .repo-enc.yml, and must
+already declare apiVersion/kind/metadata.name before encrypt-value can
+bind a value to it.
 
 Exit codes: 0 ok, 1 error, 2 key unavailable.
 `
@@ -162,10 +172,11 @@ func cmdApplyCreate(verb string, args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	decrypted, err := ctx.DecryptK8sManifest(relPath)
+	decrypted, err := ctx.DecryptK8sManifest(relPath, *namespace)
 	if err != nil {
 		return fail(err)
 	}
+	warnIfArgoCDManaged(decrypted, verb)
 
 	kubectlArgs := []string{verb, "-f", "-"}
 	if *namespace != "" {
@@ -205,7 +216,7 @@ func cmdView(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	decrypted, err := ctx.DecryptK8sManifest(relPath)
+	decrypted, err := ctx.DecryptK8sManifest(relPath, "")
 	if err != nil {
 		return fail(err)
 	}
@@ -219,19 +230,48 @@ func cmdView(args []string) int {
 // a bare plaintext argument) because per-value ciphertext is bound to
 // both the destination file and stringData key as AAD, blocking
 // ciphertext from being swapped between keys within the same manifest.
+//
+// The plaintext itself is read from stdin by default, not argv: a bare
+// CLI argument lands in shell history and is visible to any other local
+// process (ps/proc) for the life of this command — exactly the class of
+// leak apply/view/create otherwise avoid by never writing plaintext to
+// disk. --allow-argv keeps the old positional-argument form for quick
+// interactive use, with a loud warning.
 func cmdEncryptValue(args []string) int {
 	fs := flag.NewFlagSet("encrypt-value", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	file := fs.String("f", "", "path to the Secret manifest (required)")
 	key := fs.String("k", "", "stringData key this value will be stored under (required)")
+	allowArgv := fs.Bool("allow-argv", false, "read the plaintext from a bare CLI argument instead of stdin (leaves it in shell history/process listings -- prefer piping via stdin)")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitError
 	}
-	plaintextArgs := fs.Args()
-	if *file == "" || *key == "" || len(plaintextArgs) != 1 {
-		fmt.Fprintln(os.Stderr, "Error: usage: encrypt-value -f FILE -k KEY <value>")
+	if *file == "" || *key == "" {
+		fmt.Fprintln(os.Stderr, "Error: usage: echo -n VALUE | kubectl secret encrypt-value -f FILE -k KEY")
 		return exitError
+	}
+
+	var plaintext string
+	if *allowArgv {
+		plaintextArgs := fs.Args()
+		if len(plaintextArgs) != 1 {
+			fmt.Fprintln(os.Stderr, "Error: --allow-argv requires exactly one plaintext argument")
+			return exitError
+		}
+		fmt.Fprintln(os.Stderr, "Warning: --allow-argv leaves the plaintext value in shell history and visible to other local processes for the life of this command.")
+		plaintext = plaintextArgs[0]
+	} else {
+		if len(fs.Args()) != 0 {
+			fmt.Fprintln(os.Stderr, "Error: plaintext is read from stdin by default -- pass --allow-argv to use a bare CLI argument instead")
+			return exitError
+		}
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: read plaintext from stdin: %v\n", err)
+			return exitError
+		}
+		plaintext = strings.TrimSuffix(string(data), "\n")
 	}
 
 	ctx, err := cli.Load()
@@ -242,12 +282,54 @@ func cmdEncryptValue(args []string) int {
 	if err != nil {
 		return fail(err)
 	}
-	blob, err := ctx.EncryptK8sValue(relPath, *key, plaintextArgs[0])
+	blob, err := ctx.EncryptK8sValue(relPath, *key, plaintext)
 	if err != nil {
 		return fail(err)
 	}
 	fmt.Println(blob)
 	return exitOK
+}
+
+// warnIfArgoCDManaged prints a warning to stderr if decrypted carries
+// the argocd.argoproj.io/instance label. That label is a cheap,
+// deterministic signal that the object is also managed by an ArgoCD
+// Application; if that Application has syncPolicy.automated.selfHeal
+// enabled (not something this manifest alone can tell us), a direct
+// `apply`/`create` here can be silently reverted on ArgoCD's next
+// reconcile with no error on either side — confirmed live: a
+// hand-corrected value reverted within seconds. Best-effort only: any
+// parse failure just skips the warning rather than blocking the command.
+func warnIfArgoCDManaged(decrypted []byte, verb string) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(decrypted, &doc); err != nil || len(doc.Content) == 0 {
+		return
+	}
+	root := doc.Content[0]
+	labels := yamlLookup(yamlLookup(root, "metadata"), "labels")
+	if labels == nil || labels.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(labels.Content); i += 2 {
+		if labels.Content[i].Value != "argocd.argoproj.io/instance" {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "Warning: this Secret carries the argocd.argoproj.io/instance label (ArgoCD app %q). If that Application has syncPolicy.automated.selfHeal enabled, a direct `kubectl secret %s` can be silently reverted on ArgoCD's next reconcile. Prefer commit + push + `argocd app sync`/`--hard-refresh` for ArgoCD-managed secrets; treat apply/create as local-cluster or bootstrap-only.\n", labels.Content[i+1].Value, verb)
+		return
+	}
+}
+
+// yamlLookup returns the value node for key in mapping node m, or nil if
+// m isn't a mapping or doesn't have key.
+func yamlLookup(m *yaml.Node, key string) *yaml.Node {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // repoRelativePath resolves f (absolute, or relative to the current

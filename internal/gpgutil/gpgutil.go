@@ -28,6 +28,27 @@ func Available() bool {
 	return err == nil
 }
 
+// ValidFingerprint reports whether s is a full GPG key fingerprint (40
+// hex characters for a v4 key, 64 for v5) rather than a short key ID,
+// email, or other ambiguous selector. gpg accepts all of those as a
+// --recipient value, resolved against the local keyring/keyserver at
+// encrypt time — which is exactly the risk: if that resolution is
+// ambiguous or an attacker can influence which key a short ID or email
+// resolves to locally, the repo's data-encryption key can be wrapped to
+// the wrong key. Only a full fingerprint pins the exact key with no
+// ambiguity, so config/CLI recipient input is required to be one.
+func ValidFingerprint(s string) bool {
+	if len(s) != 40 && len(s) != 64 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'A' && r <= 'F') || (r >= 'a' && r <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
 // SecretKey describes one local key as reported by gpg --list-secret-keys
 // or --list-public-keys.
 type SecretKey struct {

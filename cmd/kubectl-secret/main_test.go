@@ -44,8 +44,17 @@ func buildGitSecret(t *testing.T) string {
 
 func runBin(t *testing.T, bin, dir string, args ...string) (stdout, stderr string, exitCode int) {
 	t.Helper()
+	return runBinStdin(t, bin, dir, "", args...)
+}
+
+// runBinStdin is runBin with stdin content -- encrypt-value reads its
+// plaintext from stdin by default now (issue #5: a bare CLI argument
+// leaks into shell history/process listings).
+func runBinStdin(t *testing.T, bin, dir, stdin string, args ...string) (stdout, stderr string, exitCode int) {
+	t.Helper()
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -181,8 +190,12 @@ func TestKubectlSecretEncryptValueThenView(t *testing.T) {
 		t.Fatalf("git-secret init failed")
 	}
 	addK8sSecretPath(t, repo, "deploy/app-secret.yaml")
+	// encrypt-value now binds ciphertext to the object identity (issue
+	// #23), so the manifest must already declare apiVersion/kind/
+	// metadata.name before a value can be encrypted for it.
+	writeRepoFile(t, repo, "deploy/app-secret.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app\nstringData: {}\n")
 
-	out, stderr, code := runBin(t, kubectlSecretBin, repo, "encrypt-value", "-f", "deploy/app-secret.yaml", "-k", "OIDC_CLIENT_SECRET", "s3cr3t-value")
+	out, stderr, code := runBinStdin(t, kubectlSecretBin, repo, "s3cr3t-value", "encrypt-value", "-f", "deploy/app-secret.yaml", "-k", "OIDC_CLIENT_SECRET")
 	if code != 0 {
 		t.Fatalf("encrypt-value: code=%d stderr=%q", code, stderr)
 	}
@@ -218,13 +231,17 @@ func TestKubectlSecretApplyPipesDecryptedYAMLToKubectl(t *testing.T) {
 		t.Fatalf("git-secret init failed")
 	}
 	addK8sSecretPath(t, repo, "deploy/app-secret.yaml")
+	// The manifest declares namespace: myns up front, matching the -n
+	// myns override applied below -- issue #23 binds ciphertext to the
+	// *effective* namespace, so encrypt-time and apply-time must agree.
+	writeRepoFile(t, repo, "deploy/app-secret.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app\n  namespace: myns\nstringData: {}\n")
 
-	out, _, code := runBin(t, kubectlSecretBin, repo, "encrypt-value", "-f", "deploy/app-secret.yaml", "-k", "OIDC_CLIENT_SECRET", "s3cr3t-value")
+	out, _, code := runBinStdin(t, kubectlSecretBin, repo, "s3cr3t-value", "encrypt-value", "-f", "deploy/app-secret.yaml", "-k", "OIDC_CLIENT_SECRET")
 	if code != 0 {
 		t.Fatalf("encrypt-value failed")
 	}
 	blob := strings.TrimSpace(out)
-	manifest := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app\nstringData:\n  OIDC_CLIENT_SECRET: \"" + blob + "\"\n"
+	manifest := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app\n  namespace: myns\nstringData:\n  OIDC_CLIENT_SECRET: \"" + blob + "\"\n"
 	writeRepoFile(t, repo, "deploy/app-secret.yaml", manifest)
 
 	received := filepath.Join(t.TempDir(), "received.yaml")
