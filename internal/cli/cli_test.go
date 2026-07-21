@@ -44,10 +44,18 @@ func runGit(t *testing.T, dir string, args ...string) string {
 // checked, not from disk, so they have nothing to enforce until the
 // config itself is committed — real usage always commits it immediately
 // after `init`, and test fixtures need to mirror that.
+//
+// --no-verify: this package tests HookPreCommit et al. directly as Go
+// functions (see commitViaHook in skipworktree_test.go), not through the
+// real installed hook script -- that script `exec`s the `git-secret`
+// binary by name on PATH, which nothing in this package builds/installs
+// (unlike main_test.go's black-box tests, which do). Neither
+// .repo-enc.yml nor .gitignore is pattern-matched content anyway, so
+// there's nothing for the real hook to do here even if it did run.
 func commitInitConfig(t *testing.T, root string) {
 	t.Helper()
 	runGit(t, root, "add", ".repo-enc.yml", ".gitignore")
-	runGit(t, root, "commit", "-q", "-m", "repo-enc: init")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "repo-enc: init")
 }
 
 func writeRepoFile(t *testing.T, root, relPath, content string) {
@@ -226,7 +234,7 @@ func TestHookPreCommitEncryptsIndexOnlyLeavesWorkingTreePlaintext(t *testing.T) 
 		t.Fatalf("working tree file was modified by pre-commit hook: %q", working)
 	}
 
-	runGit(t, root, "commit", "-q", "-m", "add secret")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "add secret")
 	problems, err := ctx.Verify()
 	if err != nil {
 		t.Fatalf("Verify: %v", err)
@@ -288,7 +296,7 @@ func TestHookPrePushDetectsPlaintextInPushedRangeNotJustHEAD(t *testing.T) {
 		t.Fatalf("Lock: %v", err)
 	}
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "fix HEAD")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "fix HEAD")
 	fixedSHA := strings.TrimSpace(runGit(t, root, "rev-parse", "HEAD"))
 
 	// HEAD alone is clean now.
@@ -327,7 +335,7 @@ func TestVerifyFlagsCommittedRawFileBackendKey(t *testing.T) {
 	}
 
 	runGit(t, root, "add", "-f", ".repo-enc/key")
-	runGit(t, root, "commit", "-q", "-m", "oops, committed the raw key")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "oops, committed the raw key")
 
 	problems, err := ctx.Verify()
 	if err != nil {

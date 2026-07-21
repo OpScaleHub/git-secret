@@ -28,7 +28,19 @@ func commitViaHook(t *testing.T, root, msg string, paths ...string) *Context {
 	if err := ctx.HookPreCommit(); err != nil {
 		t.Fatalf("HookPreCommit: %v", err)
 	}
-	runGit(t, root, "commit", "-q", "-m", msg)
+	// --no-verify: per the doc comment above, this package calls
+	// HookPreCommit directly precisely because the *installed* hook
+	// script can't run here (it execs the git-secret binary by name on
+	// PATH, which nothing in this package builds/installs). This used
+	// to work anyway, by accident: the installed hook used to exit
+	// immediately whenever the ambient $CI var was set (issue #21,
+	// fixed elsewhere in this change), and GitHub Actions always sets
+	// CI=true -- so in CI specifically, the hook skipped itself before
+	// ever reaching the exec line. Fixing #21 closed that, which
+	// surfaced this: the same commit needs to be explicit about
+	// bypassing the hook it isn't testing, instead of relying on a
+	// since-fixed bug to do it silently.
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", msg)
 	return ctx
 }
 
@@ -132,7 +144,7 @@ func TestEditAfterUnlockRequiresLockBeforeGitAdd(t *testing.T) {
 		t.Fatalf("Lock: %v", err)
 	}
 	runGit(t, root, "add", "secrets/db.yaml")
-	runGit(t, root, "commit", "-q", "-m", "rotate password")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "rotate password")
 
 	problems, err := ctx.Verify()
 	if err != nil {
@@ -231,7 +243,7 @@ func TestSkipWorktreeSurvivesUnrelatedCommit(t *testing.T) {
 		t.Fatalf("EncryptPaths: %v", err)
 	}
 	runGit(t, root, "add", "secrets/other.yaml")
-	runGit(t, root, "commit", "-q", "-m", "update other secret")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "update other secret")
 
 	hidden, err := gitutil.IsSkipWorktree(root, "secrets/db.yaml")
 	if err != nil {

@@ -294,7 +294,7 @@ stringData:
 	if err := ctx.HookPreCommit(); err != nil {
 		t.Fatalf("HookPreCommit: unexpected error for allowlisted plaintext key: %v", err)
 	}
-	runGit(t, root, "commit", "-q", "-m", "add k8s secret")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "add k8s secret")
 
 	problems, err := ctx.Verify()
 	if err != nil {
