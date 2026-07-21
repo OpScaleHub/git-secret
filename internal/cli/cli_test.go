@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -442,6 +443,15 @@ func TestLockRefusesMatchedSymlink(t *testing.T) {
 // plaintext must not be world/group-readable regardless of the
 // ciphertext blob's own mode (an ordinary git checkout is 0644).
 func TestUnlockWritesPlaintextWith0600(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Windows has no POSIX permission bits -- os.Chmod there only
+		// toggles the read-only attribute, and a writable file always
+		// reads back as 0666 regardless of what was requested. The fix
+		// itself (WriteFileAtomic passing 0o600) is still correct/
+		// best-effort there; only this exact-mode assertion doesn't
+		// port.
+		t.Skip("POSIX file mode bits don't apply on Windows")
+	}
 	root := newTestRepo(t)
 	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
 		t.Fatalf("Init: %v", err)
