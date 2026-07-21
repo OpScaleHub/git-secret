@@ -382,6 +382,54 @@ before adopting per-value encryption), exclude it there — two ArgoCD
 `Application`s both claiming the same live object will fight every
 reconcile, each reverting the other's last write.
 
+### Recommended: use the `gpg` backend instead of `file`
+
+Everything above works with `key_backend: file`, but that backend has
+exactly one piece of key material — the raw symmetric key — and getting it
+into the sidecar means copying it into the repo checkout on every sync
+(the `mkdir`/`rm -f`/`cp` dance in step 1). The `gpg` backend sidesteps that
+entirely: `.repo-enc/key.gpg` is *committed*, so it's already sitting in
+the checkout — ArgoCD needs a private key that can open it, not a copy of
+anything into a repo-controlled path.
+
+**1. Give ArgoCD its own identity, once.** Same command as adding a
+teammate — because that's exactly what this is:
+
+```bash
+gpg --batch --passphrase '' --quick-generate-key "argocd-git-secret <argocd@yourcluster>" default default never
+gpg --list-secret-keys --with-colons   # grab the fingerprint
+
+git secret adduser <argocd-fingerprint>
+git add .repo-enc.yml .repo-enc/key.gpg
+git commit -m "Grant ArgoCD service GPG access" && git push
+```
+
+**2. Move only the private key into the cluster — the one genuinely
+sensitive step, and the last time this key travels anywhere:**
+
+```bash
+gpg --export-secret-keys --armor <argocd-fingerprint> > private.asc
+kubectl create secret generic repo-enc-gpg-key -n argocd --from-file=private.asc
+rm private.asc
+```
+
+**3. Import it in the plugin's `generate` command instead of copying a raw
+key.** No `mkdir`, no `rm -f`, no repo-controlled destination path at all:
+
+```yaml
+generate:
+  command: ["sh", "-c"]
+  args:
+    - "gpg --batch --import /repo-enc-key/private.asc 2>/dev/null; kubectl-secret view -f secrets.enc.yaml"
+```
+
+The `repo-enc-key` volume mount from step 2 above stays the same — it's
+just an armored private key file now instead of a raw symmetric key.
+Onboarding a human teammate afterward is `adduser <their-fingerprint>`;
+revoking ArgoCD's access later (a cluster rebuild, say) is `removeuser
+<argocd-fingerprint>` — both are the same commands you'd already use for
+people, because ArgoCD is, cryptographically, just another recipient.
+
 ## Publishing & GitHub Pages
 
 The project website is published at: [https://git-secret.opscale.ir](https://git-secret.opscale.ir)

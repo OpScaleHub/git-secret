@@ -573,7 +573,7 @@ gpg_recipients:
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">BOUND</span>
-          <div><h3>To the file <em>and</em> the key</h3><p>Ciphertext for one key can't be swapped for another's in the same manifest and still decrypt — the authentication tag is bound to both.</p></div>
+          <div><h3>To the object, not just the file</h3><p>Ciphertext is bound to the manifest's <code>apiVersion</code>/<code>kind</code>/<code>metadata.name</code>/namespace as well as the file and key — moving valid ciphertext onto a different object, or retargeting it to another namespace with <code>-n</code>, fails to decrypt instead of silently authenticating onto the wrong <code>Secret</code>.</p></div>
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">IN MEMORY</span>
@@ -585,7 +585,7 @@ gpg_recipients:
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">GITOPS</span>
-          <div><h3>ArgoCD decrypts it too — as part of the sync itself</h3><p>A Config Management Plugin sidecar on <code>argocd-repo-server</code> runs <code>kubectl-secret view</code> as ArgoCD's own manifest source, so a drifted live value shows up as ordinary <code>OutOfSync</code> instead of silently diverging from git. Proven in a real GitOps deployment, not a paper design — see the <a href="https://github.com/OpScaleHub/git-secret#argocd-integration-config-management-plugin" target="_blank" rel="noopener">README</a> for the full plugin/sidecar/Application wiring.</p></div>
+          <div><h3>ArgoCD decrypts it too — as part of the sync itself</h3><p>A Config Management Plugin sidecar on <code>argocd-repo-server</code> runs <code>kubectl-secret view</code> as ArgoCD's own manifest source, so a drifted live value shows up as ordinary <code>OutOfSync</code> instead of silently diverging from git. With the <code>gpg</code> backend, ArgoCD is just another recipient — <code>adduser</code>/<code>removeuser</code> grant and revoke its access the same way they would a teammate's, no raw key ever copied into the checkout. ArgoCD is the worked example here because it's the one we've actually run; the underlying idea — decrypt only at a trusted runtime identity, never in git — fits any controller with a manifest-generation hook. See the <a href="https://github.com/OpScaleHub/git-secret#argocd-integration-config-management-plugin" target="_blank" rel="noopener">README</a> for the full wiring, including the <code>gpg</code>-backend variant.</p></div>
         </div>
       </div>
 
