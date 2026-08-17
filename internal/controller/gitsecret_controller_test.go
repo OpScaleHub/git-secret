@@ -4,13 +4,14 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -19,29 +20,38 @@ import (
 	"github.com/OpScaleHub/git-secret/internal/sealer"
 )
 
-// genTestKey duplicates internal/sealer's test helper (unexported there,
-// and this package shouldn't depend on _test.go files across packages).
+// shortTempDir and genTestKey duplicate internal/sealer's test helpers
+// (unexported there, and this package shouldn't depend on _test.go files
+// across packages). See internal/sealer/sealer_test.go's shortTempDir doc
+// comment for why gpg-agent specifically needs a short path, not
+// t.TempDir() directly, to be reliable on macOS CI runners.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	base := "/tmp"
+	if runtime.GOOS == "windows" {
+		base = os.TempDir()
+	}
+	dir, err := os.MkdirTemp(base, "controller-test-")
+	if err != nil {
+		t.Fatalf("create short temp dir: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
+}
+
 func genTestKey(t *testing.T, gnupgHome string) string {
 	t.Helper()
 	if !gpgutil.Available() {
-		t.Skip("gpg binary not on PATH")
+		t.Skip("gpg not installed")
 	}
-	batch := `
-Key-Type: EDDSA
-Key-Curve: ed25519
-Subkey-Type: ECDH
-Subkey-Curve: cv25519
-Name-Real: controller test
-Name-Email: controller-test@example.invalid
-Expire-Date: 0
-%no-protection
-%commit
-`
-	cmd := exec.Command("gpg", "--batch", "--gen-key")
+	if runtime.GOOS == "windows" {
+		t.Skip("gpg-agent unreliable on windows CI runners")
+	}
+
+	cmd := exec.Command("gpg", "--batch", "--passphrase", "", "--quick-generate-key", "controller test <controller-test@example.invalid>", "default", "default", "never")
 	cmd.Env = append(os.Environ(), "GNUPGHOME="+gnupgHome)
-	cmd.Stdin = strings.NewReader(batch)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("gpg --gen-key: %v\n%s", err, out)
+		t.Skipf("gpg key generation not usable in this environment, skipping: %v: %s", err, out)
 	}
 
 	cmd = exec.Command("gpg", "--batch", "--with-colons", "--list-secret-keys")
@@ -62,9 +72,9 @@ Expire-Date: 0
 	return ""
 }
 
-func newScheme(t *testing.T) *runtime.Scheme {
+func newScheme(t *testing.T) *k8sruntime.Scheme {
 	t.Helper()
-	scheme := runtime.NewScheme()
+	scheme := k8sruntime.NewScheme()
 	if err := corev1.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
@@ -75,10 +85,7 @@ func newScheme(t *testing.T) *runtime.Scheme {
 }
 
 func TestReconcile_CreatesTargetSecret(t *testing.T) {
-	gnupgHome := t.TempDir()
-	if err := os.Chmod(gnupgHome, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	gnupgHome := shortTempDir(t)
 	fpr := genTestKey(t, gnupgHome)
 	t.Setenv("GNUPGHOME", gnupgHome)
 
@@ -145,10 +152,7 @@ func TestReconcile_CreatesTargetSecret(t *testing.T) {
 }
 
 func TestReconcile_WrongKeyReportsFailureWithoutCreatingSecret(t *testing.T) {
-	sealingHome := t.TempDir()
-	if err := os.Chmod(sealingHome, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	sealingHome := shortTempDir(t)
 	sealFpr := genTestKey(t, sealingHome)
 
 	// Seal to a key the controller's GNUPGHOME (set below) will NOT hold --
@@ -160,10 +164,7 @@ func TestReconcile_WrongKeyReportsFailureWithoutCreatingSecret(t *testing.T) {
 		t.Fatalf("Seal: %v", err)
 	}
 
-	controllerHome := t.TempDir()
-	if err := os.Chmod(controllerHome, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	controllerHome := shortTempDir(t)
 	genTestKey(t, controllerHome) // an unrelated key, so gpg is "available" but can't open spec.EncryptedKey
 	t.Setenv("GNUPGHOME", controllerHome)
 

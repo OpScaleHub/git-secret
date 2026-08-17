@@ -558,6 +558,13 @@ git-secret-seal --rewrap gitsecret.yaml \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
 ```
 
+Every `--recipient` must be a full 40/64-hex GPG fingerprint, not a short key
+ID or an email address — `git-secret-seal` rejects anything else, the same
+rule `.repo-enc.yml`'s `gpg_recipients` already enforces (see
+[`gpgutil.ValidFingerprint`](internal/gpgutil/gpgutil.go)'s doc comment for
+why: a short ID or email is ambiguous and locally resolvable, a fingerprint
+isn't). `gpg --list-secret-keys --with-colons` (or `gpg -K`) prints yours.
+
 `git-secret-controller` needs its own dedicated GPG identity, imported at
 startup the same way `git-secret-server` imports its repo-decryption key
 (`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, isolated `GNUPGHOME`, key

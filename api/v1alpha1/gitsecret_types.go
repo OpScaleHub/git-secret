@@ -75,7 +75,7 @@ type GitSecretStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:shortName=gsec
-// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`,priority=0
+// +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.target.name`,priority=0
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Keys",type=integer,JSONPath=`.status.syncedKeys`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`

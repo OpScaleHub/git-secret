@@ -85,6 +85,7 @@ func run(args []string, environ []string) int {
 		return exitError
 	}
 	os.Setenv("GNUPGHOME", gnupgHome)
+	defer os.Unsetenv("GNUPGHOME") // belt-and-suspenders: the temp dir itself is already removed by the defer above; this just avoids leaving the env var pointing at a now-gone path for the rest of process teardown.
 
 	if !gpgutil.Available() {
 		setupLog.Error(nil, "gpg binary not found on PATH")

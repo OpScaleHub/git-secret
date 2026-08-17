@@ -13,6 +13,12 @@ Consequences.
 
 ## Context
 
+**In one sentence, for readers who don't have ADR-0001 memorized**: ADR-0001's "no functional
+benefit over reusing ESO" reasoning was correct for the case it actually weighed at the time; this
+ADR addresses a different case that only became visible after the ESO webhook bridge was built,
+deployed to production, and formally security-reviewed. The rest of this section spells out exactly
+where the two cases diverge.
+
 ADR-0001 explicitly foreclosed "a bespoke Kubernetes controller (its own CRD, its own reconcile
 loop) in place of wrapping ESO," reasoning that ESO already provides the reconcile loop, drift
 detection, deletion policy, status/observability, and RBAC scoping a hand-rolled controller would
