@@ -1,0 +1,115 @@
+# Default values for git-secret-server.
+#
+# Secret material is never accepted here, by design — only references to
+# Secrets you create out-of-band (kubectl / your own bootstrap process /
+# password manager), same discipline this project's own README documents
+# for the repo itself: secrets live in the cluster, never in git or Helm
+# values.
+
+image:
+  repository: ghcr.io/opscalehub/git-secret-server
+  tag: ""  # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+fullnameOverride: ""
+
+replicaCount: 1
+
+repo:
+  # Required. Any URL `git clone` accepts, e.g.
+  # git@github.com:OpScaleLab/nuc-lab-operation.git
+  url: ""
+  # Optional branch/tag. Empty uses the remote's default branch.
+  ref: ""
+  # Bound to sshKey.existingSecret below. Set to false only for a
+  # public HTTPS repo.url that needs no authentication.
+  useSSHKey: true
+
+# The same deploy key ArgoCD's own repo-server already uses for read
+# access is fine to reuse here — the repository only ever holds
+# ciphertext, so shared read access carries no extra risk. See the
+# project README's "git-secret-server" section.
+sshKey:
+  existingSecret: ""
+  existingSecretKey: ssh-privatekey
+
+# Required. A dedicated GPG identity for this service, added to the
+# repo via `git secret adduser <fingerprint>` — never share this
+# private key with anything else. See README: "Recommended: use the
+# gpg backend instead of file".
+gpgPrivateKey:
+  existingSecret: ""
+  existingSecretKey: private.asc
+
+# Required. Bearer token callers (ESO's SecretStore) must present.
+# Generate with e.g. `openssl rand -hex 32`.
+authToken:
+  existingSecret: ""
+  existingSecretKey: token
+
+# Optional. Pins SSH host-key verification for repo.url's host. Leave
+# empty when repo.url is on github.com — the binary has a built-in pin
+# for that host already. Set this for any other SSH git host.
+knownHosts:
+  existingSecret: ""
+  existingSecretKey: known_hosts
+
+# Max duration a single request's git clone may take.
+cloneTimeout: 30s
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+# Restricts which pods may reach this Service — by default, only
+# whatever matches networkPolicy.allowFrom (the ESO controller, so it
+# can call /decrypt) and nothing else. Requires a CNI that enforces
+# NetworkPolicy.
+networkPolicy:
+  enabled: true
+  allowFrom:
+    - namespaceSelector: {}
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: external-secrets
+
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false  # each request clones into a fresh dir under /tmp
+  capabilities:
+    drop: ["ALL"]
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
