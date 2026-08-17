@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         gnupg \
         ca-certificates \
+        openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Explicit numeric UID/GID, not just a named user: Kubernetes'
