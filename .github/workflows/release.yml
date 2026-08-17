@@ -114,6 +114,15 @@ jobs:
             exit 1
           fi
 
+      - name: Compute lowercase image owner
+        # OCI/Docker repository names must be all-lowercase; GitHub org
+        # names aren't required to be (this one, OpScaleHub, isn't).
+        # github.repository_owner is the org/user name verbatim, so it
+        # has to be lowercased before it can be used in an image tag --
+        # using it directly fails the build with "repository name must
+        # be lowercase" rather than silently doing the wrong thing.
+        run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -133,8 +142,8 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/git-secret-server:${{ github.ref_name }}
-            ghcr.io/${{ github.repository_owner }}/git-secret-server:latest
+            ghcr.io/${{ env.OWNER_LC }}/git-secret-server:${{ github.ref_name }}
+            ghcr.io/${{ env.OWNER_LC }}/git-secret-server:latest
 
   chart-release:
     name: Package & push Helm chart
@@ -155,6 +164,12 @@ jobs:
             exit 1
           fi
 
+      - name: Compute lowercase image owner
+        # See the same step in the docker-release job above -- OCI
+        # repository names must be all-lowercase, github.repository_owner
+        # isn't guaranteed to be.
+        run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
       - name: Set up Helm
         uses: azure/setup-helm@v4
 
@@ -174,4 +189,4 @@ jobs:
             --version "$CHART_VERSION" \
             --app-version "$VERSION" \
             --destination /tmp
-          helm push "/tmp/git-secret-server-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ github.repository_owner }}/charts"
+          helm push "/tmp/git-secret-server-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ env.OWNER_LC }}/charts"
