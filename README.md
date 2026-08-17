@@ -235,6 +235,14 @@ you're introducing `kubectl-secret` to a team that's used to plain `kubectl`.
 
 ### ArgoCD integration (Config Management Plugin)
 
+> **For a new setup, prefer [`git-secret-server`](#git-secret-server) instead of this section.**
+> A CMP still routes decrypted plaintext through ArgoCD's own manifest-generation
+> pipeline, which is exactly the risk the callout below describes. `git-secret-server`
+> exists specifically so ArgoCD's process never has to touch plaintext or key material
+> at all — External Secrets Operator manages the resulting `Secret` directly instead.
+> This section is kept for repositories already using the CMP pattern, or for anyone
+> not (yet) running ESO.
+
 The footgun above is worse under GitOps specifically: if ArgoCD applies the
 encrypted manifest directly, it doesn't just break the app once — it
 actively **fights** anything that later corrects the live `Secret` by hand.
@@ -429,6 +437,99 @@ Onboarding a human teammate afterward is `adduser <their-fingerprint>`;
 revoking ArgoCD's access later (a cluster rebuild, say) is `removeuser
 <argocd-fingerprint>` — both are the same commands you'd already use for
 people, because ArgoCD is, cryptographically, just another recipient.
+
+## git-secret-server
+
+`kubectl-secret` (above) is a human/CI-driven tool: someone runs `apply`/`view`
+by hand or from a CMP sidecar. `git-secret-server` is the same decryption
+core exposed as a small, stateless, always-on HTTP service instead — built
+specifically to be the backend behind [External Secrets Operator's generic
+Webhook provider](https://external-secrets.io/latest/provider/webhook/), so
+ESO's own reconcile loop, drift detection, and `Secret` lifecycle management
+work directly against `git-secret`-encrypted values, with **no ArgoCD plugin
+and no third-party secret store** in the picture at all.
+
+### Why this instead of a third-party store, or instead of the CMP plugin
+
+- **Instead of Vault/Infisical/etc.**: those need a whole separate service
+  stood up, secured, and operated — a real dependency this project exists to
+  avoid needing. `git-secret-server` reuses the crypto and key-backend logic
+  this repo already has; the only new piece is a thin HTTP wrapper around
+  code that already exists and is already tested (`DecryptK8sManifest`).
+- **Instead of the ArgoCD CMP plugin** (previous section): a CMP still
+  routes decrypted plaintext through ArgoCD's own manifest-generation
+  pipeline. With `git-secret-server`, ArgoCD only ever applies a plain
+  `ExternalSecret` reference (a different object *kind* than `Secret` — no
+  dual-ownership race to design around); the actual decrypted value is
+  produced once, by this service, when ESO calls it, and never touches
+  ArgoCD's process.
+
+### How it works
+
+Every request gets its **own fresh, isolated `git clone`** into a unique
+temp directory — not a shared checkout kept up to date by a background
+poller. Concurrent requests can never observe each other's half-updated
+tree, every response reflects exactly the remote's current `HEAD`, and
+there's no separate "keep it fresh" process to run or monitor. The tradeoff
+is a clone on every request instead of a cached one — cheap in practice,
+since ESO's own reconcile interval is minutes, not sub-second.
+
+Repository read access reuses **the same deploy key ArgoCD's own
+repo-server already has** — sharing it costs nothing, since the repository
+only ever holds ciphertext; read access to it isn't by itself access to any
+secret value. Decryption uses **its own dedicated GPG identity**, added to
+the repo the same way the CMP section above already documents ("give it its
+own identity"): `git secret adduser <this-service's-fingerprint>` — cheap,
+re-wraps the existing key, no file re-encryption needed. Only the resulting
+private key ever goes into the cluster, as one `Secret`.
+
+```
+GET /decrypt?path=<repo-relative k8s_secret_paths manifest>[&namespace=<override>]
+Authorization: Bearer <token>
+
+200 -> {"KEY": "decrypted value", ...}   (every stringData entry, decrypted)
+401 -> missing/wrong bearer token
+404 -> path not in k8s_secret_paths, or doesn't exist at the current HEAD
+502 -> clone or decryption failed
+```
+
+Designed to be consumed with ESO's `dataFrom.extract` (`jsonPath: "$"`) —
+one call returns the whole decrypted map, matching `DecryptK8sManifest`'s
+own whole-manifest granularity, no per-key reshaping needed. See the
+[chart README](charts/git-secret-server/README.md) for the full `SecretStore`/
+`ExternalSecret` example and required bootstrap `Secret`s.
+
+### Deploy
+
+```bash
+docker build -t git-secret-server .
+# or, in-cluster:
+helm install git-secret-server ./charts/git-secret-server \
+  --set repo.url=git@github.com:you/your-repo.git \
+  --set sshKey.existingSecret=... \
+  --set gpgPrivateKey.existingSecret=... \
+  --set authToken.existingSecret=...
+```
+
+Binaries are also published on each [release](https://github.com/OpScaleHub/git-secret/releases),
+same as `git-secret`/`kubectl-secret`.
+
+### Security posture
+
+This service is a real, new trust boundary: a long-lived, network-reachable
+process holding a live decryption key, compared to the CLI's
+run-once-and-exit model or the CMP sidecar's key-copied-in-for-seconds
+model. Treat it accordingly — it's why `/decrypt` requires a bearer token
+(compared in constant time), why SSH host-key verification is pinned rather
+than trust-on-first-use whenever the target is a known host (GitHub's keys
+are built in), and why it deliberately holds nothing beyond what one request
+needs: a fresh clone per request, cleaned up immediately after, no cached
+plaintext or long-lived checkout anywhere on disk.
+
+The full rationale for this design — including why it exists instead of a third-party
+secret store, and why not a custom Kubernetes controller — is recorded in
+[`docs/adr/0001-eso-webhook-bridge-not-third-party-store-or-controller.md`](docs/adr/0001-eso-webhook-bridge-not-third-party-store-or-controller.md).
+Future architectural changes to this project are recorded the same way — see `docs/adr/`.
 
 ## Publishing & GitHub Pages
 

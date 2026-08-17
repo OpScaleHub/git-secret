@@ -1,0 +1,136 @@
+{{- if not .Values.repo.url }}
+{{- fail "repo.url is required (e.g. git@github.com:org/repo.git)" }}
+{{- end }}
+{{- if not .Values.gpgPrivateKey.existingSecret }}
+{{- fail "gpgPrivateKey.existingSecret is required -- see this chart's README for how to create it" }}
+{{- end }}
+{{- if not .Values.authToken.existingSecret }}
+{{- fail "authToken.existingSecret is required -- see this chart's README for how to create it" }}
+{{- end }}
+{{- if and .Values.repo.useSSHKey (not .Values.sshKey.existingSecret) }}
+{{- fail "sshKey.existingSecret is required when repo.useSSHKey is true (set it to false only for a public HTTPS repo.url)" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "git-secret-server.fullname" . }}
+  labels:
+    {{- include "git-secret-server.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "git-secret-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "git-secret-server.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "git-secret-server.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: git-secret-server
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - --repo-url={{ .Values.repo.url }}
+            {{- if .Values.repo.ref }}
+            - --repo-ref={{ .Values.repo.ref }}
+            {{- end }}
+            - --listen-addr=0.0.0.0:{{ .Values.service.port }}
+            {{- if .Values.repo.useSSHKey }}
+            - --ssh-key-file=/secrets/ssh/ssh-privatekey
+            {{- end }}
+            {{- if .Values.knownHosts.existingSecret }}
+            - --known-hosts-file=/secrets/known-hosts/known_hosts
+            {{- end }}
+            - --gpg-private-key-file=/secrets/gpg/private.asc
+            - --auth-token-file=/secrets/token/token
+            - --clone-timeout={{ .Values.cloneTimeout }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.repo.useSSHKey }}
+            - name: ssh-key
+              mountPath: /secrets/ssh
+              readOnly: true
+            {{- end }}
+            - name: gpg-private-key
+              mountPath: /secrets/gpg
+              readOnly: true
+            - name: auth-token
+              mountPath: /secrets/token
+              readOnly: true
+            {{- if .Values.knownHosts.existingSecret }}
+            - name: known-hosts
+              mountPath: /secrets/known-hosts
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- if .Values.repo.useSSHKey }}
+        - name: ssh-key
+          secret:
+            secretName: {{ .Values.sshKey.existingSecret }}
+            items:
+              - key: {{ .Values.sshKey.existingSecretKey }}
+                path: ssh-privatekey
+                mode: 0400
+        {{- end }}
+        - name: gpg-private-key
+          secret:
+            secretName: {{ .Values.gpgPrivateKey.existingSecret }}
+            items:
+              - key: {{ .Values.gpgPrivateKey.existingSecretKey }}
+                path: private.asc
+                mode: 0400
+        - name: auth-token
+          secret:
+            secretName: {{ .Values.authToken.existingSecret }}
+            items:
+              - key: {{ .Values.authToken.existingSecretKey }}
+                path: token
+                mode: 0400
+        {{- if .Values.knownHosts.existingSecret }}
+        - name: known-hosts
+          secret:
+            secretName: {{ .Values.knownHosts.existingSecret }}
+            items:
+              - key: {{ .Values.knownHosts.existingSecretKey }}
+                path: known_hosts
+                mode: 0400
+        {{- end }}
+        # Each request clones into its own directory under here (see
+        # internal/decryptserver's package doc); an emptyDir keeps that
+        # off any read-only root filesystem and scoped to the pod's own
+        # lifecycle.
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

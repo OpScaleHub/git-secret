@@ -1,0 +1,17 @@
+apiVersion: v2
+name: git-secret-server
+description: >-
+  Stateless HTTP bridge letting External Secrets Operator's generic Webhook
+  provider pull decrypted values out of a git-secret-protected repository.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://git-secret.opscale.ir
+sources:
+  - https://github.com/OpScaleHub/git-secret
+keywords:
+  - secrets
+  - external-secrets-operator
+  - gitops
+maintainers:
+  - name: OpScaleHub
