@@ -1,11 +1,16 @@
 // Package gitutil wraps the small set of `git` subcommands the CLI needs
 // to stage encrypted blobs, inspect committed content, and locate hooks —
-// without touching the working tree file that the user actually sees.
+// without touching the working tree file that the user actually sees. It
+// also provides Clone/CloneContext for callers (e.g. git-secret-server)
+// that need their own fresh, independent checkout rather than assuming
+// one already exists at the current working directory.
 package gitutil
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -19,6 +24,117 @@ func RepoRoot() (string, error) {
 		return "", fmt.Errorf("gitutil: not inside a git repository: %w", err)
 	}
 	return strings.TrimSpace(out), nil
+}
+
+// RepoRootAt is RepoRoot for an explicit directory rather than the
+// current working directory. A long-running process handling concurrent
+// requests against a repo it clones itself (rather than one a human is
+// sitting in) must use this instead of RepoRoot — RepoRoot's discovery
+// depends on the process's single, global working directory, which is
+// unsafe to rely on once more than one request can be in flight at once.
+func RepoRootAt(dir string) (string, error) {
+	out, err := run(&dir, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", fmt.Errorf("gitutil: not inside a git repository: %w", err)
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// CloneOptions configures Clone/CloneContext.
+type CloneOptions struct {
+	// URL is the repository to clone (any URL `git clone` accepts).
+	URL string
+	// Ref is the branch or tag to check out. Empty uses the remote's
+	// default branch.
+	Ref string
+	// Dir is the destination directory. git-clone fails if it already
+	// exists and is non-empty, so callers needing a guaranteed-fresh
+	// checkout should pass a not-yet-existing path (e.g. from
+	// os.MkdirTemp) rather than reusing one across calls.
+	Dir string
+	// SSHKeyPath, if set, is used as the *sole* SSH identity for the
+	// clone (via GIT_SSH_COMMAND -o IdentitiesOnly=yes), instead of
+	// whatever the ambient ssh-agent or default ~/.ssh identity would
+	// otherwise offer. Leave empty to clone over HTTPS or to use the
+	// ambient SSH configuration unchanged.
+	SSHKeyPath string
+	// KnownHostsPath, if set, pins SSH host-key verification to
+	// exactly this file (via -o UserKnownHostsFile=... -o
+	// StrictHostKeyChecking=yes) instead of the ambient
+	// ~/.ssh/known_hosts. Ignored unless SSHKeyPath is also set.
+	//
+	// Callers talking to a host whose key is already known ahead of
+	// time (e.g. GitHub, which publishes its host keys) should always
+	// set this rather than rely on the accept-new fallback below —
+	// accept-new trusts whatever key the server presents on the very
+	// first connection, which is exactly the connection a
+	// machine-in-the-middle attack would target.
+	KnownHostsPath string
+}
+
+// Clone is CloneContext with context.Background().
+func Clone(opts CloneOptions) error {
+	return CloneContext(context.Background(), opts)
+}
+
+// CloneContext performs a shallow (--depth 1), single-branch clone of
+// opts.URL into opts.Dir, cancelable via ctx. Unlike every other
+// function in this package, it doesn't operate against an
+// already-checked-out repo — it's the one operation a long-running
+// process (e.g. git-secret-server) needs to obtain its own independent
+// checkout in the first place.
+func CloneContext(ctx context.Context, opts CloneOptions) error {
+	args := []string{"clone", "--depth", "1", "--single-branch"}
+	if opts.Ref != "" {
+		args = append(args, "--branch", opts.Ref)
+	}
+	args = append(args, opts.URL, opts.Dir)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if opts.SSHKeyPath != "" {
+		cmd.Env = append(os.Environ(), "GIT_SSH_COMMAND="+sshCommand(opts.SSHKeyPath, opts.KnownHostsPath))
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gitutil: clone %s: %v: %s", opts.URL, err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+// sshCommand builds a GIT_SSH_COMMAND value pinning the clone to exactly
+// one identity (IdentitiesOnly=yes — never fall back to an ambient
+// ssh-agent or ~/.ssh/id_*, since the whole point of a narrowly-scoped
+// service credential is that it's the *only* thing this process can
+// authenticate as) and, when knownHostsPath is given, to exactly one set
+// of trusted host keys. GIT_SSH_COMMAND's value is itself parsed as a
+// shell command by git, so every path is single-quoted rather than
+// interpolated raw.
+func sshCommand(keyPath, knownHostsPath string) string {
+	parts := []string{"ssh", "-i", shellQuote(keyPath), "-o", "IdentitiesOnly=yes"}
+	if knownHostsPath != "" {
+		parts = append(parts, "-o", "UserKnownHostsFile="+shellQuote(knownHostsPath), "-o", "StrictHostKeyChecking=yes")
+	} else {
+		// No pinned host key supplied — refuse to silently trust an
+		// already-known-but-changed host key, but still allow (and
+		// cache) an unknown one on first contact. Weaker than a pinned
+		// KnownHostsPath: callers talking to a host with published
+		// keys (GitHub) should supply one instead of relying on this.
+		parts = append(parts, "-o", "StrictHostKeyChecking=accept-new")
+	}
+	return strings.Join(parts, " ")
+}
+
+// shellQuote wraps s in single quotes for safe use inside the shell
+// command string GIT_SSH_COMMAND is parsed as, escaping any embedded
+// single quote. The paths passed through this package are always
+// process-generated (temp dirs, mounted Secret paths) rather than
+// attacker-influenced, but quoting costs nothing and matches this
+// codebase's general practice of not interpolating unescaped data into
+// a shell command string.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // HooksDir returns the directory git will look in for hooks, honoring

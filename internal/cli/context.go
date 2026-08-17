@@ -30,6 +30,24 @@ func Load() (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadFrom(root)
+}
+
+// LoadAt is Load for an explicit repo directory rather than the current
+// working directory. A long-running process handling concurrent
+// requests against a repo it clones itself (e.g. git-secret-server)
+// must use this instead of Load — Load's repo-root discovery depends on
+// the process's single, global working directory, which concurrent
+// requests can't safely share.
+func LoadAt(dir string) (*Context, error) {
+	root, err := gitutil.RepoRootAt(dir)
+	if err != nil {
+		return nil, err
+	}
+	return loadFrom(root)
+}
+
+func loadFrom(root string) (*Context, error) {
 	cfg, err := config.Load(root)
 	if err != nil {
 		return nil, err
