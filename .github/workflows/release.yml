@@ -6,6 +6,15 @@ on:
       - 'v*' # Trigger on version tags like v1.0.0, v0.1.0
 
 jobs:
+  # Client-side tools only: git-secret, kubectl-secret, git-secret-seal --
+  # things a human or a CI job runs directly on their own machine, so a
+  # real cross-platform matrix earns its keep here. git-secret-server and
+  # git-secret-controller are the opposite case -- pure Kubernetes
+  # server-side components that only ever run inside their container
+  # image, never as a downloaded native binary on someone's laptop -- see
+  # build-and-release-server below, which builds those two for Linux
+  # only (matching the container images' own linux/amd64+arm64 platform
+  # set), not this full matrix.
   build-and-release:
     name: Build and Release
     runs-on: ubuntu-latest
@@ -67,14 +76,6 @@ jobs:
           go build -v -o "${KUBECTL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/kubectl-secret
           echo "KUBECTL_ASSET_PATH=${KUBECTL_OUTPUT_NAME}" >> $GITHUB_ENV
 
-          SERVER_OUTPUT_NAME="git-secret-server-${GOOS}-${GOARCH}${EXT}"
-          go build -v -o "${SERVER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-server
-          echo "SERVER_ASSET_PATH=${SERVER_OUTPUT_NAME}" >> $GITHUB_ENV
-
-          CONTROLLER_OUTPUT_NAME="git-secret-controller-${GOOS}-${GOARCH}${EXT}"
-          go build -v -o "${CONTROLLER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-controller
-          echo "CONTROLLER_ASSET_PATH=${CONTROLLER_OUTPUT_NAME}" >> $GITHUB_ENV
-
           SEAL_OUTPUT_NAME="git-secret-seal-${GOOS}-${GOARCH}${EXT}"
           go build -v -o "${SEAL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-seal
           echo "SEAL_ASSET_PATH=${SEAL_OUTPUT_NAME}" >> $GITHUB_ENV
@@ -83,8 +84,6 @@ jobs:
         run: |
           sha256sum "${{ env.ASSET_PATH }}" > "${{ env.ASSET_PATH }}.sha256"
           sha256sum "${{ env.KUBECTL_ASSET_PATH }}" > "${{ env.KUBECTL_ASSET_PATH }}.sha256"
-          sha256sum "${{ env.SERVER_ASSET_PATH }}" > "${{ env.SERVER_ASSET_PATH }}.sha256"
-          sha256sum "${{ env.CONTROLLER_ASSET_PATH }}" > "${{ env.CONTROLLER_ASSET_PATH }}.sha256"
           sha256sum "${{ env.SEAL_ASSET_PATH }}" > "${{ env.SEAL_ASSET_PATH }}.sha256"
 
       - name: Upload Release Asset
@@ -96,15 +95,71 @@ jobs:
             ${{ env.ASSET_PATH }}.sha256
             ${{ env.KUBECTL_ASSET_PATH }}
             ${{ env.KUBECTL_ASSET_PATH }}.sha256
-            ${{ env.SERVER_ASSET_PATH }}
-            ${{ env.SERVER_ASSET_PATH }}.sha256
-            ${{ env.CONTROLLER_ASSET_PATH }}
-            ${{ env.CONTROLLER_ASSET_PATH }}.sha256
             ${{ env.SEAL_ASSET_PATH }}
             ${{ env.SEAL_ASSET_PATH }}.sha256
           # The release will be created automatically if it doesn't exist,
           # using the tag name as the release name.
           # You can customize release notes, etc. here if needed.
+
+  # git-secret-server and git-secret-controller: Linux only, matching the
+  # container images' own linux/amd64+arm64 platform set. Their real,
+  # supported distribution artifact is the container image + Helm chart
+  # below -- these standalone binaries exist only as a debugging/local-
+  # dev convenience (e.g. running the controller directly against a kind
+  # cluster without rebuilding an image each time), not as something
+  # meant to run outside a Linux/Kubernetes environment.
+  build-and-release-server:
+    name: Build and Release (server components, Linux only)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    strategy:
+      matrix:
+        goarch: [amd64, arm64]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build binaries
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "Refusing to build: tag '$VERSION' doesn't match vX.Y.Z or vX.Y.Z-suffix" >&2
+            exit 1
+          fi
+
+          GOOS=linux
+          SERVER_OUTPUT_NAME="git-secret-server-linux-${GOARCH}"
+          go build -v -o "${SERVER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-server
+          echo "SERVER_ASSET_PATH=${SERVER_OUTPUT_NAME}" >> $GITHUB_ENV
+
+          CONTROLLER_OUTPUT_NAME="git-secret-controller-linux-${GOARCH}"
+          go build -v -o "${CONTROLLER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-controller
+          echo "CONTROLLER_ASSET_PATH=${CONTROLLER_OUTPUT_NAME}" >> $GITHUB_ENV
+
+      - name: Checksum binaries
+        run: |
+          sha256sum "${{ env.SERVER_ASSET_PATH }}" > "${{ env.SERVER_ASSET_PATH }}.sha256"
+          sha256sum "${{ env.CONTROLLER_ASSET_PATH }}" > "${{ env.CONTROLLER_ASSET_PATH }}.sha256"
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            ${{ env.SERVER_ASSET_PATH }}
+            ${{ env.SERVER_ASSET_PATH }}.sha256
+            ${{ env.CONTROLLER_ASSET_PATH }}
+            ${{ env.CONTROLLER_ASSET_PATH }}.sha256
 
   docker-release:
     name: Build & push git-secret-server image
