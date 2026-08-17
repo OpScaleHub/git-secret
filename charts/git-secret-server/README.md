@@ -6,11 +6,46 @@ git-secret-protected repository — no third-party secret store, no ArgoCD
 plugin. See the main [README](../../README.md#git-secret-server) for the full
 architecture and why it's shaped this way.
 
+## Namespace
+
+**Recommended: install `git-secret-server` into the same namespace External Secrets
+Operator itself runs in** (commonly `external-secrets`, ESO's own chart's default).
+This is a small, single-purpose platform service — not a per-app workload — so it
+belongs alongside the platform component that's its only real caller, the same way
+you wouldn't normally split `cert-manager` or `argocd` across namespaces from their
+own controllers either.
+
+The chart's default `networkPolicy.allowFrom` assumes this: it uses a bare
+`podSelector` (no `namespaceSelector`), which Kubernetes scopes to same-namespace
+pods only — simpler and tighter than an explicit `namespaceSelector: {}`, which
+would match every namespace in the cluster.
+
+If ESO runs in a different namespace than `git-secret-server`, override
+`networkPolicy.allowFrom` with an explicit namespace-name match instead — every
+namespace gets an automatic `kubernetes.io/metadata.name` label since Kubernetes
+1.21, so this needs no extra labeling step on the ESO namespace itself:
+
+```yaml
+networkPolicy:
+  allowFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: external-secrets  # the namespace ESO runs in
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: external-secrets
+```
+
+Never set `namespaceSelector: {}` on its own — an empty selector matches every
+namespace, which defeats the point of scoping this at all.
+
 ## Before installing
 
 This chart never accepts secret material in `values.yaml` — only references
 to `Secret`s you create yourself, out-of-band. Create three (a fourth is
-optional):
+optional) — in whichever namespace you're installing into (`-n external-secrets`
+per the recommendation above; every command below omits it for brevity, add it
+to match wherever you're actually deploying):
 
 ```bash
 # 1. Repo read access — reusing the same deploy key ArgoCD's own
@@ -41,7 +76,11 @@ kubectl create secret generic git-secret-server-known-hosts \
 ## Install
 
 ```bash
+# --namespace external-secrets: install alongside ESO, per the
+# "Namespace" section above -- adjust if ESO runs somewhere else, and
+# override networkPolicy.allowFrom to match (see that section).
 helm install git-secret-server . \
+  --namespace external-secrets \
   --set repo.url=git@github.com:OpScaleLab/nuc-lab-operation.git \
   --set sshKey.existingSecret=git-secret-server-ssh \
   --set gpgPrivateKey.existingSecret=git-secret-server-gpg \
