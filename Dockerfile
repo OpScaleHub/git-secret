@@ -24,8 +24,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN useradd --system --create-home --home-dir /home/git-secret-server --shell /usr/sbin/nologin git-secret-server
-USER git-secret-server
+# Explicit numeric UID/GID, not just a named user: Kubernetes'
+# runAsNonRoot: true (set by this project's own Helm chart) has to
+# verify non-root *statically*, from the image alone, without running
+# anything -- a USER directive that names an account rather than a
+# numeric ID fails that check ("cannot verify user is non-root"), even
+# though the account itself is genuinely non-root.
+RUN groupadd --system --gid 1000 git-secret-server \
+    && useradd --system --uid 1000 --gid 1000 --create-home --home-dir /home/git-secret-server --shell /usr/sbin/nologin git-secret-server
+USER 1000:1000
 WORKDIR /home/git-secret-server
 
 COPY --from=build /out/git-secret-server /usr/local/bin/git-secret-server
