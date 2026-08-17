@@ -34,3 +34,24 @@ jobs:
 
       - name: Test
         run: go test ./... -v
+
+  chart:
+    name: Lint & render Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: helm lint
+        run: helm lint ./charts/git-secret-server
+
+      - name: helm template (with required values set, to render every template)
+        run: |
+          helm template test ./charts/git-secret-server \
+            --set repo.url=git@github.com:example/repo.git \
+            --set sshKey.existingSecret=dummy-ssh \
+            --set gpgPrivateKey.existingSecret=dummy-gpg \
+            --set authToken.existingSecret=dummy-token
