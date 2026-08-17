@@ -72,11 +72,19 @@ resources:
 # whatever matches networkPolicy.allowFrom (the ESO controller, so it
 # can call /decrypt) and nothing else. Requires a CNI that enforces
 # NetworkPolicy.
+#
+# This default assumes the recommended deployment shape (see the chart
+# README's "Namespace" section): git-secret-server installed into the
+# SAME namespace External Secrets Operator itself runs in. Omitting
+# namespaceSelector here scopes the match to same-namespace pods only —
+# both simpler and tighter than an explicit namespaceSelector: {},
+# which matches every namespace in the cluster. If ESO runs in a
+# different namespace, override this with an explicit namespace-name
+# match instead of {} — see the chart README for that example.
 networkPolicy:
   enabled: true
   allowFrom:
-    - namespaceSelector: {}
-      podSelector:
+    - podSelector:
         matchLabels:
           app.kubernetes.io/name: external-secrets
 
