@@ -531,6 +531,53 @@ secret store, and why not a custom Kubernetes controller — is recorded in
 [`docs/adr/0001-eso-webhook-bridge-not-third-party-store-or-controller.md`](docs/adr/0001-eso-webhook-bridge-not-third-party-store-or-controller.md).
 Future architectural changes to this project are recorded the same way — see `docs/adr/`.
 
+## GitSecret CRD (git-secret-controller)
+
+A second, alternative Kubernetes integration, alongside `git-secret-server`
+above rather than replacing it: a native `GitSecret` custom resource
+(`git-secret.opscalehub.io/v1alpha1`) whose ciphertext lives **inline in the
+object itself** — no repo clone, no SSH transport, no network hop at all in
+the decrypt path. Delivered by whatever already applies manifests to your
+cluster (ArgoCD, `kubectl apply`, ...), the same way any other Kubernetes
+object gets there. Modeled on Bitnami `sealed-secrets`' shape, but built on
+`git-secret`'s existing multi-recipient GPG cryptography instead of a single
+controller keypair — see
+[`docs/adr/0002-native-crd-controller.md`](docs/adr/0002-native-crd-controller.md)
+for the full comparison and why both integrations are worth having.
+
+```bash
+# Seal plaintext into a GitSecret manifest (the kubeseal equivalent):
+git-secret-seal --namespace myapp --name my-secrets \
+  --recipient <controller-fingerprint> --recipient <your-own-fingerprint> \
+  --from-literal API_KEY=... --from-literal DB_PASSWORD=... > gitsecret.yaml
+
+kubectl apply -f gitsecret.yaml   # git-secret-controller reconciles it into a plain Secret
+
+# Add/remove a recipient later without re-encrypting any value:
+git-secret-seal --rewrap gitsecret.yaml \
+  --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
+```
+
+Every `--recipient` must be a full 40/64-hex GPG fingerprint, not a short key
+ID or an email address — `git-secret-seal` rejects anything else, the same
+rule `.repo-enc.yml`'s `gpg_recipients` already enforces (see
+[`gpgutil.ValidFingerprint`](internal/gpgutil/gpgutil.go)'s doc comment for
+why: a short ID or email is ambiguous and locally resolvable, a fingerprint
+isn't). `gpg --list-secret-keys --with-colons` (or `gpg -K`) prints yours.
+
+`git-secret-controller` needs its own dedicated GPG identity, imported at
+startup the same way `git-secret-server` imports its repo-decryption key
+(`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, isolated `GNUPGHOME`, key
+zeroed from memory once imported). Install the CRD from
+`config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml` before running
+the controller.
+
+This integration is new and not yet packaged the way `git-secret-server` is
+(no Helm chart, container image, or CI/release wiring yet — tracked in
+[git-secret#34](https://github.com/OpScaleHub/git-secret/issues/34)). Build
+both binaries locally with `go build ./cmd/git-secret-controller` and
+`go build ./cmd/git-secret-seal` in the meantime.
+
 ## Publishing & GitHub Pages
 
 The project website is published at: [https://git-secret.opscale.ir](https://git-secret.opscale.ir)
