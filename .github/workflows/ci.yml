@@ -46,7 +46,9 @@ jobs:
         uses: azure/setup-helm@v4
 
       - name: helm lint
-        run: helm lint ./charts/git-secret-server
+        run: |
+          helm lint ./charts/git-secret-server
+          helm lint ./charts/git-secret-controller
 
       - name: helm template (with required values set, to render every template)
         run: |
@@ -55,3 +57,6 @@ jobs:
             --set sshKey.existingSecret=dummy-ssh \
             --set gpgPrivateKey.existingSecret=dummy-gpg \
             --set authToken.existingSecret=dummy-token
+          helm template test ./charts/git-secret-controller \
+            --set gpgPrivateKey.existingSecret=dummy-gpg \
+            --include-crds

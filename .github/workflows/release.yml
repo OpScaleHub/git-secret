@@ -71,11 +71,21 @@ jobs:
           go build -v -o "${SERVER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-server
           echo "SERVER_ASSET_PATH=${SERVER_OUTPUT_NAME}" >> $GITHUB_ENV
 
+          CONTROLLER_OUTPUT_NAME="git-secret-controller-${GOOS}-${GOARCH}${EXT}"
+          go build -v -o "${CONTROLLER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-controller
+          echo "CONTROLLER_ASSET_PATH=${CONTROLLER_OUTPUT_NAME}" >> $GITHUB_ENV
+
+          SEAL_OUTPUT_NAME="git-secret-seal-${GOOS}-${GOARCH}${EXT}"
+          go build -v -o "${SEAL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-seal
+          echo "SEAL_ASSET_PATH=${SEAL_OUTPUT_NAME}" >> $GITHUB_ENV
+
       - name: Checksum binaries
         run: |
           sha256sum "${{ env.ASSET_PATH }}" > "${{ env.ASSET_PATH }}.sha256"
           sha256sum "${{ env.KUBECTL_ASSET_PATH }}" > "${{ env.KUBECTL_ASSET_PATH }}.sha256"
           sha256sum "${{ env.SERVER_ASSET_PATH }}" > "${{ env.SERVER_ASSET_PATH }}.sha256"
+          sha256sum "${{ env.CONTROLLER_ASSET_PATH }}" > "${{ env.CONTROLLER_ASSET_PATH }}.sha256"
+          sha256sum "${{ env.SEAL_ASSET_PATH }}" > "${{ env.SEAL_ASSET_PATH }}.sha256"
 
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
@@ -88,6 +98,10 @@ jobs:
             ${{ env.KUBECTL_ASSET_PATH }}.sha256
             ${{ env.SERVER_ASSET_PATH }}
             ${{ env.SERVER_ASSET_PATH }}.sha256
+            ${{ env.CONTROLLER_ASSET_PATH }}
+            ${{ env.CONTROLLER_ASSET_PATH }}.sha256
+            ${{ env.SEAL_ASSET_PATH }}
+            ${{ env.SEAL_ASSET_PATH }}.sha256
           # The release will be created automatically if it doesn't exist,
           # using the tag name as the release name.
           # You can customize release notes, etc. here if needed.
@@ -145,6 +159,51 @@ jobs:
             ghcr.io/${{ env.OWNER_LC }}/git-secret-server:${{ github.ref_name }}
             ghcr.io/${{ env.OWNER_LC }}/git-secret-server:latest
 
+  docker-release-controller:
+    name: Build & push git-secret-controller image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Needed to push to GHCR
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate tag
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "Refusing to build: tag '$VERSION' doesn't match vX.Y.Z or vX.Y.Z-suffix" >&2
+            exit 1
+          fi
+
+      - name: Compute lowercase image owner
+        run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.controller
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/git-secret-controller:${{ github.ref_name }}
+            ghcr.io/${{ env.OWNER_LC }}/git-secret-controller:latest
+
   chart-release:
     name: Package & push Helm chart
     runs-on: ubuntu-latest
@@ -190,3 +249,42 @@ jobs:
             --app-version "$VERSION" \
             --destination /tmp
           helm push "/tmp/git-secret-server-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ env.OWNER_LC }}/charts"
+
+  chart-release-controller:
+    name: Package & push git-secret-controller Helm chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # Needed to push to GHCR (OCI)
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate tag
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$'; then
+            echo "Refusing to package: tag '$VERSION' doesn't match vX.Y.Z or vX.Y.Z-suffix" >&2
+            exit 1
+          fi
+
+      - name: Compute lowercase image owner
+        run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Package and push
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          CHART_VERSION="${VERSION#v}"
+          helm package ./charts/git-secret-controller \
+            --version "$CHART_VERSION" \
+            --app-version "$VERSION" \
+            --destination /tmp
+          helm push "/tmp/git-secret-controller-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ env.OWNER_LC }}/charts"
