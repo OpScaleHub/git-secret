@@ -1,0 +1,29 @@
+git-secret-server is running as {{ include "git-secret-server.fullname" . }} in {{ .Release.Namespace }}.
+
+Point an ESO SecretStore at it, e.g.:
+
+  apiVersion: external-secrets.io/v1
+  kind: SecretStore
+  metadata:
+    name: git-secret-server
+    namespace: {{ .Release.Namespace }}
+  spec:
+    provider:
+      webhook:
+        url: "http://{{ include "git-secret-server.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}/decrypt?path={{ "{{" }} .remoteRef.key {{ "}}" }}"
+        headers:
+          Authorization: "Bearer {{ "{{" }} .auth.token {{ "}}" }}"
+        secrets:
+          - name: auth
+            secretRef:
+              name: {{ .Values.authToken.existingSecret }}
+        result:
+          jsonPath: "$"
+
+Then reference it from an ExternalSecret's dataFrom.extract with
+remoteRef.key set to the repo-relative path of a manifest listed in
+k8s_secret_paths — see this chart's README for the full example.
+
+Check it's healthy:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "git-secret-server.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  curl http://localhost:{{ .Values.service.port }}/healthz

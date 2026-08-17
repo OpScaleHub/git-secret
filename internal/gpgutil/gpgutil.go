@@ -158,6 +158,20 @@ func Encrypt(plaintext []byte, recipients []string) ([]byte, error) {
 	return out, nil
 }
 
+// ImportSecretKey imports an armored private key (and any public keys
+// bundled with it) into the current GNUPGHOME, so this process's own
+// gpg (and gpg-agent) can subsequently decrypt blobs wrapped to it.
+// Intended for a process's one-time startup import (e.g.
+// git-secret-server importing its own dedicated identity from a
+// mounted Secret) into an isolated, process-private GNUPGHOME set up
+// by the caller — never the operator's own keyring.
+func ImportSecretKey(armored []byte) error {
+	if _, err := run(armored, "--batch", "--import"); err != nil {
+		return fmt.Errorf("gpgutil: import secret key: %w", err)
+	}
+	return nil
+}
+
 // run executes gpg with args, piping stdin (if non-nil) and capturing
 // stdout/stderr. --trust-model always (on Encrypt) bypasses gpg's own
 // web-of-trust confirmation prompt, which would otherwise hang forever
