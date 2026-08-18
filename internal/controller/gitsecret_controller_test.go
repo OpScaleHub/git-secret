@@ -151,6 +151,105 @@ func TestReconcile_CreatesTargetSecret(t *testing.T) {
 	}
 }
 
+// TestReconcile_RevertsDriftOnOwnedSecret is the reconciliation/drift-
+// correction property asked about directly: if the target Secret is
+// edited out-of-band (kubectl patch/edit, or anything else), the next
+// reconcile must revert it back to match the GitSecret's decrypted
+// content -- self-healing equivalent to what ArgoCD's own automated
+// sync already provides elsewhere in this stack, but driven by this
+// controller's own Owns(&corev1.Secret{}) watch (see SetupWithManager),
+// not a poll interval.
+//
+// This test alone would NOT have caught the real bug this exact
+// scenario surfaced: a real apiserver merges StringData into the
+// existing Data map rather than replacing it, so an out-of-band key
+// added directly to .data survived every reconcile indefinitely until
+// Reconcile started clearing secret.Data before setting StringData.
+// The fake client used here doesn't reproduce that merge semantics at
+// all (Data comes back nil, StringData round-trips as given), so this
+// test's EXTRA_KEY_NOT_IN_GITSECRET assertion passes regardless of
+// whether that fix is present. Caught instead by testing the real
+// controller against a real cluster with a real out-of-band `kubectl
+// patch` -- kept here as a regression test for the reconcile logic
+// itself, not as proof of the apiserver-merge behavior.
+func TestReconcile_RevertsDriftOnOwnedSecret(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	spec, err := sealer.Seal("downtime", "downtime-secrets", map[string]string{
+		"USERNAME": "admin",
+		"PASSWORD": "hunter2",
+	}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+
+	gs := &gitsecretv1alpha1.GitSecret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime"},
+		Spec:       spec,
+	}
+	scheme := newScheme(t)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(gs).
+		WithStatusSubresource(&gitsecretv1alpha1.GitSecret{}).
+		Build()
+
+	r := &GitSecretReconciler{Client: fakeClient}
+	req := ctrl.Request{NamespacedName: namespacedName("downtime", "downtime-secrets")}
+
+	// First reconcile: establishes the correct baseline.
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("initial Reconcile: %v", err)
+	}
+
+	// Simulate exactly what the question asked: something changes an
+	// arbitrary value directly on the live target Secret, bypassing the
+	// GitSecret entirely -- e.g. a `kubectl patch`/`kubectl edit`, or a
+	// bug in some other controller that also happens to touch it.
+	var drifted corev1.Secret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &drifted); err != nil {
+		t.Fatal(err)
+	}
+	// The fake client (unlike a real apiserver's admission) doesn't
+	// merge StringData into Data on read-back, so Data may come back
+	// nil here even though a real cluster would have it populated --
+	// write via StringData to match how CreateOrUpdate itself sets
+	// values, keeping this test meaningful against both.
+	if drifted.StringData == nil {
+		drifted.StringData = map[string]string{}
+	}
+	drifted.StringData["USERNAME"] = "attacker-controlled-or-just-wrong"
+	drifted.StringData["EXTRA_KEY_NOT_IN_GITSECRET"] = "should not survive either"
+	if err := fakeClient.Update(context.Background(), &drifted); err != nil {
+		t.Fatalf("simulate drift: %v", err)
+	}
+
+	// In a real cluster this second reconcile is triggered automatically
+	// by the Owns(&corev1.Secret{}) watch firing on the Update above --
+	// the fake client here doesn't run that watch loop, so the test
+	// calls Reconcile directly to exercise the same code path a real
+	// watch-triggered reconcile would run.
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("drift-correcting Reconcile: %v", err)
+	}
+
+	var corrected corev1.Secret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &corrected); err != nil {
+		t.Fatal(err)
+	}
+	if corrected.StringData["USERNAME"] != "admin" {
+		t.Errorf("USERNAME not reverted: got %q, want %q", corrected.StringData["USERNAME"], "admin")
+	}
+	if corrected.StringData["PASSWORD"] != "hunter2" {
+		t.Errorf("PASSWORD not reverted: got %q, want %q", corrected.StringData["PASSWORD"], "hunter2")
+	}
+	if _, stillPresent := corrected.StringData["EXTRA_KEY_NOT_IN_GITSECRET"]; stillPresent {
+		t.Error("out-of-band key survived reconcile -- CreateOrUpdate's mutate function must fully replace StringData, not merge into existing data")
+	}
+}
+
 func TestReconcile_WrongKeyReportsFailureWithoutCreatingSecret(t *testing.T) {
 	sealingHome := shortTempDir(t)
 	sealFpr := genTestKey(t, sealingHome)

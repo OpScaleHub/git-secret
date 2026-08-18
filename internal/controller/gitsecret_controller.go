@@ -86,6 +86,20 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if secret.Type == "" {
 			secret.Type = corev1.SecretTypeOpaque
 		}
+		// Kubernetes' apiserver *merges* StringData into the existing
+		// Data map on write -- it does not clear keys already present
+		// in Data that StringData doesn't mention. Left alone, that
+		// means a key injected directly into .data out-of-band (a
+		// `kubectl patch`, a bug in something else touching this
+		// Secret) survives every reconcile forever, silently, since
+		// CreateOrUpdate only ever adds/overwrites the keys this
+		// GitSecret actually declares. Clearing Data first forces every
+		// reconcile to produce a full mirror of gs.Spec.EncryptedData,
+		// not a merge on top of whatever was already there -- confirmed
+		// necessary by testing this drift-correction path against a
+		// real cluster, not just the fake client (which doesn't
+		// reproduce the apiserver's StringData-merge behavior at all).
+		secret.Data = nil
 		secret.StringData = data
 		// Owning the target Secret (rather than ESO's adopt-in-place
 		// Merge/Retain pattern) is deliberate here: a GitSecret created
