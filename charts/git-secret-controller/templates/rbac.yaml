@@ -1,0 +1,73 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "git-secret-controller.fullname" . }}
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["git-secret.opscalehub.io"]
+    resources: ["gitsecrets"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["git-secret.opscalehub.io"]
+    resources: ["gitsecrets/status"]
+    verbs: ["get", "update", "patch"]
+  # Cluster-scoped: the controller watches GitSecret objects in every
+  # namespace by default (see internal/controller.SetupWithManager),
+  # matching how a target Secret can live in any namespace a GitSecret
+  # names. Scope this down to a Role/RoleBinding per namespace instead
+  # if your cluster needs the controller restricted to specific ones --
+  # not wired up by this chart today.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "git-secret-controller.fullname" . }}
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "git-secret-controller.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-secret-controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- if .Values.leaderElection.enabled }}
+---
+# Leader election only needs Lease access in the controller's own
+# namespace -- a plain Role/RoleBinding, not cluster-scoped.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "git-secret-controller.fullname" . }}-leader-election
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "git-secret-controller.fullname" . }}-leader-election
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "git-secret-controller.fullname" . }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "git-secret-controller.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

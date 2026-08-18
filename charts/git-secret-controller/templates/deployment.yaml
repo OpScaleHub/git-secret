@@ -1,0 +1,84 @@
+{{- if not .Values.gpgPrivateKey.existingSecret }}
+{{- fail "gpgPrivateKey.existingSecret is required -- see this chart's README for how to create it" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "git-secret-controller.fullname" . }}
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "git-secret-controller.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "git-secret-controller.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "git-secret-controller.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: git-secret-controller
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          args:
+            - --gpg-private-key-file=/secrets/gpg/private.asc
+            - --metrics-bind-address=:{{ .Values.metrics.port }}
+            - --health-probe-bind-address=:{{ .Values.healthProbe.port }}
+            {{- if .Values.leaderElection.enabled }}
+            - --leader-elect
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+            - name: healthz
+              containerPort: {{ .Values.healthProbe.port }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: gpg-private-key
+              mountPath: /secrets/gpg
+              readOnly: true
+            # The controller imports its GPG key into an isolated,
+            # process-private GNUPGHOME under a temp dir at startup (see
+            # cmd/git-secret-controller) -- an emptyDir keeps that off
+            # the otherwise read-only root filesystem.
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: gpg-private-key
+          secret:
+            secretName: {{ .Values.gpgPrivateKey.existingSecret }}
+            items:
+              - key: {{ .Values.gpgPrivateKey.existingSecretKey }}
+                path: private.asc
+                mode: 0400
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

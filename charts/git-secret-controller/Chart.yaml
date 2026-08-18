@@ -1,0 +1,19 @@
+apiVersion: v2
+name: git-secret-controller
+description: >-
+  Controller for the GitSecret CRD: reconciles GPG-wrapped ciphertext
+  carried inline in the object into a plain Kubernetes Secret, with no
+  repo clone and no network hop in the decrypt path.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://git-secret.opscale.ir
+sources:
+  - https://github.com/OpScaleHub/git-secret
+keywords:
+  - secrets
+  - kubernetes-operator
+  - custom-resource-definition
+  - gitops
+maintainers:
+  - name: OpScaleHub

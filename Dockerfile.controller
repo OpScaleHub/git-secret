@@ -1,0 +1,40 @@
+# git-secret-controller: reconciles GitSecret objects (api/v1alpha1) into
+# plain Kubernetes Secrets. See internal/controller for the reconcile
+# logic and the README's "GitSecret CRD" section for deployment.
+
+FROM golang:1.25-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/git-secret-controller ./cmd/git-secret-controller
+
+# gpg is a real runtime dependency, not build-time-only -- the
+# controller shells out to it on every reconcile (see internal/gpgutil)
+# -- so this can't be a from-scratch/distroless-static image. Unlike
+# git-secret-server, this controller never clones a repository, so
+# neither git nor an SSH client is needed here at all.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gnupg \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Explicit numeric UID/GID, not just a named user: Kubernetes'
+# runAsNonRoot: true (set by this project's own Helm chart) has to
+# verify non-root *statically*, from the image alone, without running
+# anything -- a USER directive that names an account rather than a
+# numeric ID fails that check, even though the account itself is
+# genuinely non-root. (git-secret-server's Dockerfile originally got
+# this wrong; fixed there first, so this one starts correct.)
+RUN groupadd --system --gid 1000 git-secret-controller \
+    && useradd --system --uid 1000 --gid 1000 --create-home --home-dir /home/git-secret-controller --shell /usr/sbin/nologin git-secret-controller
+USER 1000:1000
+WORKDIR /home/git-secret-controller
+
+COPY --from=build /out/git-secret-controller /usr/local/bin/git-secret-controller
+
+EXPOSE 8443 8081
+ENTRYPOINT ["/usr/local/bin/git-secret-controller"]

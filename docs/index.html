@@ -4,8 +4,8 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>git-secret — plaintext on disk, ciphertext in history</title>
-<meta name="description" content="git-secret transparently encrypts pattern-matched files in a git repository via installed hooks — modern AEAD crypto, no GPG required, one cross-platform binary. Now with git-secret-server: a Helm-deployable webhook bridge so External Secrets Operator can pull decrypted values straight out of your repo, no third-party secret store." />
-<meta name="keywords" content="git-secret, secrets management, git encryption, GitOps secrets, Kubernetes secrets, External Secrets Operator, ArgoCD, kubectl plugin, GPG, AEAD encryption" />
+<meta name="description" content="git-secret transparently encrypts pattern-matched files in a git repository via installed hooks — modern AEAD crypto, no GPG required, one cross-platform binary. Ships GitSecret: a native Kubernetes CRD and controller with ciphertext inline in the object and no repo clone at all. No third-party secret store." />
+<meta name="keywords" content="git-secret, secrets management, git encryption, GitOps secrets, Kubernetes secrets, ArgoCD, kubectl plugin, GPG, AEAD encryption, Custom Resource Definition, Kubernetes controller, sealed-secrets" />
 <meta name="robots" content="index, follow" />
 <meta name="author" content="OpScaleHub" />
 <meta name="theme-color" content="#10151A" />
@@ -16,19 +16,19 @@
 <meta property="og:url" content="https://git-secret.opscale.ir/" />
 <meta property="og:site_name" content="git-secret" />
 <meta property="og:title" content="git-secret — plaintext on disk, ciphertext in history" />
-<meta property="og:description" content="Transparent git-repo encryption via installed hooks, modern AEAD crypto, one binary. Now speaks External Secrets Operator through a Helm-deployable webhook bridge — no third-party secret store, no ArgoCD plugin." />
+<meta property="og:description" content="Transparent git-repo encryption via installed hooks, modern AEAD crypto, one binary. Now with GitSecret: a native Kubernetes CRD and controller, ciphertext inline, no repo clone, no third-party secret store." />
 <meta property="og:image" content="https://git-secret.opscale.ir/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="git-secret — now speaks External Secrets Operator" />
+<meta property="og:image:alt" content="git-secret — now with a native Kubernetes CRD" />
 <meta property="og:locale" content="en_US" />
 
 <!-- Twitter/X Card -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="git-secret — plaintext on disk, ciphertext in history" />
-<meta name="twitter:description" content="Transparent git-repo encryption via installed hooks, modern AEAD crypto, one binary. Now speaks External Secrets Operator through a Helm-deployable webhook bridge." />
+<meta name="twitter:description" content="Transparent git-repo encryption via installed hooks, modern AEAD crypto, one binary. Now with GitSecret: a native Kubernetes CRD and controller, ciphertext inline, no repo clone." />
 <meta name="twitter:image" content="https://git-secret.opscale.ir/assets/og-image.png" />
-<meta name="twitter:image:alt" content="git-secret — now speaks External Secrets Operator" />
+<meta name="twitter:image:alt" content="git-secret — now with a native Kubernetes CRD" />
 
 <!-- Favicons -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2310151A'/%3E%3Ctext x='32' y='42' font-family='Georgia,serif' font-size='30' fill='%23B8873F' text-anchor='middle'%3E%C2%A7%3C/text%3E%3C/svg%3E" />
@@ -44,7 +44,7 @@
   "name": "git-secret",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
-  "description": "Transparent git-repo encryption via installed hooks, with an optional Helm-deployable webhook bridge (git-secret-server) so External Secrets Operator can pull decrypted values directly, without a third-party secret store.",
+  "description": "Transparent git-repo encryption via installed hooks, with GitSecret: a native Kubernetes CRD and controller, ciphertext inline in the object, no repo clone, no third-party secret store.",
   "url": "https://git-secret.opscale.ir/",
   "license": "https://github.com/OpScaleHub/git-secret/blob/main/LICENSE",
   "codeRepository": "https://github.com/OpScaleHub/git-secret",
@@ -383,7 +383,7 @@
       <a href="#quickstart">Quick start</a>
       <a class="hide-narrow" href="#commands">Commands</a>
       <a class="hide-narrow" href="#k8s">Kubernetes</a>
-      <a class="hide-narrow" href="#eso">ESO</a>
+      <a class="hide-narrow" href="#crd">CRD</a>
       <a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a>
       <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle color theme">
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>
@@ -631,92 +631,60 @@ gpg_recipients:
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">GITOPS</span>
-          <div><h3>ArgoCD decrypts it too — as part of the sync itself</h3><p>A Config Management Plugin sidecar on <code>argocd-repo-server</code> runs <code>kubectl-secret view</code> as ArgoCD's own manifest source, so a drifted live value shows up as ordinary <code>OutOfSync</code> instead of silently diverging from git. With the <code>gpg</code> backend, ArgoCD is just another recipient — <code>adduser</code>/<code>removeuser</code> grant and revoke its access the same way they would a teammate's, no raw key ever copied into the checkout. ArgoCD is the worked example here because it's the one we've actually run; the underlying idea — decrypt only at a trusted runtime identity, never in git — fits any controller with a manifest-generation hook. See the <a href="https://github.com/OpScaleHub/git-secret#argocd-integration-config-management-plugin" target="_blank" rel="noopener">README</a> for the full wiring, including the <code>gpg</code>-backend variant.</p></div>
+          <div><h3>For a GitOps cluster, see <a href="#crd">GitSecret</a></h3><p>Applying a per-value-encrypted manifest straight through a GitOps controller needs a trusted decrypt step in that path — <code>GitSecret</code> below is that step, natively: a controller, no sidecar, no manifest-generation hook to wire up by hand.</p></div>
         </div>
       </div>
 
       <p class="lede" style="margin-top:var(--sp-3)">Opt a manifest in with <code>k8s_secret_paths</code> in <code>.repo-enc.yml</code> — see the <a href="https://github.com/OpScaleHub/git-secret#kubectl-secret" target="_blank" rel="noopener">README</a> for the full verb reference.</p>
     </div>
   </section>
-
-  <section id="eso">
+  <section id="crd">
     <div class="container">
       <div class="section-head">
         <p class="eyebrow">Beyond the CLI</p>
-        <h2>git-secret-server: the same core, served over HTTP</h2>
-        <p class="lede"><code>kubectl-secret</code> above still needs a human, a CI job, or an ArgoCD plugin to actually run it. <code>git-secret-server</code> is a small, stateless, Helm-deployable service that exposes the exact same decryption core as an HTTP endpoint — built specifically to be the backend behind <a class="footnote-link" href="https://external-secrets.io/latest/provider/webhook/" target="_blank" rel="noopener">External Secrets Operator's generic Webhook provider</a>. No third-party secret store to stand up, no ArgoCD Config Management Plugin, and ArgoCD's own process never touches plaintext or key material at all.</p>
+        <h2>GitSecret: a native CRD, ciphertext inline, no clone at all</h2>
+        <p class="lede"><code>GitSecret</code> is a custom resource with its own controller — modeled on Bitnami <code>sealed-secrets</code>' shape, built on this project's existing multi-recipient GPG cryptography rather than one controller keypair. Ciphertext lives inline in the object, delivered by whatever already applies your manifests — ArgoCD, <code>kubectl apply</code> — with no repo clone, no SSH transport, and no network hop anywhere in the decrypt path.</p>
       </div>
 
-      <div class="receipt" aria-label="ESO wiring example">
-        <div class="receipt-head"><span>SecretStore.yaml</span><span>config</span></div>
-        <pre><span class="ln" style="animation-delay:.05s"><span class="out">spec:</span></span>
-<span class="ln" style="animation-delay:.3s">  <span class="out">provider:</span></span>
-<span class="ln" style="animation-delay:.55s">    <span class="out">webhook:</span></span>
-<span class="ln" style="animation-delay:.8s">      <span class="out">url: </span><span class="str">"http://git-secret-server:8080/decrypt?path={{ .remoteRef.key }}"</span></span>
-<span class="ln" style="animation-delay:1.05s">      <span class="out">headers:</span></span>
-<span class="ln" style="animation-delay:1.3s">        <span class="out">Authorization: </span><span class="str">"Bearer {{ .auth.token }}"</span></span>
-<span class="ln" style="animation-delay:1.55s">      <span class="out">result:</span></span>
-<span class="ln" style="animation-delay:1.8s">        <span class="out">jsonPath: </span><span class="str">"$"</span></span></pre>
+      <div class="receipt" aria-label="git-secret-seal example session">
+        <div class="receipt-head"><span>session</span><span>git-secret-seal</span></div>
+        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">git-secret-seal --namespace myapp --name my-secrets \</span></span>
+<span class="ln" style="animation-delay:.3s">    <span class="cmd">--recipient &lt;controller-fpr&gt; --recipient &lt;your-fpr&gt; \</span></span>
+<span class="ln" style="animation-delay:.55s">    <span class="cmd">--from-literal API_KEY=... &gt; gitsecret.yaml</span></span>
+<span class="ln" style="animation-delay:.85s"><span class="prompt">$ </span><span class="cmd">cat gitsecret.yaml</span></span>
+<span class="ln" style="animation-delay:1.15s"><span class="out">apiVersion: git-secret.opscalehub.io/v1alpha1</span></span>
+<span class="ln" style="animation-delay:1.35s"><span class="out">kind: GitSecret</span></span>
+<span class="ln" style="animation-delay:1.55s"><span class="out">spec:</span></span>
+<span class="ln" style="animation-delay:1.75s">  <span class="out">encryptedData:</span></span>
+<span class="ln" style="animation-delay:1.95s">    <span class="out">API_KEY: </span><span class="cipher">UkVOQwEReGNoYWNoYTIwcG9seTEzMDVh...</span></span>
+<span class="ln" style="animation-delay:2.25s"><span class="prompt">$ </span><span class="cmd">kubectl apply -f gitsecret.yaml</span></span>
+<span class="ln" style="animation-delay:2.55s"><span class="out">gitsecret.git-secret.opscalehub.io/my-secrets created</span></span></pre>
       </div>
 
       <div class="ledger" style="margin-top:var(--sp-4)">
         <div class="ledger-entry">
-          <span class="ledger-code">FRESH</span>
-          <div><h3>A clone per request, not a poller</h3><p>Every <code>/decrypt</code> call clones into its own throwaway directory. No shared checkout to keep in sync, no staleness window — every response reflects the remote's current <code>HEAD</code>.</p></div>
+          <span class="ledger-code">NO CLONE</span>
+          <div><h3>Zero network hops to decrypt</h3><p>Reconciling a <code>GitSecret</code> never makes a network call, never clones a repository, never opens an SSH connection. The only inputs are the object itself and this controller's own GPG key.</p></div>
         </div>
         <div class="ledger-entry">
-          <span class="ledger-code">IDENTITY</span>
-          <div><h3>Reuses what you already have</h3><p>Repo read access can reuse the exact deploy key ArgoCD's own repo-server already has — the repo only ever holds ciphertext, so sharing that key costs nothing. Decryption uses its own dedicated GPG identity, added the same way you'd add a teammate: <code>git secret adduser</code>.</p></div>
+          <span class="ledger-code">MULTI-KEY</span>
+          <div><h3>Not one controller keypair</h3><p>The content key wraps to as many GPG recipients as you want — the controller's own identity, and independently, any number of humans or backups. <code>--rewrap</code> re-encrypts only that wrapped key when a recipient is added or removed; every value's ciphertext is untouched, and a newly-added recipient decrypts independently, with no involvement from the key that did the rewrapping.</p></div>
         </div>
         <div class="ledger-entry">
-          <span class="ledger-code">NO CMP</span>
-          <div><h3>ArgoCD stays out of the secret path</h3><p>ArgoCD applies a plain <code>ExternalSecret</code> reference — a different object kind than <code>Secret</code>, no content, no dual-ownership race. ESO's own controller writes the real <code>Secret</code> directly.</p></div>
+          <span class="ledger-code">BOUND</span>
+          <div><h3>Bound to the exact object and key</h3><p>Every value's authenticated data is its <code>namespace/name/key</code> — an entry copied into a different <code>GitSecret</code>, or a renamed one, fails to decrypt instead of silently applying somewhere it wasn't sealed for.</p></div>
         </div>
         <div class="ledger-entry">
-          <span class="ledger-code">BOUNDED</span>
-          <div><h3>Capped concurrency by default</h3><p>Every request costs a real <code>git clone</code> — <code>MaxConcurrentClones</code> (default 4) fails fast with <code>503</code> past the cap instead of piling up unbounded work.</p></div>
-        </div>
-        <div class="ledger-entry">
-          <span class="ledger-code">NO CRD</span>
-          <div><h3>Stateless, not a controller</h3><p>No custom resources, no reconcile loop of its own to maintain — External Secrets Operator already provides that machinery; this is only the decrypt bridge.</p></div>
+          <span class="ledger-code">OWNED</span>
+          <div><h3>The CRD is the source of truth</h3><p>Built on <code>controller-runtime</code>. A <code>GitSecret</code> created fresh owns its target <code>Secret</code> outright: delete one, the other goes with it.</p></div>
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">SHIPPED</span>
-          <div><h3>Container image + Helm chart, both released</h3><p>Tagged alongside every <code>git-secret</code>/<code>kubectl-secret</code> release — <code>ghcr.io/opscalehub/git-secret-server</code> and an OCI Helm chart at <code>oci://ghcr.io/opscalehub/charts/git-secret-server</code>.</p></div>
+          <div><h3>Real code, really tested</h3><p>Unit-tested against real GPG operations and a fake Kubernetes client, then verified end-to-end against a real cluster — CRD install, a real apply, the actual controller binary, a correctly decrypted <code>Secret</code>.</p></div>
         </div>
       </div>
 
-      <div class="section-head" style="margin-top:var(--sp-5)">
-        <p class="eyebrow">Deploy it</p>
-        <h2>Three secrets, one <code>helm install</code></h2>
-        <p class="lede">Like the rest of this project, the chart never accepts secret material in <code>values.yaml</code> — only references to <code>Secret</code>s you create yourself.</p>
-      </div>
-      <div class="stack">
-        <div class="panel">
-          <span class="panel-label">1 — bootstrap credentials (once)</span>
-          <pre><span class="comment"># repo read access -- reuse ArgoCD's own deploy key</span>
-kubectl create secret generic git-secret-server-ssh \
-  --from-file=ssh-privatekey=./deploy-key
-
-<span class="comment"># a GPG identity dedicated to this service (see "Kubernetes" above)</span>
-kubectl create secret generic git-secret-server-gpg \
-  --from-file=private.asc=./service-key.asc
-
-<span class="comment"># the bearer token ESO must present</span>
-openssl rand -hex 32 | kubectl create secret generic \
-  git-secret-server-token --from-file=token=/dev/stdin</pre>
-        </div>
-        <div class="panel">
-          <span class="panel-label">2 — install</span>
-          <pre>helm install git-secret-server \
-  oci://ghcr.io/opscalehub/charts/git-secret-server \
-  --set repo.url=git@github.com:you/your-repo.git \
-  --set sshKey.existingSecret=git-secret-server-ssh \
-  --set gpgPrivateKey.existingSecret=git-secret-server-gpg \
-  --set authToken.existingSecret=git-secret-server-token</pre>
-        </div>
-      </div>
-      <p class="lede" style="margin-top:var(--sp-3)">Full <code>SecretStore</code>/<code>ExternalSecret</code> example, every chart value, and the security posture behind the design: <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/charts/git-secret-server/README.md" target="_blank" rel="noopener">chart README</a> and the main <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#git-secret-server" target="_blank" rel="noopener">project README</a>. The full design rationale — including why this exists instead of Vault/Infisical, and why not a custom Kubernetes controller — is recorded in <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/adr/0001-eso-webhook-bridge-not-third-party-store-or-controller.md" target="_blank" rel="noopener">ADR-0001</a>.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Early and not yet packaged as a Helm chart or container image — build <code>git-secret-controller</code> and <code>git-secret-seal</code> from source for now (<code>go build ./cmd/git-secret-controller</code>, <code>go build ./cmd/git-secret-seal</code>), and install the CRD from <code>config/crd/bases/</code>. Full usage and the <code>--rewrap</code> reference: <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a>.</p>
     </div>
   </section>
 

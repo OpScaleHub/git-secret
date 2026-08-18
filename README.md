@@ -227,309 +227,59 @@ multi-doc files).
 ### The footgun this doesn't fully solve
 
 If someone runs plain `kubectl apply -f file.yaml` on a per-value-encrypted
-manifest — i.e. forgets the plugin — the ciphertext strings get applied *as
-the literal secret values*. This fails safe from a leak perspective
-(ciphertext isn't a secret leak) but breaks the application silently: no
-credential leaked, just garbage values in a real `Secret`. Watch for this if
-you're introducing `kubectl-secret` to a team that's used to plain `kubectl`.
+manifest — i.e. forgets to run it through `kubectl secret apply` — the
+ciphertext strings get applied *as the literal secret values*. This fails
+safe from a leak perspective (ciphertext isn't a secret leak) but breaks
+the application silently: no credential leaked, just garbage values in a
+real `Secret`. Watch for this if you're introducing `kubectl-secret` to a
+team that's used to plain `kubectl`.
 
-### ArgoCD integration (Config Management Plugin)
-
-> **For a new setup, prefer [`git-secret-server`](#git-secret-server) instead of this section.**
-> A CMP still routes decrypted plaintext through ArgoCD's own manifest-generation
-> pipeline, which is exactly the risk the callout below describes. `git-secret-server`
-> exists specifically so ArgoCD's process never has to touch plaintext or key material
-> at all — External Secrets Operator manages the resulting `Secret` directly instead.
-> This section is kept for repositories already using the CMP pattern, or for anyone
-> not (yet) running ESO.
-
-The footgun above is worse under GitOps specifically: if ArgoCD applies the
-encrypted manifest directly, it doesn't just break the app once — it
-actively **fights** anything that later corrects the live `Secret` by hand.
-`selfHeal` will keep reverting the live object back to ciphertext on every
-reconcile, since as far as ArgoCD's diffing is concerned, the ciphertext
-*is* the desired state. Worse, a live secret that's fixed out-of-band (a
-quick `kubectl patch` during an incident, say) and never sealed back into
-the file will silently drift from git with no warning — the exact gap that
-motivated this integration in the first place.
-
-The fix is to make ArgoCD decrypt as part of its own sync, via a [Config
-Management Plugin](https://argo-cd.readthedocs.io/en/stable/user-guide/config-management-plugins/)
-(CMP) sidecar on `argocd-repo-server`, so a drifted live value shows up as
-ordinary `OutOfSync` — the same signal ArgoCD already gives you for a
-drifted `Deployment` — instead of failing silently.
-
-> **This is manifest-generation secret injection, with the risks ArgoCD's
-> own docs describe.** A CMP `generate` command that emits decrypted
-> `Secret` YAML means the plugin's output stream — the *fully decrypted*
-> manifest — flows through ArgoCD's normal generated-manifest pipeline,
-> where ArgoCD's [secret management
-> docs](https://argo-cd.readthedocs.io/en/stable/operator-manual/secret-management/#argo-cd-manifest-generation-based-secret-management)
-> say it can be cached in Redis and is reachable by anyone with repo-server
-> API access — not just anyone with `kubectl get secret` on the cluster.
-> Read their [mitigation
-> guidance](https://argo-cd.readthedocs.io/en/stable/operator-manual/secret-management/#mitigating-risks-of-secret-injection-plugins)
-> before adopting this pattern for anything sensitive, and prefer a
-> destination-cluster secret management approach (e.g. decrypting outside
-> ArgoCD entirely, so the repo-server never holds the key or the plaintext)
-> wherever that's an option. What follows documents the CMP pattern as-is,
-> not as an endorsement that it's the safest option available.
-
-**1. Register the plugin.** A `ConfigMap` mounted into the sidecar at
-`/home/argocd/cmp-server/config/plugin.yaml`:
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: ConfigManagementPlugin
-metadata:
-  name: kubectl-secret
-spec:
-  version: v1.0
-  generate:
-    command: ["sh", "-c"]
-    args:
-      - "mkdir -p .repo-enc && rm -f .repo-enc/key && cp /repo-enc-key/key .repo-enc/key && kubectl-secret view -f secrets.enc.yaml"
-```
-
-The `mkdir`/`cp` prefix isn't optional. `generate.command` runs with `CWD`
-set to a fresh, per-sync ephemeral checkout directory
-(`/tmp/_cmp_server/<uuid>/`), not a fixed path — so a `key_backend: file`
-key mounted at a stable absolute path (via a `Secret` volume, see below)
-has to be staged into the repo-relative location `key_source` expects
-(`.repo-enc/key` by default) before every single invocation.
-
-The `rm -f .repo-enc/key` immediately before `cp` isn't optional either.
-`CWD` here is the *repo checkout* — attacker-controlled content, from
-ArgoCD's point of view, if anyone can land a commit — so a committed
-symlink at `.repo-enc/key` (e.g. pointing at `/proc/self/fd/1` to print
-the raw key into plugin output, or elsewhere in the pod filesystem) would
-otherwise make `cp` follow it and write the decryption key wherever that
-symlink points, instead of to a fresh regular file. `rm -f` unlinks
-whatever is currently at that path — symlink or not, without following
-it — so `cp` always creates a clean regular file afterward.
-
-**2. Add the sidecar.** Same pattern as any other CMP: a sidecar container
-on `argocd-repo-server` running `argocd-cmp-server` against that plugin
-config, plus an initContainer to fetch the `kubectl-secret` binary itself
-into a shared `emptyDir`. **Verify the checksum before executing it** —
-release binaries are unsigned, so this at least confirms the download
-matches what CI built and published, rather than trusting an unauthenticated
-`curl | chmod +x` sight unseen for a binary that will hold the repo's
-decryption key:
-
-```yaml
-initContainers:
-  - name: kubectl-secret-install
-    image: curlimages/curl:8.10.1
-    command: ["sh", "-c"]
-    args:
-      - |
-        set -eu
-        cd /kubectl-secret-bin
-        curl -sSL -O https://github.com/OpScaleHub/git-secret/releases/download/v0.4.1/kubectl-secret-linux-amd64
-        curl -sSL -O https://github.com/OpScaleHub/git-secret/releases/download/v0.4.1/kubectl-secret-linux-amd64.sha256
-        sha256sum -c kubectl-secret-linux-amd64.sha256
-        mv kubectl-secret-linux-amd64 kubectl-secret
-        chmod +x kubectl-secret
-    volumeMounts:
-      - {mountPath: /kubectl-secret-bin, name: kubectl-secret-bin}
-containers:
-  - name: kubectl-secret-cmp
-    command: [/var/run/argocd/argocd-cmp-server]
-    image: quay.io/argoproj/argocd:v3.4.5   # match your ArgoCD's own version
-    env:
-      - {name: PATH, value: "/kubectl-secret-bin:/usr/local/bin:/usr/bin:/bin"}
-    securityContext: {runAsNonRoot: true, runAsUser: 999}
-    volumeMounts:
-      - {mountPath: /var/run/argocd, name: var-files}              # existing
-      - {mountPath: /home/argocd/cmp-server/plugins, name: plugins} # existing
-      - {mountPath: /home/argocd/cmp-server/config/plugin.yaml, subPath: plugin.yaml, name: kubectl-secret-cmp-config}
-      - {mountPath: /tmp, name: cmp-tmp}
-      - {mountPath: /kubectl-secret-bin, name: kubectl-secret-bin}
-      - {mountPath: /repo-enc-key, name: repo-enc-key, readOnly: true}
-```
-
-`var-files` and `plugins` are volumes `argocd-repo-server` already has for
-its own built-in plugin support — reuse them rather than adding new ones.
-`repo-enc-key` is a new `Secret` volume holding the raw key file content
-(`key_backend: file`'s `key_source`) — this is the one genuinely sensitive
-step: it moves the decryption key from your local machine into the
-cluster. Scope that `Secret` narrowly (the `argocd` namespace only) and
-treat adding it with the same care as any other production credential
-write.
-
-**3. Point an Application at it.** A second `Application`, separate from
-your main one, with its source path wherever `secrets.enc.yaml` lives
-(often the repo root) and `spec.source.plugin.name` set to
-`<plugin-metadata-name>-<version>` — note the concatenation; the CMP
-server logs the exact string it registered under
-(`argocd-cmp-server ... serving on .../kubectl-secret-v1.0.sock`) if
-you're unsure:
-
-```yaml
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: my-app-secrets
-spec:
-  source:
-    repoURL: git@github.com:you/your-repo.git
-    targetRevision: stable
-    path: .
-    plugin:
-      name: kubectl-secret-v1.0
-  syncPolicy:
-    automated: {selfHeal: true}   # the whole point -- see above
-```
-
-Keep this `Application` separate from whatever manages the rest of your
-manifests, and make sure **exactly one** of them owns the resulting
-`Secret` object. If your main app's source also happens to include a
-plaintext/placeholder version of the same `Secret` (a common leftover from
-before adopting per-value encryption), exclude it there — two ArgoCD
-`Application`s both claiming the same live object will fight every
-reconcile, each reverting the other's last write.
-
-### Recommended: use the `gpg` backend instead of `file`
-
-Everything above works with `key_backend: file`, but that backend has
-exactly one piece of key material — the raw symmetric key — and getting it
-into the sidecar means copying it into the repo checkout on every sync
-(the `mkdir`/`rm -f`/`cp` dance in step 1). The `gpg` backend sidesteps that
-entirely: `.repo-enc/key.gpg` is *committed*, so it's already sitting in
-the checkout — ArgoCD needs a private key that can open it, not a copy of
-anything into a repo-controlled path.
-
-**1. Give ArgoCD its own identity, once.** Same command as adding a
-teammate — because that's exactly what this is:
-
-```bash
-gpg --batch --passphrase '' --quick-generate-key "argocd-git-secret <argocd@yourcluster>" default default never
-gpg --list-secret-keys --with-colons   # grab the fingerprint
-
-git secret adduser <argocd-fingerprint>
-git add .repo-enc.yml .repo-enc/key.gpg
-git commit -m "Grant ArgoCD service GPG access" && git push
-```
-
-**2. Move only the private key into the cluster — the one genuinely
-sensitive step, and the last time this key travels anywhere:**
-
-```bash
-gpg --export-secret-keys --armor <argocd-fingerprint> > private.asc
-kubectl create secret generic repo-enc-gpg-key -n argocd --from-file=private.asc
-rm private.asc
-```
-
-**3. Import it in the plugin's `generate` command instead of copying a raw
-key.** No `mkdir`, no `rm -f`, no repo-controlled destination path at all:
-
-```yaml
-generate:
-  command: ["sh", "-c"]
-  args:
-    - "gpg --batch --import /repo-enc-key/private.asc 2>/dev/null; kubectl-secret view -f secrets.enc.yaml"
-```
-
-The `repo-enc-key` volume mount from step 2 above stays the same — it's
-just an armored private key file now instead of a raw symmetric key.
-Onboarding a human teammate afterward is `adduser <their-fingerprint>`;
-revoking ArgoCD's access later (a cluster rebuild, say) is `removeuser
-<argocd-fingerprint>` — both are the same commands you'd already use for
-people, because ArgoCD is, cryptographically, just another recipient.
-
-## git-secret-server
+## GitSecret CRD (git-secret-controller)
 
 `kubectl-secret` (above) is a human/CI-driven tool: someone runs `apply`/`view`
-by hand or from a CMP sidecar. `git-secret-server` is the same decryption
-core exposed as a small, stateless, always-on HTTP service instead — built
-specifically to be the backend behind [External Secrets Operator's generic
-Webhook provider](https://external-secrets.io/latest/provider/webhook/), so
-ESO's own reconcile loop, drift detection, and `Secret` lifecycle management
-work directly against `git-secret`-encrypted values, with **no ArgoCD plugin
-and no third-party secret store** in the picture at all.
-
-### Why this instead of a third-party store, or instead of the CMP plugin
-
-- **Instead of Vault/Infisical/etc.**: those need a whole separate service
-  stood up, secured, and operated — a real dependency this project exists to
-  avoid needing. `git-secret-server` reuses the crypto and key-backend logic
-  this repo already has; the only new piece is a thin HTTP wrapper around
-  code that already exists and is already tested (`DecryptK8sManifest`).
-- **Instead of the ArgoCD CMP plugin** (previous section): a CMP still
-  routes decrypted plaintext through ArgoCD's own manifest-generation
-  pipeline. With `git-secret-server`, ArgoCD only ever applies a plain
-  `ExternalSecret` reference (a different object *kind* than `Secret` — no
-  dual-ownership race to design around); the actual decrypted value is
-  produced once, by this service, when ESO calls it, and never touches
-  ArgoCD's process.
-
-### How it works
-
-Every request gets its **own fresh, isolated `git clone`** into a unique
-temp directory — not a shared checkout kept up to date by a background
-poller. Concurrent requests can never observe each other's half-updated
-tree, every response reflects exactly the remote's current `HEAD`, and
-there's no separate "keep it fresh" process to run or monitor. The tradeoff
-is a clone on every request instead of a cached one — cheap in practice,
-since ESO's own reconcile interval is minutes, not sub-second.
-
-Repository read access reuses **the same deploy key ArgoCD's own
-repo-server already has** — sharing it costs nothing, since the repository
-only ever holds ciphertext; read access to it isn't by itself access to any
-secret value. Decryption uses **its own dedicated GPG identity**, added to
-the repo the same way the CMP section above already documents ("give it its
-own identity"): `git secret adduser <this-service's-fingerprint>` — cheap,
-re-wraps the existing key, no file re-encryption needed. Only the resulting
-private key ever goes into the cluster, as one `Secret`.
-
-```
-GET /decrypt?path=<repo-relative k8s_secret_paths manifest>[&namespace=<override>]
-Authorization: Bearer <token>
-
-200 -> {"KEY": "decrypted value", ...}   (every stringData entry, decrypted)
-401 -> missing/wrong bearer token
-404 -> path not in k8s_secret_paths, or doesn't exist at the current HEAD
-502 -> clone or decryption failed
-```
-
-Designed to be consumed with ESO's `dataFrom.extract` (`jsonPath: "$"`) —
-one call returns the whole decrypted map, matching `DecryptK8sManifest`'s
-own whole-manifest granularity, no per-key reshaping needed. See the
-[chart README](charts/git-secret-server/README.md) for the full `SecretStore`/
-`ExternalSecret` example and required bootstrap `Secret`s.
-
-### Deploy
+by hand. `GitSecret` is a native custom resource
+(`git-secret.opscalehub.io/v1alpha1`) with its own controller instead, whose
+ciphertext lives **inline in the object itself** — no repo clone, no SSH
+transport, no network hop at all in the decrypt path. Delivered by whatever
+already applies manifests to your cluster (ArgoCD, `kubectl apply`, ...), the
+same way any other Kubernetes object gets there. Modeled on Bitnami
+`sealed-secrets`' shape, but built on `git-secret`'s existing multi-recipient
+GPG cryptography instead of a single controller keypair — a lost or rotated
+controller key is a `--rewrap` away from recovery via any other current
+recipient, not a permanent loss.
 
 ```bash
-docker build -t git-secret-server .
-# or, in-cluster:
-helm install git-secret-server ./charts/git-secret-server \
-  --set repo.url=git@github.com:you/your-repo.git \
-  --set sshKey.existingSecret=... \
-  --set gpgPrivateKey.existingSecret=... \
-  --set authToken.existingSecret=...
+# Seal plaintext into a GitSecret manifest (the kubeseal equivalent):
+git-secret-seal --namespace myapp --name my-secrets \
+  --recipient <controller-fingerprint> --recipient <your-own-fingerprint> \
+  --from-literal API_KEY=... --from-literal DB_PASSWORD=... > gitsecret.yaml
+
+kubectl apply -f gitsecret.yaml   # git-secret-controller reconciles it into a plain Secret
+
+# Add/remove a recipient later without re-encrypting any value:
+git-secret-seal --rewrap gitsecret.yaml \
+  --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
 ```
 
-Binaries are also published on each [release](https://github.com/OpScaleHub/git-secret/releases),
-same as `git-secret`/`kubectl-secret`.
+Every `--recipient` must be a full 40/64-hex GPG fingerprint, not a short key
+ID or an email address — `git-secret-seal` rejects anything else, the same
+rule `.repo-enc.yml`'s `gpg_recipients` already enforces (see
+[`gpgutil.ValidFingerprint`](internal/gpgutil/gpgutil.go)'s doc comment for
+why: a short ID or email is ambiguous and locally resolvable, a fingerprint
+isn't). `gpg --list-secret-keys --with-colons` (or `gpg -K`) prints yours.
 
-### Security posture
+`git-secret-controller` needs its own dedicated GPG identity, imported at
+startup into an isolated `GNUPGHOME`
+(`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, key zeroed from memory
+once imported). Install the CRD from
+`config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml` before running
+the controller.
 
-This service is a real, new trust boundary: a long-lived, network-reachable
-process holding a live decryption key, compared to the CLI's
-run-once-and-exit model or the CMP sidecar's key-copied-in-for-seconds
-model. Treat it accordingly — it's why `/decrypt` requires a bearer token
-(compared in constant time), why SSH host-key verification is pinned rather
-than trust-on-first-use whenever the target is a known host (GitHub's keys
-are built in), and why it deliberately holds nothing beyond what one request
-needs: a fresh clone per request, cleaned up immediately after, no cached
-plaintext or long-lived checkout anywhere on disk.
-
-The full rationale for this design — including why it exists instead of a third-party
-secret store, and why not a custom Kubernetes controller — is recorded in
-[`docs/adr/0001-eso-webhook-bridge-not-third-party-store-or-controller.md`](docs/adr/0001-eso-webhook-bridge-not-third-party-store-or-controller.md).
-Future architectural changes to this project are recorded the same way — see `docs/adr/`.
+Not yet packaged as a Helm chart, container image, or with CI/release
+wiring — tracked in
+[git-secret#34](https://github.com/OpScaleHub/git-secret/issues/34). Build
+both binaries locally with `go build ./cmd/git-secret-controller` and
+`go build ./cmd/git-secret-seal` in the meantime.
 
 ## Publishing & GitHub Pages
 

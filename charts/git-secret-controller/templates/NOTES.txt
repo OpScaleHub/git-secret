@@ -1,0 +1,17 @@
+git-secret-controller is running as {{ include "git-secret-controller.fullname" . }} in {{ .Release.Namespace }}.
+
+Seal plaintext into a GitSecret manifest and apply it:
+
+  git-secret-seal --namespace <target-ns> --name <name> \
+    --recipient <this-controller's-fingerprint> --recipient <your-own-fingerprint> \
+    --from-literal KEY=value > gitsecret.yaml
+
+  kubectl apply -f gitsecret.yaml
+
+Check it's healthy:
+  kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "git-secret-controller.fullname" . }} {{ .Values.healthProbe.port }}:{{ .Values.healthProbe.port }}
+  curl http://localhost:{{ .Values.healthProbe.port }}/healthz
+
+See the project README's "GitSecret CRD" section for the full reference,
+including --rewrap for adding/removing a recipient without re-encrypting
+any value.
