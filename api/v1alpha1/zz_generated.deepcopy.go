@@ -72,6 +72,11 @@ func (in *GitSecretList) DeepCopyObject() runtime.Object {
 func (in *GitSecretSpec) DeepCopyInto(out *GitSecretSpec) {
 	*out = *in
 	out.Target = in.Target
+	if in.Recipients != nil {
+		in, out := &in.Recipients, &out.Recipients
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.EncryptedData != nil {
 		in, out := &in.EncryptedData, &out.EncryptedData
 		*out = make(map[string]string, len(*in))
@@ -104,6 +109,11 @@ func (in *GitSecretStatus) DeepCopyInto(out *GitSecretStatus) {
 	if in.LastSyncTime != nil {
 		in, out := &in.LastSyncTime, &out.LastSyncTime
 		*out = (*in).DeepCopy()
+	}
+	if in.Recipients != nil {
+		in, out := &in.Recipients, &out.Recipients
+		*out = make([]string, len(*in))
+		copy(*out, *in)
 	}
 }
 

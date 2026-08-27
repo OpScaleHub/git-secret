@@ -100,6 +100,12 @@ func TestRun_LiteralsProduceDecryptableManifest(t *testing.T) {
 	if data["USERNAME"] != "admin" || data["PASSWORD"] != "hunter2" {
 		t.Errorf("round-trip mismatch: %#v", data)
 	}
+	if len(gs.Spec.Recipients) != 1 || gs.Spec.Recipients[0] != fpr {
+		t.Errorf("manifest spec.recipients = %v, want [%s]", gs.Spec.Recipients, fpr)
+	}
+	if !strings.Contains(stdout.String(), "recipients:") {
+		t.Error("manifest YAML does not surface a recipients: field")
+	}
 }
 
 func TestRun_FromSecretFile(t *testing.T) {

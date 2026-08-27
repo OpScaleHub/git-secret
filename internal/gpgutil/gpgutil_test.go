@@ -246,3 +246,39 @@ func TestImportSecretKey_GarbageInput(t *testing.T) {
 		t.Fatal("expected an error importing garbage input")
 	}
 }
+
+func TestCountRecipients(t *testing.T) {
+	fpr1 := newTestKeyring(t, "Count One <count1@example.com>")
+
+	one, err := Encrypt([]byte("x"), []string{fpr1})
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if n, err := CountRecipients(one); err != nil || n != 1 {
+		t.Fatalf("CountRecipients(1 recipient) = %d, %v; want 1, nil", n, err)
+	}
+
+	// Add a second key to the same keyring and encrypt to both.
+	cmd := exec.Command(Binary, "--batch", "--passphrase", "", "--quick-generate-key", "Count Two <count2@example.com>", "default", "default", "never")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("generate second key: %v: %s", err, stderr.String())
+	}
+	keys, err := ListSecretKeys()
+	if err != nil || len(keys) != 2 {
+		t.Fatalf("ListSecretKeys: %v (got %d)", err, len(keys))
+	}
+
+	two, err := Encrypt([]byte("x"), []string{keys[0].Fingerprint, keys[1].Fingerprint})
+	if err != nil {
+		t.Fatalf("Encrypt(2): %v", err)
+	}
+	if n, err := CountRecipients(two); err != nil || n != 2 {
+		t.Fatalf("CountRecipients(2 recipients) = %d, %v; want 2, nil", n, err)
+	}
+
+	if _, err := CountRecipients([]byte("not a pgp message")); err == nil {
+		t.Fatal("CountRecipients accepted garbage")
+	}
+}

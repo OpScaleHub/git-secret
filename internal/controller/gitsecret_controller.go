@@ -59,6 +59,19 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		targetName = gs.Name
 	}
 
+	// Mirror the declared recipient set into status regardless of what
+	// happens below, so `kubectl get gitsecret` shows who can decrypt an
+	// object even while it is failing to reconcile.
+	gs.Status.Recipients = gs.Spec.Recipients
+	gs.Status.RecipientCount = len(gs.Spec.Recipients)
+	if err := sealer.VerifyRecipients(gs.Spec); err != nil {
+		// Non-fatal: the authoritative recipient set is the blob itself,
+		// which the decrypt path below uses directly. A mismatch just
+		// means spec.recipients is stale/wrong as documentation -- worth
+		// a warning, not a reconcile failure.
+		logger.Info("spec.recipients does not match encryptedKey", "gitsecret", req.NamespacedName, "reason", err.Error())
+	}
+
 	data, unsealErr := sealer.Unseal(gs.Namespace, gs.Name, gs.Spec)
 	if unsealErr != nil {
 		logger.Error(unsealErr, "unseal failed", "gitsecret", req.NamespacedName)

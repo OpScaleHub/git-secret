@@ -45,6 +45,18 @@ type GitSecretSpec struct {
 	// for whole-repo files.
 	EncryptedKey string `json:"encryptedKey"`
 
+	// Recipients lists the full GPG fingerprints EncryptedKey is wrapped
+	// to, sorted. Written by git-secret-seal. It is informational -- the
+	// authoritative recipient set is whatever EncryptedKey actually
+	// encrypts to -- but it makes "who can decrypt this object" reviewable
+	// in a plain YAML diff (adding a recipient becomes a visible one-line
+	// change) instead of requiring the armored blob to be inspected with
+	// gpg. sealer.VerifyRecipients cross-checks the count against the blob.
+	// +optional
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=64
+	Recipients []string `json:"recipients,omitempty"`
+
 	// EncryptedData holds one ciphertext per target Secret key. Each value
 	// is a crypto.Seal envelope (see crypto/crypto.go), base64-std-encoded
 	// so it survives as plain YAML/JSON text, sealed under the key
@@ -84,6 +96,18 @@ type GitSecretStatus struct {
 	// written to match this object.
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
+
+	// Recipients mirrors spec.recipients as observed at the last reconcile,
+	// so `kubectl get gitsecret -o yaml` shows the current decrypt set
+	// without reading the spec. Empty if the object predates the field or
+	// was sealed by an older git-secret-seal.
+	// +optional
+	// +listType=set
+	Recipients []string `json:"recipients,omitempty"`
+
+	// RecipientCount is len(spec.recipients), surfaced as a printer column.
+	// +optional
+	RecipientCount int `json:"recipientCount,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -92,6 +116,7 @@ type GitSecretStatus struct {
 // +kubebuilder:printcolumn:name="Target",type=string,JSONPath=`.spec.target.name`,priority=0
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Keys",type=integer,JSONPath=`.status.syncedKeys`
+// +kubebuilder:printcolumn:name="Recipients",type=integer,JSONPath=`.status.recipientCount`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // GitSecret decrypts into a plain Kubernetes Secret via a controller that

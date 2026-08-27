@@ -257,9 +257,21 @@ git-secret-seal --namespace myapp --name my-secrets \
 kubectl apply -f gitsecret.yaml   # git-secret-controller reconciles it into a plain Secret
 
 # Add/remove a recipient later without re-encrypting any value:
+git-secret-seal recipients add <new-fingerprint> -f gitsecret.yaml --role recovery
+git-secret-seal recipients remove <old-fingerprint> -f gitsecret.yaml
+git-secret-seal recipients list -f gitsecret.yaml       # who can decrypt, and their role
+
+# ...or set the whole list explicitly:
 git-secret-seal --rewrap gitsecret.yaml \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
 ```
+
+The generated manifest records the fingerprints it was sealed to in
+`spec.recipients`, so adding or removing a recipient shows up as a one-line
+change in review rather than an opaque blob churn. The controller mirrors this
+to `status.recipients` / `status.recipientCount` (a `Recipients` column on
+`kubectl get gitsecret`) so you can see who can decrypt an object without
+inspecting the ciphertext.
 
 Every `--recipient` must be a full 40/64-hex GPG fingerprint, not a short key
 ID or an email address — `git-secret-seal` rejects anything else, the same
@@ -295,6 +307,8 @@ A container image and Helm chart ship on every tagged release
   seal → apply → reconcile flow, the two-layer envelope, and the recovery model.
 - [Disaster recovery](docs/security/disaster-recovery.md) — operator runbooks for
   controller loss, cluster loss, key loss, and key compromise.
+- [Recipient & key lifecycle](docs/security/recipient-lifecycle.md) — roles,
+  rotation workflows, and what removing a recipient does and doesn't undo.
 - [Reporting a vulnerability](SECURITY.md).
 
 The core property: the encrypted repository is the durable source of truth, and

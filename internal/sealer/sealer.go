@@ -86,7 +86,17 @@ func Seal(namespace, name string, data map[string]string, recipients []string) (
 	return v1alpha1.GitSecretSpec{
 		EncryptedKey:  string(wrappedKey),
 		EncryptedData: encData,
+		Recipients:    sortedCopy(recipients),
 	}, nil
+}
+
+// sortedCopy returns a sorted copy of in, leaving the caller's slice
+// untouched -- used so spec.Recipients is diff-stable regardless of the
+// order recipients were passed on the command line.
+func sortedCopy(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
 }
 
 // Rewrap re-encrypts spec's content key to newRecipients without touching
@@ -127,7 +137,37 @@ func Rewrap(spec v1alpha1.GitSecretSpec, newRecipients []string) (v1alpha1.GitSe
 
 	out := spec
 	out.EncryptedKey = string(wrapped)
+	out.Recipients = sortedCopy(newRecipients)
 	return out, nil
+}
+
+// VerifyRecipients cross-checks spec.Recipients against the number of
+// public-key recipients EncryptedKey is actually wrapped to. It is a
+// drift check, not full authentication: it catches a recipient added to
+// (or removed from) the armored blob without a matching spec.Recipients
+// edit, or vice versa. It does not (cannot cheaply) prove each listed
+// fingerprint is one of the blob's recipients, because the blob carries
+// encryption-subkey IDs, not primary-key fingerprints.
+//
+// Returns nil when spec.Recipients is empty (nothing claimed, nothing to
+// check -- e.g. an object sealed by an older git-secret-seal).
+func VerifyRecipients(spec v1alpha1.GitSecretSpec) error {
+	if len(spec.Recipients) == 0 {
+		return nil
+	}
+	for _, r := range spec.Recipients {
+		if !gpgutil.ValidFingerprint(r) {
+			return fmt.Errorf("sealer: spec.recipients entry %q is not a full GPG fingerprint", r)
+		}
+	}
+	n, err := gpgutil.CountRecipients([]byte(spec.EncryptedKey))
+	if err != nil {
+		return fmt.Errorf("sealer: %w", err)
+	}
+	if n != len(spec.Recipients) {
+		return fmt.Errorf("sealer: spec.recipients lists %d fingerprint(s) but encryptedKey is wrapped to %d recipient(s)", len(spec.Recipients), n)
+	}
+	return nil
 }
 
 // Unseal reverses Seal using whatever local GPG secret key (via gpg-agent

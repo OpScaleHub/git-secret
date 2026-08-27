@@ -79,6 +79,18 @@ Usage (rewrap -- add/remove a recipient without re-encrypting any value):
                                 include everyone who should still be able
                                 to decrypt, not just the one being added.
 
+Usage (recipients -- inspect/change the recipient set of an existing manifest):
+  git-secret-seal recipients list   -f FILE
+  git-secret-seal recipients add    FPR -f FILE [--role ROLE]
+  git-secret-seal recipients remove FPR -f FILE [--force]
+
+  Reads spec.recipients, rewraps to the new set (no value re-encrypted),
+  and prints the updated manifest. 'add'/'remove' need a local key that can
+  open FILE's encryptedKey; 'add' also needs FPR's public key. Roles
+  (human|controller|recovery|deprecated) are tracked in the
+  git-secret.opscalehub.io/recipient-roles annotation; 'remove' refuses to
+  drop the last recipient or the last 'recovery' one without --force.
+
 Exit codes: 0 ok, 1 error, 2 usage/key unavailable.
 `
 
@@ -101,6 +113,10 @@ func (s *stringSlice) Set(v string) error {
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 0 && args[0] == "recipients" {
+		return runRecipients(args[1:], stdout, stderr)
+	}
+
 	fs := flag.NewFlagSet("git-secret-seal", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	namespace := fs.String("namespace", "", "namespace for the GitSecret and (by default) its target Secret")

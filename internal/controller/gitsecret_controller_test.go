@@ -137,6 +137,9 @@ func TestReconcile_CreatesTargetSecret(t *testing.T) {
 	if updated.Status.SyncedKeys != 2 {
 		t.Errorf("status.syncedKeys = %d, want 2", updated.Status.SyncedKeys)
 	}
+	if updated.Status.RecipientCount != 1 || len(updated.Status.Recipients) != 1 || updated.Status.Recipients[0] != fpr {
+		t.Errorf("status recipients = %v (count %d), want [%s] (1)", updated.Status.Recipients, updated.Status.RecipientCount, fpr)
+	}
 	found := false
 	for _, c := range updated.Status.Conditions {
 		if c.Type == conditionReady {
