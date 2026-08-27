@@ -2,8 +2,9 @@
 // GitSecret CRD (api/v1alpha1): it decrypts GitSecret objects into plain
 // Secrets using its own GPG private key, imported at startup exactly the
 // way cmd/git-secret-server imports its repo-decryption key. See
-// internal/controller for the reconcile logic and docs/adr/0002 for why
-// this exists alongside (not instead of, yet) the ESO webhook bridge.
+// internal/controller for the reconcile logic and
+// docs/security/design-rationale.md for why the CRD/controller is the
+// project's Kubernetes integration.
 package main
 
 import (

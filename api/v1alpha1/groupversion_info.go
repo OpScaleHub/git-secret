@@ -1,8 +1,8 @@
-// Package v1alpha1 contains the GitSecret API: a CRD-native alternative to
-// the ESO webhook bridge (cmd/git-secret-server, docs/adr/0001) with
-// ciphertext carried inline in the object instead of pulled from a cloned
-// repo at request time. See docs/adr/0002-native-crd-controller.md for the
-// full rationale.
+// Package v1alpha1 contains the GitSecret API: the project's Kubernetes
+// integration, with ciphertext carried inline in the object instead of
+// pulled from a cloned repo at request time. See
+// docs/security/design-rationale.md for the full rationale and
+// docs/security/threat-model.md for the security model.
 //
 // +kubebuilder:object:generate=true
 // +groupName=git-secret.opscalehub.io

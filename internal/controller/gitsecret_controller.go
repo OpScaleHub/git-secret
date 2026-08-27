@@ -105,10 +105,11 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Merge/Retain pattern) is deliberate here: a GitSecret created
 		// fresh is the sole source of truth for its target, so deleting
 		// it should delete the Secret too, same as sealed-secrets. This
-		// is NOT used to adopt any already-existing, independently
-		// managed Secret -- see docs/adr/0002 on why that's a separate,
-		// explicitly-gated migration decision per target, not something
-		// this controller does automatically.
+		// is not *meant* to adopt an already-existing, independently
+		// managed Secret -- that should be a separate, explicitly-gated
+		// migration decision per target. NOTE: this is not yet enforced;
+		// an ownerless Secret with a colliding name is currently adopted
+		// (and its data cleared) silently -- tracked in #42.
 		return controllerutil.SetControllerReference(&gs, secret, r.Client.Scheme())
 	})
 	if err != nil {

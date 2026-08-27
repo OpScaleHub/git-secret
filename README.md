@@ -275,11 +275,22 @@ once imported). Install the CRD from
 `config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml` before running
 the controller.
 
-Not yet packaged as a Helm chart, container image, or with CI/release
-wiring — tracked in
-[git-secret#34](https://github.com/OpScaleHub/git-secret/issues/34). Build
-both binaries locally with `go build ./cmd/git-secret-controller` and
-`go build ./cmd/git-secret-seal` in the meantime.
+A container image and Helm chart ship on every tagged release
+(`charts/git-secret-controller`). For local work, build the binaries with
+`go build ./cmd/git-secret-controller` and `go build ./cmd/git-secret-seal`.
+
+## Security
+
+- [Threat model](docs/security/threat-model.md) — assets, trust boundaries,
+  threats, and the invariants the code must preserve.
+- [Design rationale & history](docs/security/design-rationale.md) — why the
+  architecture has the shape it has.
+- [Reporting a vulnerability](SECURITY.md).
+
+The core property: the encrypted repository is the durable source of truth, and
+decryption is multi-recipient and recoverable — losing a cluster, a controller,
+or any single key does not make the secrets unrecoverable, as long as the repo
+and one authorized recipient key survive.
 
 ## Publishing & GitHub Pages
 
