@@ -27,6 +27,10 @@ fingerprint + armored key on a ClusterIP Service:
 curl http://git-secret-controller-pubkey.<ns>.svc/pubkey | tail -n +2 | gpg --import
 ```
 
+Or have the chart write it to a ConfigMap on install/upgrade
+(`publishPublicKey.enabled`, a hook Job): `kubectl get configmap
+git-secret-controller-pubkey -o jsonpath='{.data.publicKey}' | gpg --import`.
+
 ## The keyring file
 
 A plain, committable file listing the recipients a repo (or an environment)

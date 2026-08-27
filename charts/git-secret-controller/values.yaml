@@ -56,6 +56,14 @@ servePubKey:
   enabled: false
   port: 8082
 
+# On install/upgrade, run a one-shot Job that writes the controller's
+# fingerprint + public key into a ConfigMap, so sealers can read it with
+# `kubectl get configmap` (GitOps-friendly, no running endpoint needed).
+# Complements servePubKey -- use either or both.
+publishPublicKey:
+  enabled: false
+  configMapName: git-secret-controller-pubkey
+
 resources:
   requests:
     cpu: 50m
