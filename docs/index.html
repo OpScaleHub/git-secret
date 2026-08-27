@@ -644,6 +644,7 @@ gpg_recipients:
         <p class="eyebrow">Beyond the CLI</p>
         <h2>GitSecret: a native CRD, ciphertext inline, no clone at all</h2>
         <p class="lede"><code>GitSecret</code> is a custom resource with its own controller — modeled on Bitnami <code>sealed-secrets</code>' shape, built on this project's existing multi-recipient GPG cryptography rather than one controller keypair. Ciphertext lives inline in the object, delivered by whatever already applies your manifests — ArgoCD, <code>kubectl apply</code> — with no repo clone, no SSH transport, and no network hop anywhere in the decrypt path.</p>
+        <p class="lede">The point isn't "GPG instead of a single keypair" — it's <strong>recovery independence</strong>: losing the cluster, the controller, or any one key doesn't make the secrets unrecoverable, as long as the encrypted repo and one authorized recipient key survive. See the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/threat-model.md" target="_blank" rel="noopener">threat model</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/disaster-recovery.md" target="_blank" rel="noopener">disaster-recovery runbooks</a>.</p>
       </div>
 
       <div class="receipt" aria-label="git-secret-seal example session">
@@ -675,6 +676,14 @@ gpg_recipients:
           <div><h3>Bound to the exact object and key</h3><p>Every value's authenticated data is its <code>namespace/name/key</code> — an entry copied into a different <code>GitSecret</code>, or a renamed one, fails to decrypt instead of silently applying somewhere it wasn't sealed for.</p></div>
         </div>
         <div class="ledger-entry">
+          <span class="ledger-code">VISIBLE</span>
+          <div><h3>You can see who can decrypt</h3><p>The fingerprints sealed to are recorded in <code>spec.recipients</code> and mirrored to <code>status</code> — adding a recipient is a one-line diff in review, not an opaque blob change. Roles (<code>controller</code>, <code>recovery</code>, human) travel with the object; <code>git-secret-seal recipients</code> won't let you drop the last recovery key by accident.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">SAFE ADOPT</span>
+          <div><h3>Won't clobber a Secret it doesn't own</h3><p>If a <code>Secret</code> with the target name already exists and isn't managed by this <code>GitSecret</code>, the controller leaves it alone and reports a <code>TargetConflict</code> — taking it over needs an explicit <code>spec.target.adopt</code>.</p></div>
+        </div>
+        <div class="ledger-entry">
           <span class="ledger-code">OWNED</span>
           <div><h3>The CRD is the source of truth</h3><p>Built on <code>controller-runtime</code>. A <code>GitSecret</code> created fresh owns its target <code>Secret</code> outright: delete one, the other goes with it.</p></div>
         </div>
@@ -684,7 +693,7 @@ gpg_recipients:
         </div>
       </div>
 
-      <p class="lede" style="margin-top:var(--sp-3)">Early and not yet packaged as a Helm chart or container image — build <code>git-secret-controller</code> and <code>git-secret-seal</code> from source for now (<code>go build ./cmd/git-secret-controller</code>, <code>go build ./cmd/git-secret-seal</code>), and install the CRD from <code>config/crd/bases/</code>. Full usage and the <code>--rewrap</code> reference: <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a>.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">A container image and Helm chart (<code>charts/git-secret-controller</code>) ship on every tagged release. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
     </div>
   </section>
 
