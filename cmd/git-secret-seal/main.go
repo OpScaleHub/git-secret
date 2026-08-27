@@ -49,11 +49,17 @@ Usage:
                                 target Secret) will live in. Required.
   --name NAME                   Name of the GitSecret object. Required.
   --recipient FPR               Full 40/64-hex GPG fingerprint to encrypt to.
-                                Repeatable; at least one required. Passing
-                                every current human + controller recipient
-                                here, not just the controller's own key, is
-                                what avoids sealed-secrets' single-keypair
-                                DR weakness -- see docs/security/design-rationale.md.
+                                Repeatable. At least one recipient is required
+                                (via --recipient or --keyring). Passing every
+                                current human + controller recipient, not just
+                                the controller's own key, is what avoids
+                                sealed-secrets' single-keypair DR weakness --
+                                see docs/security/design-rationale.md.
+  --keyring FILE                A keyring file (recipients: [{fingerprint,
+                                role}]) whose fingerprints are added to the
+                                recipient set and whose roles are recorded on
+                                the manifest -- so you don't retype the same
+                                cluster/repo recipients every time.
   --target-name NAME             Name of the Secret the controller creates.
                                 Defaults to --name.
   --target-type TYPE             Kubernetes Secret type. Defaults to Opaque.
@@ -126,6 +132,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fromSecretFile := fs.String("from-secret-file", "", "path to an existing Secret manifest to seal (- for stdin)")
 	fromEnvFile := fs.String("from-env-file", "", "path to a KEY=VALUE file to seal")
 	rewrapFile := fs.String("rewrap", "", "path to an existing GitSecret manifest to rewrap to a new --recipient list, without re-encrypting its values (- for stdin)")
+	keyringFile := fs.String("keyring", "", "path to a keyring file listing recipients (fingerprint + optional role); used in addition to any --recipient flags")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	var literals stringSlice
 	var recipients stringSlice
@@ -197,8 +204,28 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "error: --namespace and --name are required (or must be derivable from -f's Secret metadata)")
 		return exitUsage
 	}
+
+	var keyringRoles map[string]v1alpha1.RecipientRole
+	if *keyringFile != "" {
+		krFprs, krRoles, err := loadKeyring(*keyringFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return exitError
+		}
+		seen := map[string]bool{}
+		for _, r := range recipients {
+			seen[upperFP(r)] = true
+		}
+		for _, fp := range krFprs {
+			if !seen[upperFP(fp)] {
+				recipients = append(recipients, fp)
+			}
+		}
+		keyringRoles = krRoles
+	}
+
 	if len(recipients) == 0 {
-		fmt.Fprintln(stderr, "error: at least one --recipient is required")
+		fmt.Fprintln(stderr, "error: at least one recipient is required (--recipient or --keyring)")
 		return exitUsage
 	}
 	if len(data) == 0 {
@@ -228,6 +255,13 @@ func run(args []string, stdout, stderr io.Writer) int {
 	gs.Name = nm
 	gs.Namespace = ns
 	gs.Spec = spec
+
+	// Carry any roles the keyring assigned onto the object, so the sealed
+	// manifest records which recipient is the controller, which is the
+	// offline recovery key, etc.
+	if roleStr := v1alpha1.FormatRecipientRoles(keyringRoles); roleStr != "" {
+		gs.Annotations = map[string]string{v1alpha1.RecipientRolesAnnotation: roleStr}
+	}
 
 	// sigs.k8s.io/yaml, not gopkg.in/yaml.v3: gs's fields carry only
 	// `json:"..."` tags (the Kubernetes API convention), which yaml.v3

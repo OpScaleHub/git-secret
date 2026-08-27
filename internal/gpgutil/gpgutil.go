@@ -172,6 +172,24 @@ func ImportSecretKey(armored []byte) error {
 	return nil
 }
 
+// ExportPublicKey returns the ASCII-armored public key for fpr from the
+// current GNUPGHOME. Public keys are not secret -- this is used to hand a
+// controller's own public key to whoever needs to seal GitSecrets to it,
+// without exposing anything sensitive.
+func ExportPublicKey(fpr string) ([]byte, error) {
+	if !ValidFingerprint(fpr) {
+		return nil, fmt.Errorf("gpgutil: %q is not a full fingerprint", fpr)
+	}
+	out, err := run(nil, "--batch", "--armor", "--export", fpr)
+	if err != nil {
+		return nil, fmt.Errorf("gpgutil: export public key: %w", err)
+	}
+	if !bytes.Contains(out, []byte("BEGIN PGP PUBLIC KEY BLOCK")) {
+		return nil, fmt.Errorf("gpgutil: no public key found for %s", fpr)
+	}
+	return out, nil
+}
+
 // CountRecipients returns how many public-key recipients an armored GPG
 // message is encrypted to, counting its pubkey-enc packets. It does not
 // resolve them to fingerprints -- the packet carries a recipient's

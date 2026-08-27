@@ -365,6 +365,8 @@ A container image and Helm chart ship on every tagged release
   rotation workflows, and what removing a recipient does and doesn't undo.
 - [Multi-cluster operation](docs/architecture/multi-cluster.md) — one encrypted
   repo, per-cluster controller identities, no central store.
+- [Cluster keyring](docs/architecture/keyring.md) — `--print-public-key`,
+  `git-secret-seal --keyring`, per-environment recipient sets.
 - [Reporting a vulnerability](SECURITY.md).
 
 The core property: the encrypted repository is the durable source of truth, and

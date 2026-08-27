@@ -134,11 +134,14 @@ regression regardless of the feature it enables.
 
 ## 6. Open items feeding this model
 
-#47 (keyring / pubkey discovery) · admission enforcement of `spec.recipients`
-(deferred from #41) · provenance / which-Git-revision-produced-this-Secret (T10).
+Admission enforcement of `spec.recipients` / per-environment keyrings (deferred
+from #41/#47) · keyring-over-HTTP + a Helm Job to publish the controller pubkey
+`ConfigMap` (deferred from #47) · provenance / which-Git-revision-produced-this-
+Secret (T10).
 
 Closed: #38 (this doc) · #39 (DR runbooks + tests) · #40 (`spec.recipients` +
 status mirror + `VerifyRecipients`) · #41 (recipient roles + `git-secret-seal
 recipients` + [lifecycle doc](recipient-lifecycle.md)) · #42 (controller adoption
 guard, input bounds, status-leak regression test) · #43
-([multi-cluster.md](../architecture/multi-cluster.md)).
+([multi-cluster.md](../architecture/multi-cluster.md)) · #47
+([keyring.md](../architecture/keyring.md): `--print-public-key`, `--keyring`).

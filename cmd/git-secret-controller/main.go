@@ -45,6 +45,7 @@ func run(args []string, environ []string) int {
 	healthAddr := fs.String("health-probe-bind-address", ":8081", "address the liveness/readiness probe endpoint binds to (env HEALTH_PROBE_BIND_ADDRESS)")
 	leaderElect := fs.Bool("leader-elect", false, "enable leader election so only one replica reconciles at a time (env LEADER_ELECT)")
 	gpgPrivateKeyFile := fs.String("gpg-private-key-file", "", "path to this controller's armored GPG private key, imported at startup (env GPG_PRIVATE_KEY_FILE)")
+	printPublicKey := fs.Bool("print-public-key", false, "import the key, print its fingerprint and armored PUBLIC key to stdout, and exit (for handing to whoever seals GitSecrets to this controller)")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -100,6 +101,22 @@ func run(args []string, environ []string) int {
 		gpgKey[i] = 0
 	}
 	gpgKey = nil
+
+	if *printPublicKey {
+		keys, err := gpgutil.ListSecretKeys()
+		if err != nil || len(keys) == 0 {
+			setupLog.Error(err, "list imported secret key")
+			return exitError
+		}
+		pub, err := gpgutil.ExportPublicKey(keys[0].Fingerprint)
+		if err != nil {
+			setupLog.Error(err, "export public key")
+			return exitError
+		}
+		fmt.Println(keys[0].Fingerprint)
+		os.Stdout.Write(pub)
+		return 0
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
