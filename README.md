@@ -287,12 +287,19 @@ A container image and Helm chart ship on every tagged release
   architecture has the shape it has.
 - [Architecture overview](docs/architecture/overview.md) — ASCII diagrams of the
   seal → apply → reconcile flow, the two-layer envelope, and the recovery model.
+- [Disaster recovery](docs/security/disaster-recovery.md) — operator runbooks for
+  controller loss, cluster loss, key loss, and key compromise.
 - [Reporting a vulnerability](SECURITY.md).
 
 The core property: the encrypted repository is the durable source of truth, and
-decryption is multi-recipient and recoverable — losing a cluster, a controller,
-or any single key does not make the secrets unrecoverable, as long as the repo
-and one authorized recipient key survive.
+decryption is multi-recipient and recoverable.
+
+> Losing the Kubernetes cluster does not mean losing the secrets, as long as the
+> Git repository and one authorized recipient private key survive.
+
+Multi-recipient GPG protects against *loss* of a key. Recovering from a *compromised*
+key additionally requires rotating the secret values themselves — see the disaster
+recovery guide.
 
 ## Publishing & GitHub Pages
 

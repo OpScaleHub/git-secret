@@ -72,9 +72,9 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 | # | Threat | Class | Current posture |
 |---|---|---|---|
 | T1 | Controller pod / Deployment destroyed | L | **Handled.** State is in Git + the controller `Secret`; a fresh controller reconciles everything back. |
-| T2 | Entire cluster lost | L | **Handled by design, not yet tested (#39).** Re-apply `GitSecret`s to a new cluster + restore the controller key → identical `Secret`s. |
-| T3 | One recipient **private key lost** (holder unavailable) | L | **Handled.** Any other current recipient runs `git-secret-seal --rewrap` to drop it / add a replacement — `encryptedData` is never re-sealed. |
-| T4 | One recipient **private key compromised** | C | **Partial.** `--rewrap` stops *future* ciphertext exposure, but every historical version of the object in Git stays wrapped to the compromised key → permanent historical exposure. Requires a new content key + full re-seal. Documented in #39; not automated. |
+| T2 | Entire cluster lost | L | **Handled.** Re-apply `GitSecret`s to a new cluster + restore the controller key → identical `Secret`s. Runbook §B; test `TestRecovery_ClusterRebuild_SameKeyReproducesData`. |
+| T3 | One recipient **private key lost** (holder unavailable) | L | **Handled.** Any other current recipient runs `git-secret-seal --rewrap` to drop it / add a replacement — `encryptedData` is never re-sealed. Runbook §C/§D; tests `TestRecovery_ControllerKeyLost_*`, `TestRecovery_OperatorLeaves_*`. |
+| T4 | One recipient **private key compromised** | C | **Partial, and understood.** `--rewrap` stops *future* exposure, but every historical version of the object in Git stays wrapped to the compromised key → permanent historical exposure. Requires rotating the secret values + a new content key + full re-seal. Runbook §E; test `TestRecovery_KeyCompromise_RewrapAloneIsInsufficient`. |
 | T5 | Malicious / oversized `GitSecret` applied | I / L (DoS) | **Gap (#42).** No bound on `encryptedData` size/count; a huge object makes the controller decrypt it all per reconcile. |
 | T6 | Operator workstation compromised | C | **Out of scope to prevent.** Blast radius = everything that workstation's keyring can decrypt. Mitigation is operational: per-person keys, hardware-backed keys, offline recovery key not on any workstation. |
 | T7 | Plaintext leak via logs / Events / `status` / metrics | C | **Invariant (I3). Mostly held**; needs a regression test asserting decrypt-error strings never echo plaintext (#42 item 3). |
