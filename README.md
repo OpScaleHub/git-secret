@@ -268,6 +268,12 @@ rule `.repo-enc.yml`'s `gpg_recipients` already enforces (see
 why: a short ID or email is ambiguous and locally resolvable, a fingerprint
 isn't). `gpg --list-secret-keys --with-colons` (or `gpg -K`) prints yours.
 
+The controller owns the target `Secret` it creates (deleting the `GitSecret`
+deletes the `Secret`). If a `Secret` with the target name already exists and is
+*not* managed by this `GitSecret`, the controller leaves it untouched and sets a
+`TargetConflict` condition rather than clobbering it — set `spec.target.adopt:
+true` to deliberately take it over.
+
 `git-secret-controller` needs its own dedicated GPG identity, imported at
 startup into an isolated `GNUPGHOME`
 (`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, key zeroed from memory
@@ -275,11 +281,31 @@ once imported). Install the CRD from
 `config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml` before running
 the controller.
 
-Not yet packaged as a Helm chart, container image, or with CI/release
-wiring — tracked in
-[git-secret#34](https://github.com/OpScaleHub/git-secret/issues/34). Build
-both binaries locally with `go build ./cmd/git-secret-controller` and
-`go build ./cmd/git-secret-seal` in the meantime.
+A container image and Helm chart ship on every tagged release
+(`charts/git-secret-controller`). For local work, build the binaries with
+`go build ./cmd/git-secret-controller` and `go build ./cmd/git-secret-seal`.
+
+## Security
+
+- [Threat model](docs/security/threat-model.md) — assets, trust boundaries,
+  threats, and the invariants the code must preserve.
+- [Design rationale & history](docs/security/design-rationale.md) — why the
+  architecture has the shape it has.
+- [Architecture overview](docs/architecture/overview.md) — ASCII diagrams of the
+  seal → apply → reconcile flow, the two-layer envelope, and the recovery model.
+- [Disaster recovery](docs/security/disaster-recovery.md) — operator runbooks for
+  controller loss, cluster loss, key loss, and key compromise.
+- [Reporting a vulnerability](SECURITY.md).
+
+The core property: the encrypted repository is the durable source of truth, and
+decryption is multi-recipient and recoverable.
+
+> Losing the Kubernetes cluster does not mean losing the secrets, as long as the
+> Git repository and one authorized recipient private key survive.
+
+Multi-recipient GPG protects against *loss* of a key. Recovering from a *compromised*
+key additionally requires rotating the secret values themselves — see the disaster
+recovery guide.
 
 ## Publishing & GitHub Pages
 

@@ -17,6 +17,15 @@ type SecretTarget struct {
 	// Defaults to Opaque.
 	// +optional
 	Type corev1.SecretType `json:"type,omitempty"`
+
+	// Adopt lets the controller take over a Secret that already exists and
+	// is not owned by this GitSecret, replacing its contents and attaching
+	// an owner reference (so it is deleted with the GitSecret). Off by
+	// default: a name collision with an independently-managed Secret is
+	// reported as a "TargetConflict" Ready=False condition and the existing
+	// Secret is left untouched, rather than being silently clobbered.
+	// +optional
+	Adopt bool `json:"adopt,omitempty"`
 }
 
 // GitSecretSpec is the desired state of a GitSecret: everything needed to
@@ -44,7 +53,12 @@ type GitSecretSpec struct {
 	// exactly the object and field it was sealed for, so copying an entry
 	// into a different GitSecret (or renaming/moving this one) fails to
 	// decrypt rather than silently applying to the wrong place.
+	//
+	// Bounded to keep a malformed or hostile object from forcing the
+	// controller to decrypt an unbounded amount of data per reconcile; the
+	// resulting Secret is still subject to the apiserver's own ~1MiB cap.
 	// +optional
+	// +kubebuilder:validation:MaxProperties=1024
 	EncryptedData map[string]string `json:"encryptedData,omitempty"`
 }
 

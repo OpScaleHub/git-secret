@@ -53,7 +53,7 @@ Usage:
                                 every current human + controller recipient
                                 here, not just the controller's own key, is
                                 what avoids sealed-secrets' single-keypair
-                                DR weakness -- see docs/adr/0002.
+                                DR weakness -- see docs/security/design-rationale.md.
   --target-name NAME             Name of the Secret the controller creates.
                                 Defaults to --name.
   --target-type TYPE             Kubernetes Secret type. Defaults to Opaque.
