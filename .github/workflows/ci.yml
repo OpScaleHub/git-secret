@@ -5,10 +5,39 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      # true when something that can affect build/test/chart changed, or on
+      # any push to main (so main is always fully verified regardless of the
+      # merge's diff).
+      code: ${{ steps.filter.outputs.code == 'true' || github.event_name == 'push' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'charts/**'
+              - 'config/**'
+              - 'Dockerfile*'
+              - '.github/workflows/ci.yml'
+
   test:
     name: Build, vet, test
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -37,6 +66,8 @@ jobs:
 
   chart:
     name: Lint & render Helm chart
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -60,3 +91,25 @@ jobs:
           helm template test ./charts/git-secret-controller \
             --set gpgPrivateKey.existingSecret=dummy-gpg \
             --include-crds
+
+  ci-status:
+    name: CI status
+    # Single stable check to gate merges on: passes when the heavy jobs
+    # passed OR were legitimately skipped (docs-only change), fails if any
+    # actually failed or was cancelled. Make this the required status check
+    # in branch protection instead of the per-OS matrix legs.
+    if: always()
+    needs: [changes, test, chart]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          echo "test:  ${{ needs.test.result }}"
+          echo "chart: ${{ needs.chart.result }}"
+          for r in "${{ needs.test.result }}" "${{ needs.chart.result }}"; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "a required job did not succeed"
+              exit 1
+            fi
+          done
+          echo "ok"
