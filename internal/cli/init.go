@@ -36,6 +36,12 @@ type InitResult struct {
 	KeyIsCommittable bool
 	KeySource        string
 	HooksInstalled   []string
+	// BackendDefaultedToFile is true when no --key-backend was given and
+	// the repo was set up on "file". The caller uses it to print a nudge:
+	// "file" is a fine local on-ramp but is structurally incompatible with
+	// git-secret-controller or any automated consumer (its key never
+	// enters git), and switching later means re-sealing everything.
+	BackendDefaultedToFile bool
 }
 
 // Init bootstraps repo-enc in the current repository: writes a config
@@ -76,7 +82,12 @@ func Init(opts InitOptions) (*InitResult, error) {
 		return nil, err
 	}
 
-	result := &InitResult{ConfigPath: cfgPath, KeySource: cfg.KeySource, KeyIsCommittable: cfg.KeyBackend == "gpg"}
+	result := &InitResult{
+		ConfigPath:             cfgPath,
+		KeySource:              cfg.KeySource,
+		KeyIsCommittable:       cfg.KeyBackend == "gpg",
+		BackendDefaultedToFile: opts.KeyBackend == "" && cfg.KeyBackend == "file",
+	}
 
 	if _, err := backend.Get(root, cfg.KeySource); errors.Is(err, keybackend.ErrKeyNotFound) {
 		if cfg.KeyBackend == "gpg" {

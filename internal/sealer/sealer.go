@@ -21,6 +21,17 @@ import (
 
 const keySize = 32 // chacha20poly1305.KeySize; avoids importing x/crypto here just for the constant.
 
+// Bounds on what Unseal will process from a single object, so a malformed
+// or hostile GitSecret cannot force the controller to allocate and decrypt
+// an unbounded amount of data per reconcile. MaxEntries matches the CRD's
+// MaxProperties marker on EncryptedData; MaxValueBytes is the base64-
+// encoded envelope size and is deliberately generous (the resulting Secret
+// is separately capped at ~1MiB by the apiserver).
+const (
+	MaxEntries    = 1024
+	MaxValueBytes = 1 << 20 // 1 MiB per encoded value
+)
+
 // AAD binds one ciphertext to exactly the object/key it was sealed for, so
 // an entry copied into a different GitSecret (or a renamed/moved one)
 // fails AEAD authentication instead of silently decrypting somewhere else.
@@ -75,7 +86,17 @@ func Seal(namespace, name string, data map[string]string, recipients []string) (
 	return v1alpha1.GitSecretSpec{
 		EncryptedKey:  string(wrappedKey),
 		EncryptedData: encData,
+		Recipients:    sortedCopy(recipients),
 	}, nil
+}
+
+// sortedCopy returns a sorted copy of in, leaving the caller's slice
+// untouched -- used so spec.Recipients is diff-stable regardless of the
+// order recipients were passed on the command line.
+func sortedCopy(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
 }
 
 // Rewrap re-encrypts spec's content key to newRecipients without touching
@@ -116,7 +137,37 @@ func Rewrap(spec v1alpha1.GitSecretSpec, newRecipients []string) (v1alpha1.GitSe
 
 	out := spec
 	out.EncryptedKey = string(wrapped)
+	out.Recipients = sortedCopy(newRecipients)
 	return out, nil
+}
+
+// VerifyRecipients cross-checks spec.Recipients against the number of
+// public-key recipients EncryptedKey is actually wrapped to. It is a
+// drift check, not full authentication: it catches a recipient added to
+// (or removed from) the armored blob without a matching spec.Recipients
+// edit, or vice versa. It does not (cannot cheaply) prove each listed
+// fingerprint is one of the blob's recipients, because the blob carries
+// encryption-subkey IDs, not primary-key fingerprints.
+//
+// Returns nil when spec.Recipients is empty (nothing claimed, nothing to
+// check -- e.g. an object sealed by an older git-secret-seal).
+func VerifyRecipients(spec v1alpha1.GitSecretSpec) error {
+	if len(spec.Recipients) == 0 {
+		return nil
+	}
+	for _, r := range spec.Recipients {
+		if !gpgutil.ValidFingerprint(r) {
+			return fmt.Errorf("sealer: spec.recipients entry %q is not a full GPG fingerprint", r)
+		}
+	}
+	n, err := gpgutil.CountRecipients([]byte(spec.EncryptedKey))
+	if err != nil {
+		return fmt.Errorf("sealer: %w", err)
+	}
+	if n != len(spec.Recipients) {
+		return fmt.Errorf("sealer: spec.recipients lists %d fingerprint(s) but encryptedKey is wrapped to %d recipient(s)", len(spec.Recipients), n)
+	}
+	return nil
 }
 
 // Unseal reverses Seal using whatever local GPG secret key (via gpg-agent
@@ -135,8 +186,15 @@ func Unseal(namespace, name string, spec v1alpha1.GitSecretSpec) (map[string]str
 		return nil, fmt.Errorf("sealer: unwrapped content key is %d bytes, expected %d", len(key), keySize)
 	}
 
+	if len(spec.EncryptedData) > MaxEntries {
+		return nil, fmt.Errorf("sealer: encryptedData has %d entries, over the %d limit", len(spec.EncryptedData), MaxEntries)
+	}
+
 	data := make(map[string]string, len(spec.EncryptedData))
 	for k, encoded := range spec.EncryptedData {
+		if len(encoded) > MaxValueBytes {
+			return nil, fmt.Errorf("sealer: %q: encoded value is %d bytes, over the %d limit", k, len(encoded), MaxValueBytes)
+		}
 		envelope, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
 			return nil, fmt.Errorf("sealer: %q: not valid base64: %w", k, err)

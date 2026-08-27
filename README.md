@@ -1,13 +1,51 @@
 # Git Secret Manager (`git-secret`)
 
-`git-secret` is a single-binary Git plugin that transparently encrypts sensitive files in a repository. You keep working with plaintext in your working tree; the installed git hooks make sure only ciphertext ever reaches your commit history.
+**A recoverable, Git-native cryptographic control plane for Kubernetes secrets.**
+
+The encrypted Git repository is the durable source of truth. Decryption is
+multi-recipient, auditable, and Kubernetes-native — and no single cluster,
+controller, or key is a single point of catastrophic recovery failure. It is also
+a plain single-binary Git plugin: transparent file encryption via git hooks, with
+plaintext only ever in your working tree, never in commit history.
+
+### Design goals
+
+1. No single controller key is a single point of unrecoverable failure.
+2. Losing Kubernetes does not lose the secrets.
+3. Git history stays a useful, durable encrypted record.
+4. Multiple humans and services decrypt independently.
+5. Kubernetes receives plaintext only at the final reconcile boundary.
+6. The controller is a *consumer* of the encrypted source, not its owner.
+7. Metadata is observable; plaintext never is.
+8. Recovery is possible entirely outside the cluster.
+9. Recipient identity is an explicit GPG fingerprint.
+10. Still fully useful with no Kubernetes at all (the CLI + `gpg` backend).
+
+### What it is not
+
+Not Vault, not a hosted secret manager, not a password manager, not a GPG
+replacement, not an identity provider — and not coupled to ESO, ArgoCD, or any
+one Git host.
+
+### Compared to
+
+| | `git-secret` | Bitnami sealed-secrets | SOPS | Vault |
+|---|---|---|---|---|
+| Ciphertext lives in Git | yes | yes | yes | no (external store) |
+| Survives loss of the cluster/controller key | **yes** (multi-recipient) | no (single keypair) | yes | n/a |
+| Kubernetes-native reconcile | yes (CRD + controller) | yes | via operator | via ESO/agent |
+| Useful with no Kubernetes | yes (CLI) | no | yes | no |
+| External service to operate | no | no | no | yes |
+
+See [docs/security/design-rationale.md](docs/security/design-rationale.md) for how
+the architecture got here.
 
 ## Features
 
 - **Transparent encryption**: git hooks (`pre-commit`, `post-checkout`, `post-merge`, `pre-push`) encrypt/decrypt automatically as you commit, checkout, merge, and push — no manual encrypt/decrypt step in the common case.
 - **Modern AEAD crypto**: XChaCha20-Poly1305 by default (AES-256-GCM available) does the actual file encryption either way — GPG is never in that path, so `file`/`env` need no GPG dependency at all.
 - **Config-driven**: glob `patterns` in a committed `.repo-enc.yml` decide which files are in scope; everything else is left untouched.
-- **Pluggable key backends**: `file` (a local, gitignored key file), `env` (an environment variable), or `gpg` (wraps the key to one or more existing GPG identities — safe to commit, no out-of-band key transfer needed). The `Backend` interface makes adding KMS backends straightforward too.
+- **Pluggable key backends**: `gpg` (wraps the key to one or more existing GPG identities — safe to commit, no out-of-band transfer, and the only backend that works with automated consumers or survives the loss of a single key — **recommended**), `file` (a local, gitignored key file — quick start, local/solo only), or `env` (an environment variable). The `Backend` interface makes adding KMS backends straightforward too.
 - **Safety net**: `verify` and the `pre-push` hook refuse to let plaintext that slipped past `pre-commit` (e.g. via `--no-verify`) reach a remote.
 - **Cross-platform**: pure Go, no runtime dependencies beyond `git` itself (`gpg` is an optional extra, only needed if you choose that backend). Installed hooks ship as both POSIX shell and PowerShell scripts.
 
@@ -40,15 +78,31 @@ Once `git-secret` is on your `PATH`, `git secret <command>` works as a git subco
 
 ```bash
 cd your-repo
-git secret init                 # writes .repo-enc.yml, generates a key, installs hooks
-git add .repo-enc.yml .gitignore
+
+# Recommended for any team, and required for Kubernetes/CI: the gpg backend,
+# with every human AND every service that needs access as its own recipient.
+git secret init --key-backend gpg \
+  --gpg-recipient <your-fingerprint> --gpg-recipient <teammate-fingerprint>
+git add .repo-enc.yml .repo-enc/key.gpg .gitignore
 git commit -m "chore: configure repo-enc"
 ```
 
+**Which backend?** `gpg` (above) is the only one that works with
+`git-secret-controller` or any automated consumer, and the only one where losing
+one key doesn't threaten recoverability — its wrapped key is safe to commit, no
+out-of-band key transfer. The `file` backend (`git secret init` with no
+`--key-backend`) is a quick local/solo on-ramp, but its key never enters git, so
+adopting Kubernetes or CI later forces a full re-seal. Start on `gpg` unless you
+are certain automation will never be in scope.
+
+```bash
+git secret init                 # 'file' backend: quick start, local/solo only
+```
+
 `.repo-enc.yml` must be committed — it's how a teammate's clone knows which
-patterns to encrypt/decrypt. The generated key must **not** be committed
-(`init` already gitignores it for the `file` backend); share it with
-collaborators out-of-band instead.
+patterns to encrypt/decrypt. For the `file` backend the generated key must
+**not** be committed (`init` gitignores it); share it out-of-band. For `gpg`,
+`.repo-enc/key.gpg` **is** committed and no key transfer is needed.
 
 By default `init` seeds `.repo-enc.yml` with the pattern `secrets/**`. Pass your own patterns instead:
 
@@ -127,7 +181,9 @@ gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
 
 ### Key backends
 
-- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`. Giving a teammate access means copying this raw key to them out-of-band.
+**Use `gpg` for anything beyond a solo local repo** — it is the only backend that works with `git-secret-controller` or any automated consumer, and the only one where losing a single key doesn't threaten recoverability. `init` prints a nudge when it falls back to `file`.
+
+- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`. Giving a teammate access means copying this raw key to them out-of-band. Structurally incompatible with automated decryption — the key never enters git.
 - **`env`**: the key is read from the environment variable named by `key_source`. `init`/`rotate-keys` print an `export VAR=<hex>` line when they generate a new one — this backend can't persist anything to disk for you, so copy that value down before the process exits.
 - **`gpg`**: the same random 32-byte key, but wrapped (GPG-encrypted) to one or more recipients instead of stored raw. The wrapped blob (default `.repo-enc/key.gpg`) is **safe to commit** — unlike the `file` backend's key — since only a matching GPG private key can unwrap it. This solves the onboarding pain point above: a teammate who's already a configured recipient just needs `git secret init` (installs hooks; the committed config already has everything else) and their own existing keyring does the rest, no manual key transfer required.
 
@@ -257,9 +313,33 @@ git-secret-seal --namespace myapp --name my-secrets \
 kubectl apply -f gitsecret.yaml   # git-secret-controller reconciles it into a plain Secret
 
 # Add/remove a recipient later without re-encrypting any value:
+git-secret-seal recipients add <new-fingerprint> -f gitsecret.yaml --role recovery
+git-secret-seal recipients remove <old-fingerprint> -f gitsecret.yaml
+git-secret-seal recipients list -f gitsecret.yaml       # who can decrypt, and their role
+
+# ...or set the whole list explicitly:
 git-secret-seal --rewrap gitsecret.yaml \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
+
+# ...or resolve recipients from a committed keyring file instead of typing them:
+git-secret-seal --namespace myapp --name my-secrets \
+  --keyring envs/prod/keyring.yaml --from-env-file app.env > gitsecret.yaml
 ```
+
+Get the controller's own fingerprint + public key with
+`git-secret-controller --gpg-private-key-file <key> --print-public-key`. See
+[docs/architecture/keyring.md](docs/architecture/keyring.md) for the keyring
+format and per-environment layout.
+
+The generated manifest records the fingerprints it was sealed to in
+`spec.recipients`, so adding or removing a recipient shows up as a one-line
+change in review rather than an opaque blob churn. The controller mirrors this
+to `status.recipients` / `status.recipientCount` (a `Recipients` column on
+`kubectl get gitsecret`) so you can see who can decrypt an object without
+inspecting the ciphertext. It also stamps a
+`git-secret.opscalehub.io/source-revision` annotation from the current Git
+`HEAD`, mirrored to `status.sourceRevision`, so you can tell which commit a live
+`Secret` came from ([docs/architecture/provenance.md](docs/architecture/provenance.md)).
 
 Every `--recipient` must be a full 40/64-hex GPG fingerprint, not a short key
 ID or an email address — `git-secret-seal` rejects anything else, the same
@@ -268,6 +348,19 @@ rule `.repo-enc.yml`'s `gpg_recipients` already enforces (see
 why: a short ID or email is ambiguous and locally resolvable, a fingerprint
 isn't). `gpg --list-secret-keys --with-colons` (or `gpg -K`) prints yours.
 
+The controller owns the target `Secret` it creates (deleting the `GitSecret`
+deletes the `Secret`). If a `Secret` with the target name already exists and is
+*not* managed by this `GitSecret`, the controller leaves it untouched and sets a
+`TargetConflict` condition rather than clobbering it — set `spec.target.adopt:
+true` to deliberately take it over.
+
+An optional **validating admission webhook** (`webhook.enabled` in the chart)
+rejects a `GitSecret` whose `spec.recipients` disagrees with its `encryptedKey`,
+and enforces a per-namespace required-recipient set
+(`git-secret.opscalehub.io/required-recipients` on the `Namespace`). It manages
+its own self-signed cert — no cert-manager. See
+[docs/architecture/admission-webhook.md](docs/architecture/admission-webhook.md).
+
 `git-secret-controller` needs its own dedicated GPG identity, imported at
 startup into an isolated `GNUPGHOME`
 (`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, key zeroed from memory
@@ -275,11 +368,37 @@ once imported). Install the CRD from
 `config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml` before running
 the controller.
 
-Not yet packaged as a Helm chart, container image, or with CI/release
-wiring — tracked in
-[git-secret#34](https://github.com/OpScaleHub/git-secret/issues/34). Build
-both binaries locally with `go build ./cmd/git-secret-controller` and
-`go build ./cmd/git-secret-seal` in the meantime.
+A container image and Helm chart ship on every tagged release
+(`charts/git-secret-controller`). For local work, build the binaries with
+`go build ./cmd/git-secret-controller` and `go build ./cmd/git-secret-seal`.
+
+## Security
+
+- [Threat model](docs/security/threat-model.md) — assets, trust boundaries,
+  threats, and the invariants the code must preserve.
+- [Design rationale & history](docs/security/design-rationale.md) — why the
+  architecture has the shape it has.
+- [Architecture overview](docs/architecture/overview.md) — ASCII diagrams of the
+  seal → apply → reconcile flow, the two-layer envelope, and the recovery model.
+- [Disaster recovery](docs/security/disaster-recovery.md) — operator runbooks for
+  controller loss, cluster loss, key loss, and key compromise.
+- [Recipient & key lifecycle](docs/security/recipient-lifecycle.md) — roles,
+  rotation workflows, and what removing a recipient does and doesn't undo.
+- [Multi-cluster operation](docs/architecture/multi-cluster.md) — one encrypted
+  repo, per-cluster controller identities, no central store.
+- [Cluster keyring](docs/architecture/keyring.md) — `--print-public-key`,
+  `git-secret-seal --keyring`, per-environment recipient sets.
+- [Reporting a vulnerability](SECURITY.md).
+
+The core property: the encrypted repository is the durable source of truth, and
+decryption is multi-recipient and recoverable.
+
+> Losing the Kubernetes cluster does not mean losing the secrets, as long as the
+> Git repository and one authorized recipient private key survive.
+
+Multi-recipient GPG protects against *loss* of a key. Recovering from a *compromised*
+key additionally requires rotating the secret values themselves — see the disaster
+recovery guide.
 
 ## Publishing & GitHub Pages
 

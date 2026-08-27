@@ -70,3 +70,34 @@ kubectl apply -f gitsecret.yaml
 Set `replicaCount` above 1 for availability; `leaderElection.enabled`
 (default `true`) is what keeps only one replica actually reconciling at a
 time — it's safe to leave enabled even at `replicaCount: 1`.
+
+## Validating admission webhook
+
+`webhook.enabled: true` makes the controller also serve a validating
+admission webhook for `GitSecret` objects. It rejects a `GitSecret` whose
+`spec.recipients` count disagrees with its `encryptedKey`, and enforces a
+per-namespace required-recipient set via the
+`git-secret.opscalehub.io/required-recipients` annotation on the
+`Namespace`. The controller generates its own self-signed serving
+certificate at startup and patches the CA into the
+`ValidatingWebhookConfiguration` — **no cert-manager required**.
+
+This adds RBAC for `namespaces` (get) and
+`validatingwebhookconfigurations` (get/update), a webhook `Service`, and
+a `POD_NAMESPACE` env via the downward API. Leave `webhook.failurePolicy`
+at `Fail`. See `docs/architecture/admission-webhook.md`.
+
+## Publishing the controller's public key
+
+Whoever seals `GitSecret`s to this controller needs its public key. Two
+optional ways to expose it:
+
+- `servePubKey.enabled` — the controller serves `GET /pubkey` on a
+  ClusterIP `Service` (fingerprint on line 1, then the armored key).
+- `publishPublicKey.enabled` — a post-install/upgrade hook `Job` writes
+  the fingerprint + public key into a `ConfigMap`
+  (`publishPublicKey.configMapName`, default `git-secret-controller-pubkey`),
+  which is nicer for GitOps / `kubectl get`.
+
+Both are off by default; use either or both. See
+`docs/architecture/keyring.md`.

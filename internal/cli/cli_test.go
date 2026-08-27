@@ -80,6 +80,9 @@ func TestInitCreatesConfigKeyAndHooks(t *testing.T) {
 	if !result.GeneratedKey {
 		t.Errorf("expected Init to generate a key on first run")
 	}
+	if !result.BackendDefaultedToFile {
+		t.Errorf("expected BackendDefaultedToFile when no --key-backend was given")
+	}
 	if _, err := os.Stat(result.ConfigPath); err != nil {
 		t.Errorf("config file missing: %v", err)
 	}

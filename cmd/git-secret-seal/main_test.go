@@ -100,6 +100,12 @@ func TestRun_LiteralsProduceDecryptableManifest(t *testing.T) {
 	if data["USERNAME"] != "admin" || data["PASSWORD"] != "hunter2" {
 		t.Errorf("round-trip mismatch: %#v", data)
 	}
+	if len(gs.Spec.Recipients) != 1 || gs.Spec.Recipients[0] != fpr {
+		t.Errorf("manifest spec.recipients = %v, want [%s]", gs.Spec.Recipients, fpr)
+	}
+	if !strings.Contains(stdout.String(), "recipients:") {
+		t.Error("manifest YAML does not surface a recipients: field")
+	}
 }
 
 func TestRun_FromSecretFile(t *testing.T) {
@@ -223,5 +229,40 @@ func TestRun_MissingRecipientIsUsageError(t *testing.T) {
 	code := run([]string{"--namespace", "ns", "--name", "n", "--from-literal", "K=V"}, &stdout, &stderr)
 	if code != exitUsage {
 		t.Fatalf("run() = %d, want exitUsage; stderr: %s", code, stderr.String())
+	}
+}
+
+func TestRun_Provenance(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	base := []string{"--namespace", "ns", "--name", "obj", "--recipient", fpr, "--from-literal", "K=v"}
+
+	// Explicit --source-revision is stamped verbatim.
+	var out, errb bytes.Buffer
+	if code := run(append(base, "--source-revision", "abc123"), &out, &errb); code != exitOK {
+		t.Fatalf("run: %d %s", code, errb.String())
+	}
+	var gs v1alpha1.GitSecret
+	if err := sigsyaml.Unmarshal(out.Bytes(), &gs); err != nil {
+		t.Fatal(err)
+	}
+	if gs.Annotations[v1alpha1.SourceRevisionAnnotation] != "abc123" {
+		t.Fatalf("source-revision annotation = %q", gs.Annotations[v1alpha1.SourceRevisionAnnotation])
+	}
+
+	// --no-provenance omits both annotations.
+	out.Reset()
+	errb.Reset()
+	if code := run(append(base, "--no-provenance", "--source-revision", "abc123"), &out, &errb); code != exitOK {
+		t.Fatalf("run: %d %s", code, errb.String())
+	}
+	var gs2 v1alpha1.GitSecret
+	if err := sigsyaml.Unmarshal(out.Bytes(), &gs2); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := gs2.Annotations[v1alpha1.SourceRevisionAnnotation]; ok {
+		t.Fatalf("--no-provenance still stamped: %v", gs2.Annotations)
 	}
 }

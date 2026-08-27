@@ -1,0 +1,44 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "git-secret-controller.fullname" . }}-webhook
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "git-secret-controller.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: https
+      port: 443
+      targetPort: webhook
+      protocol: TCP
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "git-secret-controller.fullname" . }}
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+webhooks:
+  - name: vgitsecret.git-secret.opscalehub.io
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    # caBundle is intentionally omitted: the controller generates a
+    # self-signed CA at startup and patches it in here (see
+    # internal/webhook.InjectCABundle). Until it does, the apiserver
+    # cannot reach the webhook -- with failurePolicy: Fail that briefly
+    # blocks GitSecret writes on a fresh install, which is the safe
+    # direction.
+    clientConfig:
+      service:
+        name: {{ include "git-secret-controller.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-git-secret-opscalehub-io-v1alpha1-gitsecret
+    rules:
+      - apiGroups: ["git-secret.opscalehub.io"]
+        apiVersions: ["v1alpha1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["gitsecrets"]
+{{- end }}
