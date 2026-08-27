@@ -231,3 +231,38 @@ func TestRun_MissingRecipientIsUsageError(t *testing.T) {
 		t.Fatalf("run() = %d, want exitUsage; stderr: %s", code, stderr.String())
 	}
 }
+
+func TestRun_Provenance(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	base := []string{"--namespace", "ns", "--name", "obj", "--recipient", fpr, "--from-literal", "K=v"}
+
+	// Explicit --source-revision is stamped verbatim.
+	var out, errb bytes.Buffer
+	if code := run(append(base, "--source-revision", "abc123"), &out, &errb); code != exitOK {
+		t.Fatalf("run: %d %s", code, errb.String())
+	}
+	var gs v1alpha1.GitSecret
+	if err := sigsyaml.Unmarshal(out.Bytes(), &gs); err != nil {
+		t.Fatal(err)
+	}
+	if gs.Annotations[v1alpha1.SourceRevisionAnnotation] != "abc123" {
+		t.Fatalf("source-revision annotation = %q", gs.Annotations[v1alpha1.SourceRevisionAnnotation])
+	}
+
+	// --no-provenance omits both annotations.
+	out.Reset()
+	errb.Reset()
+	if code := run(append(base, "--no-provenance", "--source-revision", "abc123"), &out, &errb); code != exitOK {
+		t.Fatalf("run: %d %s", code, errb.String())
+	}
+	var gs2 v1alpha1.GitSecret
+	if err := sigsyaml.Unmarshal(out.Bytes(), &gs2); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := gs2.Annotations[v1alpha1.SourceRevisionAnnotation]; ok {
+		t.Fatalf("--no-provenance still stamped: %v", gs2.Annotations)
+	}
+}

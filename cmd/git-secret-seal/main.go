@@ -132,7 +132,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fromSecretFile := fs.String("from-secret-file", "", "path to an existing Secret manifest to seal (- for stdin)")
 	fromEnvFile := fs.String("from-env-file", "", "path to a KEY=VALUE file to seal")
 	rewrapFile := fs.String("rewrap", "", "path to an existing GitSecret manifest to rewrap to a new --recipient list, without re-encrypting its values (- for stdin)")
-	keyringFile := fs.String("keyring", "", "path to a keyring file listing recipients (fingerprint + optional role); used in addition to any --recipient flags")
+	keyringFile := fs.String("keyring", "", "path to a keyring file (or http(s):// URL) listing recipients (fingerprint + optional role); used in addition to any --recipient flags")
+	sourceRevision := fs.String("source-revision", "", "override the provenance revision annotation (default: the current git HEAD, if run inside a repo)")
+	noProvenance := fs.Bool("no-provenance", false, "do not stamp the source-revision / source-repo provenance annotations")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	var literals stringSlice
 	var recipients stringSlice
@@ -261,6 +263,27 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// offline recovery key, etc.
 	if roleStr := v1alpha1.FormatRecipientRoles(keyringRoles); roleStr != "" {
 		gs.Annotations = map[string]string{v1alpha1.RecipientRolesAnnotation: roleStr}
+	}
+
+	// Stamp provenance: which commit the plaintext was sealed from. Lets
+	// `kubectl get gitsecret` / the controller status answer "which
+	// revision produced this Secret?" after the fact.
+	if !*noProvenance {
+		rev, repo := gitProvenance()
+		if *sourceRevision != "" {
+			rev = *sourceRevision
+		}
+		if rev != "" || repo != "" {
+			if gs.Annotations == nil {
+				gs.Annotations = map[string]string{}
+			}
+			if rev != "" {
+				gs.Annotations[v1alpha1.SourceRevisionAnnotation] = rev
+			}
+			if repo != "" {
+				gs.Annotations[v1alpha1.SourceRepoAnnotation] = repo
+			}
+		}
 	}
 
 	// sigs.k8s.io/yaml, not gopkg.in/yaml.v3: gs's fields carry only

@@ -98,8 +98,12 @@ func TestReconcile_CreatesTargetSecret(t *testing.T) {
 	}
 
 	gs := &gitsecretv1alpha1.GitSecret{
-		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime"},
-		Spec:       spec,
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "downtime-secrets",
+			Namespace:   "downtime",
+			Annotations: map[string]string{gitsecretv1alpha1.SourceRevisionAnnotation: "deadbeefcafe"},
+		},
+		Spec: spec,
 	}
 
 	scheme := newScheme(t)
@@ -139,6 +143,9 @@ func TestReconcile_CreatesTargetSecret(t *testing.T) {
 	}
 	if updated.Status.RecipientCount != 1 || len(updated.Status.Recipients) != 1 || updated.Status.Recipients[0] != fpr {
 		t.Errorf("status recipients = %v (count %d), want [%s] (1)", updated.Status.Recipients, updated.Status.RecipientCount, fpr)
+	}
+	if updated.Status.SourceRevision != "deadbeefcafe" {
+		t.Errorf("status.sourceRevision = %q, want deadbeefcafe", updated.Status.SourceRevision)
 	}
 	found := false
 	for _, c := range updated.Status.Conditions {

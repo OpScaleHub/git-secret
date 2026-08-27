@@ -47,6 +47,23 @@ webhook:
   port: 9443
   failurePolicy: Fail
 
+# Serve GET /pubkey -- this controller's fingerprint on the first line,
+# then its armored public key -- so whoever seals GitSecrets to it can
+# fetch it (`curl http://<svc>/pubkey | gpg --import`) instead of it being
+# copied around by hand. Public data, no auth. Adds a ClusterIP Service on
+# port 80 -> the container port.
+servePubKey:
+  enabled: false
+  port: 8082
+
+# On install/upgrade, run a one-shot Job that writes the controller's
+# fingerprint + public key into a ConfigMap, so sealers can read it with
+# `kubectl get configmap` (GitOps-friendly, no running endpoint needed).
+# Complements servePubKey -- use either or both.
+publishPublicKey:
+  enabled: false
+  configMapName: git-secret-controller-pubkey
+
 resources:
   requests:
     cpu: 50m

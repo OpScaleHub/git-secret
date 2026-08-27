@@ -2,7 +2,11 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	sigsyaml "sigs.k8s.io/yaml"
 
@@ -28,17 +32,29 @@ type keyringFile struct {
 	} `json:"recipients"`
 }
 
-// loadKeyring reads path and returns its fingerprints (validated) and any
-// roles keyed by upper-case fingerprint.
-func loadKeyring(path string) (fingerprints []string, roles map[string]v1alpha1.RecipientRole, err error) {
-	raw, err := os.ReadFile(path)
+// loadKeyring reads a keyring from a local path or an http(s):// URL and
+// returns its fingerprints (validated) and any roles keyed by upper-case
+// fingerprint. A keyring is public data (fingerprints + roles, no key
+// material), so an https URL -- a raw file in the repo host, or a
+// controller endpoint -- is a fine source; plain http is allowed too but
+// the caller still needs each recipient's public key in their local
+// keyring to actually seal, so a tampered keyring fails closed at seal
+// time rather than leaking anything.
+func loadKeyring(src string) (fingerprints []string, roles map[string]v1alpha1.RecipientRole, err error) {
+	var raw []byte
+	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
+		raw, err = fetchKeyring(src)
+	} else {
+		raw, err = os.ReadFile(src)
+	}
 	if err != nil {
-		return nil, nil, fmt.Errorf("read keyring %s: %w", path, err)
+		return nil, nil, fmt.Errorf("read keyring %s: %w", src, err)
 	}
 	var kr keyringFile
 	if err := sigsyaml.Unmarshal(raw, &kr); err != nil {
-		return nil, nil, fmt.Errorf("parse keyring %s: %w", path, err)
+		return nil, nil, fmt.Errorf("parse keyring %s: %w", src, err)
 	}
+	path := src
 	if len(kr.Recipients) == 0 {
 		return nil, nil, fmt.Errorf("keyring %s lists no recipients", path)
 	}
@@ -63,6 +79,24 @@ func loadKeyring(path string) (fingerprints []string, roles map[string]v1alpha1.
 		}
 	}
 	return fingerprints, roles, nil
+}
+
+func fetchKeyring(url string) ([]byte, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GET %s: %s", url, resp.Status)
+	}
+	// Cap the body: a keyring is a handful of lines.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", url, err)
+	}
+	return body, nil
 }
 
 func upperFP(s string) string {

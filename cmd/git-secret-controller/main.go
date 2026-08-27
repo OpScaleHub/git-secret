@@ -8,17 +8,25 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	crwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -51,6 +59,8 @@ func run(args []string, environ []string) int {
 	enableWebhook := fs.Bool("enable-webhook", false, "serve the GitSecret validating admission webhook (env ENABLE_WEBHOOK)")
 	webhookService := fs.String("webhook-service", "git-secret-controller-webhook", "name of the Service fronting the webhook, for the self-signed serving cert SAN (env WEBHOOK_SERVICE)")
 	webhookConfigName := fs.String("webhook-config-name", "git-secret-controller", "name of the ValidatingWebhookConfiguration to inject the self-signed CA into (env WEBHOOK_CONFIG_NAME)")
+	servePubKeyAddr := fs.String("serve-pubkey-address", "", "if set, serve GET /pubkey (this controller's fingerprint + armored public key) on this address, e.g. :8082 (env SERVE_PUBKEY_ADDRESS)")
+	publishConfigMap := fs.String("publish-public-key-configmap", "", "if set, upsert a ConfigMap of this name (in POD_NAMESPACE) with the controller's fingerprint + public key and exit -- run as a one-shot Job (env PUBLISH_PUBLIC_KEY_CONFIGMAP)")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -107,23 +117,40 @@ func run(args []string, environ []string) int {
 	}
 	gpgKey = nil
 
+	keys, err := gpgutil.ListSecretKeys()
+	if err != nil || len(keys) == 0 {
+		setupLog.Error(err, "list imported secret key")
+		return exitError
+	}
+	ownFingerprint := keys[0].Fingerprint
+	ownPubKey, err := gpgutil.ExportPublicKey(ownFingerprint)
+	if err != nil {
+		setupLog.Error(err, "export public key")
+		return exitError
+	}
+
 	if *printPublicKey {
-		keys, err := gpgutil.ListSecretKeys()
-		if err != nil || len(keys) == 0 {
-			setupLog.Error(err, "list imported secret key")
+		fmt.Println(ownFingerprint)
+		os.Stdout.Write(ownPubKey)
+		return 0
+	}
+
+	if cmName := firstNonEmpty(*publishConfigMap, env["PUBLISH_PUBLIC_KEY_CONFIGMAP"]); cmName != "" {
+		ns := firstNonEmpty(env["POD_NAMESPACE"], env["WEBHOOK_NAMESPACE"])
+		if ns == "" {
+			setupLog.Error(nil, "--publish-public-key-configmap needs POD_NAMESPACE set (downward API)")
 			return exitError
 		}
-		pub, err := gpgutil.ExportPublicKey(keys[0].Fingerprint)
-		if err != nil {
-			setupLog.Error(err, "export public key")
+		if err := publishPubKeyConfigMap(cmName, ns, ownFingerprint, ownPubKey); err != nil {
+			setupLog.Error(err, "publish public-key ConfigMap")
 			return exitError
 		}
-		fmt.Println(keys[0].Fingerprint)
-		os.Stdout.Write(pub)
+		setupLog.Info("published public-key ConfigMap", "name", cmName, "namespace", ns, "fingerprint", ownFingerprint)
 		return 0
 	}
 
 	webhookOn := *enableWebhook || env["ENABLE_WEBHOOK"] == "true"
+	pubKeyAddr := firstNonEmpty(*servePubKeyAddr, env["SERVE_PUBKEY_ADDRESS"])
 
 	mgrOpts := ctrl.Options{
 		Scheme: scheme,
@@ -179,6 +206,14 @@ func run(args []string, environ []string) int {
 		setupLog.Info("validating webhook enabled", "path", gswebhook.WebhookPath)
 	}
 
+	if pubKeyAddr != "" {
+		if err := mgr.Add(servePubKey(pubKeyAddr, ownFingerprint, ownPubKey)); err != nil {
+			setupLog.Error(err, "unable to schedule pubkey server")
+			return exitError
+		}
+		setupLog.Info("serving GET /pubkey", "address", pubKeyAddr, "fingerprint", ownFingerprint)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		return exitError
@@ -200,6 +235,59 @@ const (
 	exitUsage = 2
 	exitError = 1
 )
+
+// publishPubKeyConfigMap upserts a ConfigMap holding the controller's own
+// fingerprint and armored public key, so sealers (or a keyring builder)
+// can read it with kubectl without the controller having to serve HTTP.
+// Intended to run as a one-shot Job.
+func publishPubKeyConfigMap(name, namespace, fingerprint string, pub []byte) error {
+	c, err := client.New(ctrl.GetConfigOrDie(), client.Options{Scheme: scheme})
+	if err != nil {
+		return fmt.Errorf("build client: %w", err)
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: namespace},
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	_, err = controllerutil.CreateOrUpdate(ctx, c, cm, func() error {
+		cm.Data = map[string]string{
+			"fingerprint": fingerprint,
+			"publicKey":   string(pub),
+		}
+		return nil
+	})
+	return err
+}
+
+// servePubKey returns a manager.Runnable serving GET /pubkey -- the
+// controller's own fingerprint on the first line, then its armored public
+// key. Public data; no auth. Anything else 404s.
+func servePubKey(addr, fingerprint string, pub []byte) manager.Runnable {
+	body := append([]byte(fingerprint+"\n"), pub...)
+	return manager.RunnableFunc(func(ctx context.Context) error {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/pubkey", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Write(body)
+		})
+		srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			<-ctx.Done()
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutCtx)
+		}()
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	})
+}
 
 func envMap(environ []string) map[string]string {
 	m := make(map[string]string, len(environ))

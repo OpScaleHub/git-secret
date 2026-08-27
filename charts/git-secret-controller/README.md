@@ -86,3 +86,18 @@ This adds RBAC for `namespaces` (get) and
 `validatingwebhookconfigurations` (get/update), a webhook `Service`, and
 a `POD_NAMESPACE` env via the downward API. Leave `webhook.failurePolicy`
 at `Fail`. See `docs/architecture/admission-webhook.md`.
+
+## Publishing the controller's public key
+
+Whoever seals `GitSecret`s to this controller needs its public key. Two
+optional ways to expose it:
+
+- `servePubKey.enabled` — the controller serves `GET /pubkey` on a
+  ClusterIP `Service` (fingerprint on line 1, then the armored key).
+- `publishPublicKey.enabled` — a post-install/upgrade hook `Job` writes
+  the fingerprint + public key into a `ConfigMap`
+  (`publishPublicKey.configMapName`, default `git-secret-controller-pubkey`),
+  which is nicer for GitOps / `kubectl get`.
+
+Both are off by default; use either or both. See
+`docs/architecture/keyring.md`.
