@@ -47,6 +47,15 @@ webhook:
   port: 9443
   failurePolicy: Fail
 
+# Serve GET /pubkey -- this controller's fingerprint on the first line,
+# then its armored public key -- so whoever seals GitSecrets to it can
+# fetch it (`curl http://<svc>/pubkey | gpg --import`) instead of it being
+# copied around by hand. Public data, no auth. Adds a ClusterIP Service on
+# port 80 -> the container port.
+servePubKey:
+  enabled: false
+  port: 8082
+
 resources:
   requests:
     cpu: 50m

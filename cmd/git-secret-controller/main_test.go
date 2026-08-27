@@ -2,11 +2,15 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 )
@@ -72,5 +76,50 @@ func TestPrintPublicKey(t *testing.T) {
 	first := strings.SplitN(strings.TrimSpace(out), "\n", 2)[0]
 	if len(first) != 40 {
 		t.Fatalf("first line is not a 40-hex fingerprint: %q", first)
+	}
+}
+
+func TestServePubKey(t *testing.T) {
+	const fpr = "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+	pub := []byte("-----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n-----END PGP PUBLIC KEY BLOCK-----\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() { errCh <- servePubKey("127.0.0.1:38217", fpr, pub).Start(ctx) }()
+
+	var resp *http.Response
+	var err error
+	for i := 0; i < 50; i++ {
+		resp, err = http.Get("http://127.0.0.1:38217/pubkey")
+		if err == nil {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if err != nil {
+		t.Fatalf("server never came up: %v", err)
+	}
+	got, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.HasPrefix(string(got), fpr+"\n") || !strings.Contains(string(got), "BEGIN PGP PUBLIC KEY BLOCK") {
+		t.Fatalf("unexpected /pubkey body: %q", got)
+	}
+
+	r2, err := http.Post("http://127.0.0.1:38217/pubkey", "text/plain", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2.Body.Close()
+	if r2.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("POST /pubkey = %d, want 405", r2.StatusCode)
+	}
+	if r3, _ := http.Get("http://127.0.0.1:38217/nope"); r3.StatusCode != http.StatusNotFound {
+		t.Fatalf("GET /nope = %d, want 404", r3.StatusCode)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil {
+		t.Fatalf("server exited with error: %v", err)
 	}
 }

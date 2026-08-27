@@ -37,11 +37,14 @@ production-grade integration. No breaking changes; one additive CRD field
 - Recipient roles (`human` / `controller` / `recovery` / `deprecated`) recorded
   in the `git-secret.opscalehub.io/recipient-roles` annotation.
 - `--keyring FILE` resolves recipients (and roles) from a committed keyring file.
+  `--keyring` also accepts an `http(s)://` URL.
 
 ### `git-secret-controller`
 
 - `--print-public-key` — import the configured key and print its fingerprint +
   armored public key, for handing to whoever seals to this controller.
+- `--serve-pubkey-address` — serve `GET /pubkey` (fingerprint + armored public
+  key) for discovery. Chart: `servePubKey.enabled`.
 - `--enable-webhook` — an optional validating admission webhook for `GitSecret`
   that rejects a `spec.recipients` / `encryptedKey` mismatch and enforces a
   per-namespace required-recipient set. Self-signed cert managed by the

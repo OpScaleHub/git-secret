@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -75,5 +77,49 @@ func TestRun_KeyringRejectsBadFingerprint(t *testing.T) {
 	}
 	if !strings.Contains(errb.String(), "fingerprint") {
 		t.Fatalf("unexpected error: %s", errb.String())
+	}
+}
+
+func TestRun_KeyringFromHTTP(t *testing.T) {
+	home := shortTempDir(t)
+	fpr := genTestKey(t, home)
+	t.Setenv("GNUPGHOME", home)
+
+	keyring := "recipients:\n  - fingerprint: " + fpr + "\n    role: controller\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(keyring))
+	}))
+	defer srv.Close()
+
+	var out, errb bytes.Buffer
+	code := run([]string{
+		"--namespace", "ns", "--name", "obj",
+		"--keyring", srv.URL + "/keyring.yaml",
+		"--from-literal", "K=v",
+	}, &out, &errb)
+	if code != exitOK {
+		t.Fatalf("run() = %d: %s", code, errb.String())
+	}
+	var gs v1alpha1.GitSecret
+	if err := sigsyaml.Unmarshal(out.Bytes(), &gs); err != nil {
+		t.Fatal(err)
+	}
+	if len(gs.Spec.Recipients) != 1 || gs.Spec.Recipients[0] != fpr {
+		t.Fatalf("recipients from HTTP keyring = %v", gs.Spec.Recipients)
+	}
+	if v1alpha1.ParseRecipientRoles(gs.Annotations)[upperFP(fpr)] != v1alpha1.RoleController {
+		t.Fatalf("role from HTTP keyring not applied: %v", gs.Annotations)
+	}
+}
+
+func TestRun_KeyringHTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", http.StatusNotFound)
+	}))
+	defer srv.Close()
+	var out, errb bytes.Buffer
+	code := run([]string{"--namespace", "ns", "--name", "o", "--keyring", srv.URL, "--from-literal", "K=v"}, &out, &errb)
+	if code == exitOK {
+		t.Fatal("expected failure on 404 keyring")
 	}
 }
