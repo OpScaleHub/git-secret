@@ -93,12 +93,15 @@ Proven by `TestRecovery_ControllerKeyLost_HumanRewrapsToNewController`.
 
 ## D — operator leaves
 
-Rewrap every object they were a recipient of, dropping their fingerprint:
+Drop their fingerprint from every object they were a recipient of:
 
 ```
-git-secret-seal --rewrap gitsecret.yaml \
-  --recipient <controller-fpr> --recipient <remaining-human-fpr> --recipient <recovery-fpr>
+git-secret-seal recipients remove <departing-fpr> -f gitsecret.yaml
 ```
+
+(or, to set the whole list explicitly, `git-secret-seal --rewrap gitsecret.yaml
+--recipient <controller-fpr> --recipient <remaining-human-fpr> --recipient
+<recovery-fpr>`).
 
 They can no longer decrypt any **future** version of the object. They **can**
 still decrypt any version already in Git history that was wrapped to them — if

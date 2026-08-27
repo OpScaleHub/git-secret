@@ -134,9 +134,10 @@ regression regardless of the feature it enables.
 
 ## 6. Open items feeding this model
 
-#41 (recipient lifecycle / admission) · #43 (multi-cluster blast radius) · #47
-(keyring / pubkey discovery).
+#43 (multi-cluster blast radius) · #47 (keyring / pubkey discovery) · admission
+enforcement of `spec.recipients` (deferred from #41).
 
 Closed: #38 (this doc) · #39 (DR runbooks + tests) · #40 (`spec.recipients` +
-status mirror + `VerifyRecipients`) · #42 (controller adoption guard, input
-bounds, status-leak regression test).
+status mirror + `VerifyRecipients`) · #41 (recipient roles + `git-secret-seal
+recipients` + [lifecycle doc](recipient-lifecycle.md)) · #42 (controller adoption
+guard, input bounds, status-leak regression test).
