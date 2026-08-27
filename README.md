@@ -336,7 +336,10 @@ The generated manifest records the fingerprints it was sealed to in
 change in review rather than an opaque blob churn. The controller mirrors this
 to `status.recipients` / `status.recipientCount` (a `Recipients` column on
 `kubectl get gitsecret`) so you can see who can decrypt an object without
-inspecting the ciphertext.
+inspecting the ciphertext. It also stamps a
+`git-secret.opscalehub.io/source-revision` annotation from the current Git
+`HEAD`, mirrored to `status.sourceRevision`, so you can tell which commit a live
+`Secret` came from ([docs/architecture/provenance.md](docs/architecture/provenance.md)).
 
 Every `--recipient` must be a full 40/64-hex GPG fingerprint, not a short key
 ID or an email address — `git-secret-seal` rejects anything else, the same

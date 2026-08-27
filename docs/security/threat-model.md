@@ -80,7 +80,7 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 | T7 | Plaintext leak via logs / Events / `status` / metrics | C | **Invariant (I3), regression-tested.** `TestUnseal_ErrorDoesNotLeakPlaintext` asserts a tampered-envelope failure never echoes the plaintext into the returned error (which the controller copies into `.status`). |
 | T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-secret`. |
 | T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller — per-cluster / per-env recipient sets ([multi-cluster.md](../architecture/multi-cluster.md)); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
-| T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | An old object version re-applied re-installs old secret values silently. Provenance (which Git revision produced this Secret) is not surfaced — future work. |
+| T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | **Observable, not yet prevented.** `git-secret-seal` stamps `source-revision` and the controller mirrors it to `status.sourceRevision` (a `Revision` printer column), so a rollback is visible ([provenance.md](../architecture/provenance.md)). Refusing to go below an expected revision is a separate design question. |
 | T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Handled** (review + optional enforcement). `spec.recipients` lists the fingerprints on the object (one-line diff in review); the optional [validating webhook](../architecture/admission-webhook.md) rejects a `GitSecret` whose `spec.recipients` count disagrees with the blob, and enforces a per-namespace required-recipient set. Without the webhook it is still a controller warning. |
 | T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Handled.** A colliding `Secret` this `GitSecret` does not own is left untouched and a `TargetConflict` Ready=False condition is set, unless the operator opts in with `spec.target.adopt`. Tests `TestReconcile_DoesNotClobberUnownedSecret` / `_AdoptsUnownedSecretWhenOptedIn`. |
 | T13 | Plaintext committed to Git (CLI path) | C | **Handled.** `verify` + the `pre-push` hook fail closed; `SECRETIZE_SKIP_HOOKS` is opt-in per-invocation, never tied to ambient `CI`. |
@@ -135,9 +135,8 @@ regression regardless of the feature it enables.
 ## 6. Open items feeding this model
 
 Keyring-over-HTTP (#56) · a Helm Job to publish the controller pubkey `ConfigMap`
-(#57) · provenance / which-Git-revision-produced-this-Secret (#58, T10) ·
-webhook matching against a full keyring object rather than the Namespace
-annotation.
+(#57) · rollback *protection* (a min-revision `spec` field, T10) · webhook
+matching against a full keyring object rather than the Namespace annotation.
 
 Closed: #38 (this doc) · #39 (DR runbooks + tests) · #40 (`spec.recipients` +
 status mirror + `VerifyRecipients`) · #41 (recipient roles + `git-secret-seal
@@ -145,4 +144,6 @@ recipients` + [lifecycle doc](recipient-lifecycle.md)) · #42 (controller adopti
 guard, input bounds, status-leak regression test) · #43
 ([multi-cluster.md](../architecture/multi-cluster.md)) · #47
 ([keyring.md](../architecture/keyring.md): `--print-public-key`, `--keyring`) ·
-#55 ([admission-webhook.md](../architecture/admission-webhook.md)).
+#55 ([admission-webhook.md](../architecture/admission-webhook.md)) · #56/#57
+(keyring over HTTP, `--serve-pubkey`, pubkey ConfigMap Job) · #58
+([provenance.md](../architecture/provenance.md)).
