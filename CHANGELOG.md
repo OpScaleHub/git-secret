@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased — security hardening (#38–#48)
+## v0.8.0 — 2026-08-27 — security hardening (#38–#58)
 
 A backlog reset focused on making the `GitSecret` CRD a defensible
-production-grade integration. No breaking changes; one additive CRD field
-(`spec.recipients`) and one additive nested field (`spec.target.adopt`).
+production-grade integration. No breaking changes; additive CRD fields only
+(`spec.recipients`, `spec.target.adopt`, `status.recipients` /
+`status.recipientCount` / `status.sourceRevision`).
 
 ### Security & docs
 
