@@ -134,6 +134,9 @@ func TestInitWithGPGBackend(t *testing.T) {
 	if !result.KeyIsCommittable {
 		t.Fatalf("expected KeyIsCommittable for gpg backend")
 	}
+	if result.BackendDefaultedToFile {
+		t.Fatalf("BackendDefaultedToFile must be false when --key-backend gpg was given")
+	}
 
 	// Unlike the file backend, the wrapped key must NOT be gitignored.
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
