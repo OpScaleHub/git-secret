@@ -45,6 +45,9 @@ production-grade integration. No breaking changes; one additive CRD field
   armored public key, for handing to whoever seals to this controller.
 - `--serve-pubkey-address` — serve `GET /pubkey` (fingerprint + armored public
   key) for discovery. Chart: `servePubKey.enabled`.
+- `--publish-public-key-configmap` — one-shot: upsert a ConfigMap with the
+  fingerprint + public key, then exit. Chart: `publishPublicKey.enabled` runs it
+  as a post-install/upgrade hook Job.
 - `--enable-webhook` — an optional validating admission webhook for `GitSecret`
   that rejects a `spec.recipients` / `encryptedKey` mismatch and enforces a
   per-namespace required-recipient set. Self-signed cert managed by the
