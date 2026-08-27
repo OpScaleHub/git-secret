@@ -21,6 +21,17 @@ import (
 
 const keySize = 32 // chacha20poly1305.KeySize; avoids importing x/crypto here just for the constant.
 
+// Bounds on what Unseal will process from a single object, so a malformed
+// or hostile GitSecret cannot force the controller to allocate and decrypt
+// an unbounded amount of data per reconcile. MaxEntries matches the CRD's
+// MaxProperties marker on EncryptedData; MaxValueBytes is the base64-
+// encoded envelope size and is deliberately generous (the resulting Secret
+// is separately capped at ~1MiB by the apiserver).
+const (
+	MaxEntries    = 1024
+	MaxValueBytes = 1 << 20 // 1 MiB per encoded value
+)
+
 // AAD binds one ciphertext to exactly the object/key it was sealed for, so
 // an entry copied into a different GitSecret (or a renamed/moved one)
 // fails AEAD authentication instead of silently decrypting somewhere else.
@@ -135,8 +146,15 @@ func Unseal(namespace, name string, spec v1alpha1.GitSecretSpec) (map[string]str
 		return nil, fmt.Errorf("sealer: unwrapped content key is %d bytes, expected %d", len(key), keySize)
 	}
 
+	if len(spec.EncryptedData) > MaxEntries {
+		return nil, fmt.Errorf("sealer: encryptedData has %d entries, over the %d limit", len(spec.EncryptedData), MaxEntries)
+	}
+
 	data := make(map[string]string, len(spec.EncryptedData))
 	for k, encoded := range spec.EncryptedData {
+		if len(encoded) > MaxValueBytes {
+			return nil, fmt.Errorf("sealer: %q: encoded value is %d bytes, over the %d limit", k, len(encoded), MaxValueBytes)
+		}
 		envelope, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
 			return nil, fmt.Errorf("sealer: %q: not valid base64: %w", k, err)

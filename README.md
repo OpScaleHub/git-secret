@@ -268,6 +268,12 @@ rule `.repo-enc.yml`'s `gpg_recipients` already enforces (see
 why: a short ID or email is ambiguous and locally resolvable, a fingerprint
 isn't). `gpg --list-secret-keys --with-colons` (or `gpg -K`) prints yours.
 
+The controller owns the target `Secret` it creates (deleting the `GitSecret`
+deletes the `Secret`). If a `Secret` with the target name already exists and is
+*not* managed by this `GitSecret`, the controller leaves it untouched and sets a
+`TargetConflict` condition rather than clobbering it — set `spec.target.adopt:
+true` to deliberately take it over.
+
 `git-secret-controller` needs its own dedicated GPG identity, imported at
 startup into an isolated `GNUPGHOME`
 (`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, key zeroed from memory

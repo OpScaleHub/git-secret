@@ -250,6 +250,121 @@ func TestReconcile_RevertsDriftOnOwnedSecret(t *testing.T) {
 	}
 }
 
+// TestReconcile_DoesNotClobberUnownedSecret: a Secret with the target name
+// already exists and is managed by something else (no owner reference back
+// to this GitSecret). Reconcile must leave it completely untouched and
+// report a TargetConflict condition, not silently clear its data and adopt
+// it.
+func TestReconcile_DoesNotClobberUnownedSecret(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	spec, err := sealer.Seal("downtime", "downtime-secrets", map[string]string{"OURS": "from-gitsecret"}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	gs := &gitsecretv1alpha1.GitSecret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime"},
+		Spec:       spec,
+	}
+	preExisting := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime"},
+		Data:       map[string][]byte{"THEIRS": []byte("managed-elsewhere")},
+	}
+
+	scheme := newScheme(t)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(gs, preExisting).
+		WithStatusSubresource(&gitsecretv1alpha1.GitSecret{}).
+		Build()
+
+	r := &GitSecretReconciler{Client: fakeClient}
+	req := ctrl.Request{NamespacedName: namespacedName("downtime", "downtime-secrets")}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	var after corev1.Secret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &after); err != nil {
+		t.Fatal(err)
+	}
+	if string(after.Data["THEIRS"]) != "managed-elsewhere" {
+		t.Errorf("pre-existing Secret data was modified: %#v", after.Data)
+	}
+	if _, ours := after.Data["OURS"]; ours {
+		t.Error("controller wrote its own key into a Secret it does not own")
+	}
+	if _, ours := after.StringData["OURS"]; ours {
+		t.Error("controller wrote its own key (StringData) into a Secret it does not own")
+	}
+	if len(after.OwnerReferences) != 0 {
+		t.Errorf("controller adopted an unowned Secret: %#v", after.OwnerReferences)
+	}
+
+	var updated gitsecretv1alpha1.GitSecret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &updated); err != nil {
+		t.Fatal(err)
+	}
+	var ready *metav1.Condition
+	for i := range updated.Status.Conditions {
+		if updated.Status.Conditions[i].Type == conditionReady {
+			ready = &updated.Status.Conditions[i]
+		}
+	}
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.Reason != "TargetConflict" {
+		t.Errorf("Ready condition = %+v, want False/TargetConflict", ready)
+	}
+}
+
+// TestReconcile_AdoptsUnownedSecretWhenOptedIn: same collision, but
+// spec.target.adopt is set, so the controller is expected to take the
+// Secret over.
+func TestReconcile_AdoptsUnownedSecretWhenOptedIn(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	spec, err := sealer.Seal("downtime", "downtime-secrets", map[string]string{"OURS": "from-gitsecret"}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	spec.Target.Adopt = true
+	gs := &gitsecretv1alpha1.GitSecret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime"},
+		Spec:       spec,
+	}
+	preExisting := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime"},
+		Data:       map[string][]byte{"THEIRS": []byte("managed-elsewhere")},
+	}
+
+	scheme := newScheme(t)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(gs, preExisting).
+		WithStatusSubresource(&gitsecretv1alpha1.GitSecret{}).
+		Build()
+
+	r := &GitSecretReconciler{Client: fakeClient}
+	req := ctrl.Request{NamespacedName: namespacedName("downtime", "downtime-secrets")}
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	var after corev1.Secret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.StringData["OURS"] != "from-gitsecret" {
+		t.Errorf("adopted Secret missing our data: %#v", after.StringData)
+	}
+	if len(after.OwnerReferences) != 1 || after.OwnerReferences[0].Kind != "GitSecret" {
+		t.Errorf("adopted Secret not owned by the GitSecret: %#v", after.OwnerReferences)
+	}
+}
+
 func TestReconcile_WrongKeyReportsFailureWithoutCreatingSecret(t *testing.T) {
 	sealingHome := shortTempDir(t)
 	sealFpr := genTestKey(t, sealingHome)

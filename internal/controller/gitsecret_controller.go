@@ -74,6 +74,32 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
+	// Guard against silently clobbering a Secret this GitSecret does not
+	// own. CreateOrUpdate on its own will happily adopt an ownerless Secret
+	// with a colliding name -- clearing its data, replacing it with this
+	// object's, and attaching an owner reference so it is deleted with the
+	// GitSecret. Only take over such a Secret when the operator has opted in
+	// with spec.target.adopt; otherwise report the collision and leave it
+	// untouched.
+	var existing corev1.Secret
+	getErr := r.Get(ctx, types.NamespacedName{Namespace: gs.Namespace, Name: targetName}, &existing)
+	switch {
+	case getErr == nil:
+		owner := metav1.GetControllerOf(&existing)
+		ownedByThis := owner != nil && owner.Kind == "GitSecret" && owner.Name == gs.Name && owner.UID == gs.UID
+		if !ownedByThis && !gs.Spec.Target.Adopt {
+			msg := fmt.Sprintf("Secret/%s already exists and is not managed by this GitSecret; set spec.target.adopt to take it over", targetName)
+			logger.Info("target Secret conflict", "gitsecret", req.NamespacedName, "secret", targetName)
+			r.setCondition(&gs, metav1.ConditionFalse, "TargetConflict", msg)
+			if statusErr := r.Status().Update(ctx, &gs); statusErr != nil {
+				logger.Error(statusErr, "failed to record TargetConflict status")
+			}
+			return ctrl.Result{}, nil
+		}
+	case !apierrors.IsNotFound(getErr):
+		return ctrl.Result{}, fmt.Errorf("get target Secret: %w", getErr)
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      targetName,
@@ -104,12 +130,11 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Owning the target Secret (rather than ESO's adopt-in-place
 		// Merge/Retain pattern) is deliberate here: a GitSecret created
 		// fresh is the sole source of truth for its target, so deleting
-		// it should delete the Secret too, same as sealed-secrets. This
-		// is not *meant* to adopt an already-existing, independently
-		// managed Secret -- that should be a separate, explicitly-gated
-		// migration decision per target. NOTE: this is not yet enforced;
-		// an ownerless Secret with a colliding name is currently adopted
-		// (and its data cleared) silently -- tracked in #42.
+		// it should delete the Secret too, same as sealed-secrets.
+		// Taking over a Secret this GitSecret does not already own is
+		// gated on spec.target.adopt and checked above -- by the time
+		// CreateOrUpdate runs here, either the Secret is ours, it does
+		// not exist, or the operator opted in.
 		return controllerutil.SetControllerReference(&gs, secret, r.Client.Scheme())
 	})
 	if err != nil {

@@ -1,6 +1,8 @@
 package sealer
 
 import (
+	"encoding/base64"
+	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -202,5 +204,52 @@ func TestRecovery_KeyCompromise_RewrapAloneIsInsufficient(t *testing.T) {
 	t.Setenv("GNUPGHOME", attackerHome)
 	if _, err := Unseal("prod", "app-secrets", resealed); err == nil {
 		t.Fatal("attacker opened the re-sealed object; content-key rotation did not take effect")
+	}
+}
+
+// The "no plaintext in error output" invariant (threat-model.md I3): a
+// corrupted or tampered envelope must fail without the decrypt path ever
+// echoing a secret value into the error it returns (which the controller
+// copies verbatim into GitSecret .status).
+func TestUnseal_ErrorDoesNotLeakPlaintext(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	const secretValue = "correct-horse-battery-staple-unique-marker"
+	spec, err := Seal("prod", "app-secrets", map[string]string{"K": secretValue}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+
+	// Flip a byte in the middle of the (decoded) envelope so AEAD auth fails.
+	raw, _ := base64.StdEncoding.DecodeString(spec.EncryptedData["K"])
+	raw[len(raw)/2] ^= 0xff
+	spec.EncryptedData["K"] = base64.StdEncoding.EncodeToString(raw)
+
+	_, err = Unseal("prod", "app-secrets", spec)
+	if err == nil {
+		t.Fatal("Unseal accepted a tampered envelope")
+	}
+	if strings.Contains(err.Error(), secretValue) {
+		t.Fatalf("error message leaked the plaintext value: %v", err)
+	}
+}
+
+func TestUnseal_RejectsTooManyEntries(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	spec, err := Seal("prod", "app-secrets", map[string]string{"K": "v"}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	// Pad EncryptedData past the limit with junk entries.
+	for i := 0; i <= MaxEntries; i++ {
+		spec.EncryptedData[fmt.Sprintf("junk-%d", i)] = "junk"
+	}
+	if _, err := Unseal("prod", "app-secrets", spec); err == nil {
+		t.Fatal("Unseal processed an over-limit EncryptedData map")
 	}
 }

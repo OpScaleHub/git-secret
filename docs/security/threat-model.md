@@ -75,14 +75,14 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 | T2 | Entire cluster lost | L | **Handled.** Re-apply `GitSecret`s to a new cluster + restore the controller key → identical `Secret`s. Runbook §B; test `TestRecovery_ClusterRebuild_SameKeyReproducesData`. |
 | T3 | One recipient **private key lost** (holder unavailable) | L | **Handled.** Any other current recipient runs `git-secret-seal --rewrap` to drop it / add a replacement — `encryptedData` is never re-sealed. Runbook §C/§D; tests `TestRecovery_ControllerKeyLost_*`, `TestRecovery_OperatorLeaves_*`. |
 | T4 | One recipient **private key compromised** | C | **Partial, and understood.** `--rewrap` stops *future* exposure, but every historical version of the object in Git stays wrapped to the compromised key → permanent historical exposure. Requires rotating the secret values + a new content key + full re-seal. Runbook §E; test `TestRecovery_KeyCompromise_RewrapAloneIsInsufficient`. |
-| T5 | Malicious / oversized `GitSecret` applied | I / L (DoS) | **Gap (#42).** No bound on `encryptedData` size/count; a huge object makes the controller decrypt it all per reconcile. |
+| T5 | Malicious / oversized `GitSecret` applied | I / L (DoS) | **Handled.** `encryptedData` is capped at 1024 entries (CRD `maxProperties` + `sealer.MaxEntries`) and 1 MiB per encoded value; the resulting `Secret` is separately capped by the apiserver. |
 | T6 | Operator workstation compromised | C | **Out of scope to prevent.** Blast radius = everything that workstation's keyring can decrypt. Mitigation is operational: per-person keys, hardware-backed keys, offline recovery key not on any workstation. |
-| T7 | Plaintext leak via logs / Events / `status` / metrics | C | **Invariant (I3). Mostly held**; needs a regression test asserting decrypt-error strings never echo plaintext (#42 item 3). |
+| T7 | Plaintext leak via logs / Events / `status` / metrics | C | **Invariant (I3), regression-tested.** `TestUnseal_ErrorDoesNotLeakPlaintext` asserts a tampered-envelope failure never echoes the plaintext into the returned error (which the controller copies into `.status`). |
 | T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-secret`. |
 | T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller (per-cluster/per-env recipients, #43); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
 | T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | An old object version re-applied re-installs old secret values silently. Provenance (which Git revision produced this Secret) is not surfaced — future work. |
 | T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Gap (#40).** Recipients are not visible on the object; a reviewer cannot see who an object is sealed to without inspecting the armored blob (which carries key IDs, not fingerprints). |
-| T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Gap (#42).** An ownerless `Secret` with a colliding name is adopted, its data replaced, and it is deleted when the `GitSecret` is. |
+| T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Handled.** A colliding `Secret` this `GitSecret` does not own is left untouched and a `TargetConflict` Ready=False condition is set, unless the operator opts in with `spec.target.adopt`. Tests `TestReconcile_DoesNotClobberUnownedSecret` / `_AdoptsUnownedSecretWhenOptedIn`. |
 | T13 | Plaintext committed to Git (CLI path) | C | **Handled.** `verify` + the `pre-push` hook fail closed; `SECRETIZE_SKIP_HOOKS` is opt-in per-invocation, never tied to ambient `CI`. |
 | T14 | Recipient specified as a short key ID / email, resolving to the wrong key | C | **Handled.** `gpgutil.ValidFingerprint` requires a full 40/64-hex fingerprint everywhere recipients are accepted. |
 
@@ -134,6 +134,8 @@ regression regardless of the feature it enables.
 
 ## 6. Open items feeding this model
 
-#39 (DR + loss-vs-compromise, tested) · #40 (recipient visibility) · #41
-(recipient lifecycle) · #42 (controller adoption + input bounds + status-leak
-test) · #43 (multi-cluster blast radius) · #47 (keyring / pubkey discovery).
+#40 (recipient visibility) · #41 (recipient lifecycle) · #43 (multi-cluster blast
+radius) · #47 (keyring / pubkey discovery).
+
+Closed: #38 (this doc) · #39 (DR runbooks + tests) · #42 (controller adoption
+guard, input bounds, status-leak regression test).
