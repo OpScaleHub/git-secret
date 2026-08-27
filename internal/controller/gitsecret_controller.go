@@ -64,6 +64,7 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// object even while it is failing to reconcile.
 	gs.Status.Recipients = gs.Spec.Recipients
 	gs.Status.RecipientCount = len(gs.Spec.Recipients)
+	gs.Status.SourceRevision = gs.Annotations[gitsecretv1alpha1.SourceRevisionAnnotation]
 	if err := sealer.VerifyRecipients(gs.Spec); err != nil {
 		// Non-fatal: the authoritative recipient set is the blob itself,
 		// which the decrypt path below uses directly. A mismatch just

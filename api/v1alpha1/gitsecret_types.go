@@ -108,6 +108,13 @@ type GitSecretStatus struct {
 	// RecipientCount is len(spec.recipients), surfaced as a printer column.
 	// +optional
 	RecipientCount int `json:"recipientCount,omitempty"`
+
+	// SourceRevision echoes the git-secret.opscalehub.io/source-revision
+	// annotation (the commit git-secret-seal sealed the plaintext from), so
+	// `kubectl get gitsecret` answers "which commit produced this Secret?".
+	// Empty if the object carries no provenance annotation.
+	// +optional
+	SourceRevision string `json:"sourceRevision,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -117,6 +124,7 @@ type GitSecretStatus struct {
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Keys",type=integer,JSONPath=`.status.syncedKeys`
 // +kubebuilder:printcolumn:name="Recipients",type=integer,JSONPath=`.status.recipientCount`
+// +kubebuilder:printcolumn:name="Revision",type=string,JSONPath=`.status.sourceRevision`,priority=1
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // GitSecret decrypts into a plain Kubernetes Secret via a controller that

@@ -18,6 +18,16 @@ import (
 // plain "human" recipient.
 const RecipientRolesAnnotation = "git-secret.opscalehub.io/recipient-roles"
 
+// Provenance annotations, stamped by git-secret-seal when it runs inside a
+// Git working tree: the commit the plaintext was sealed from, and the
+// repository's origin URL. Informational -- the controller mirrors
+// SourceRevisionAnnotation into status.sourceRevision so an operator can
+// answer "which commit produced this Secret?" without leaving the cluster.
+const (
+	SourceRevisionAnnotation = "git-secret.opscalehub.io/source-revision"
+	SourceRepoAnnotation     = "git-secret.opscalehub.io/source-repo"
+)
+
 // RecipientRole classifies a recipient. See RecipientRolesAnnotation.
 type RecipientRole string
 
