@@ -69,6 +69,10 @@ Adding/removing a recipient (`git-secret-seal --rewrap`) re-encrypts **only the
 right-hand box**. Every `encryptedData` value is untouched — that is what makes
 recipient changes cheap and key loss recoverable.
 
+`spec.recipients` lists those fingerprints in plaintext on the object (mirrored to
+`status.recipients`), so the decrypt set is reviewable in a YAML diff;
+`sealer.VerifyRecipients` cross-checks its count against the wrapped blob.
+
 ## Trust model: why loss ≠ compromise
 
 ```

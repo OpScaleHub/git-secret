@@ -172,6 +172,24 @@ func ImportSecretKey(armored []byte) error {
 	return nil
 }
 
+// CountRecipients returns how many public-key recipients an armored GPG
+// message is encrypted to, counting its pubkey-enc packets. It does not
+// resolve them to fingerprints -- the packet carries a recipient's
+// encryption-subkey ID, not the primary-key fingerprint -- so this is a
+// count check only (see sealer.VerifyRecipients). --list-packets does not
+// decrypt, so no secret key or agent is required.
+func CountRecipients(armored []byte) (int, error) {
+	out, err := run(armored, "--batch", "--list-packets")
+	if err != nil {
+		return 0, fmt.Errorf("gpgutil: list-packets: %w", err)
+	}
+	n := bytes.Count(out, []byte("pubkey enc packet"))
+	if n == 0 {
+		return 0, fmt.Errorf("gpgutil: no pubkey-enc packets in message")
+	}
+	return n, nil
+}
+
 // run executes gpg with args, piping stdin (if non-nil) and capturing
 // stdout/stderr. --trust-model always (on Encrypt) bypasses gpg's own
 // web-of-trust confirmation prompt, which would otherwise hang forever

@@ -81,7 +81,7 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 | T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-secret`. |
 | T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller (per-cluster/per-env recipients, #43); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
 | T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | An old object version re-applied re-installs old secret values silently. Provenance (which Git revision produced this Secret) is not surfaced — future work. |
-| T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Gap (#40).** Recipients are not visible on the object; a reviewer cannot see who an object is sealed to without inspecting the armored blob (which carries key IDs, not fingerprints). |
+| T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Partial.** `spec.recipients` now lists the fingerprints on the object, so adding one is a visible one-line diff in review; `sealer.VerifyRecipients` cross-checks the count against the blob and the controller logs a warning on mismatch. Not yet enforced by admission (#41). |
 | T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Handled.** A colliding `Secret` this `GitSecret` does not own is left untouched and a `TargetConflict` Ready=False condition is set, unless the operator opts in with `spec.target.adopt`. Tests `TestReconcile_DoesNotClobberUnownedSecret` / `_AdoptsUnownedSecretWhenOptedIn`. |
 | T13 | Plaintext committed to Git (CLI path) | C | **Handled.** `verify` + the `pre-push` hook fail closed; `SECRETIZE_SKIP_HOOKS` is opt-in per-invocation, never tied to ambient `CI`. |
 | T14 | Recipient specified as a short key ID / email, resolving to the wrong key | C | **Handled.** `gpgutil.ValidFingerprint` requires a full 40/64-hex fingerprint everywhere recipients are accepted. |
@@ -134,8 +134,9 @@ regression regardless of the feature it enables.
 
 ## 6. Open items feeding this model
 
-#40 (recipient visibility) · #41 (recipient lifecycle) · #43 (multi-cluster blast
-radius) · #47 (keyring / pubkey discovery).
+#41 (recipient lifecycle / admission) · #43 (multi-cluster blast radius) · #47
+(keyring / pubkey discovery).
 
-Closed: #38 (this doc) · #39 (DR runbooks + tests) · #42 (controller adoption
-guard, input bounds, status-leak regression test).
+Closed: #38 (this doc) · #39 (DR runbooks + tests) · #40 (`spec.recipients` +
+status mirror + `VerifyRecipients`) · #42 (controller adoption guard, input
+bounds, status-leak regression test).
