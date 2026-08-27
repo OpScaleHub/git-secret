@@ -230,6 +230,16 @@ func cmdInit(args []string) int {
 		}
 	}
 	fmt.Printf("Installed hooks: %s\n", strings.Join(result.HooksInstalled, ", "))
+	if result.BackendDefaultedToFile {
+		fmt.Println()
+		fmt.Println("Note: using the 'file' key backend (the default). Fine for local or")
+		fmt.Println("solo use, but its key never enters git, so git-secret-controller and")
+		fmt.Println("any automated consumer cannot decrypt a 'file'-backend repo — switching")
+		fmt.Println("later means re-sealing every secret. If Kubernetes or CI is a")
+		fmt.Println("possibility, re-run in a fresh repo with --key-backend gpg (multiple")
+		fmt.Println("recipients: every human and every service that needs access).")
+		fmt.Println("See docs/security/recipient-lifecycle.md.")
+	}
 	return exitOK
 }
 

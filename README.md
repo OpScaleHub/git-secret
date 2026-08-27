@@ -1,13 +1,51 @@
 # Git Secret Manager (`git-secret`)
 
-`git-secret` is a single-binary Git plugin that transparently encrypts sensitive files in a repository. You keep working with plaintext in your working tree; the installed git hooks make sure only ciphertext ever reaches your commit history.
+**A recoverable, Git-native cryptographic control plane for Kubernetes secrets.**
+
+The encrypted Git repository is the durable source of truth. Decryption is
+multi-recipient, auditable, and Kubernetes-native — and no single cluster,
+controller, or key is a single point of catastrophic recovery failure. It is also
+a plain single-binary Git plugin: transparent file encryption via git hooks, with
+plaintext only ever in your working tree, never in commit history.
+
+### Design goals
+
+1. No single controller key is a single point of unrecoverable failure.
+2. Losing Kubernetes does not lose the secrets.
+3. Git history stays a useful, durable encrypted record.
+4. Multiple humans and services decrypt independently.
+5. Kubernetes receives plaintext only at the final reconcile boundary.
+6. The controller is a *consumer* of the encrypted source, not its owner.
+7. Metadata is observable; plaintext never is.
+8. Recovery is possible entirely outside the cluster.
+9. Recipient identity is an explicit GPG fingerprint.
+10. Still fully useful with no Kubernetes at all (the CLI + `gpg` backend).
+
+### What it is not
+
+Not Vault, not a hosted secret manager, not a password manager, not a GPG
+replacement, not an identity provider — and not coupled to ESO, ArgoCD, or any
+one Git host.
+
+### Compared to
+
+| | `git-secret` | Bitnami sealed-secrets | SOPS | Vault |
+|---|---|---|---|---|
+| Ciphertext lives in Git | yes | yes | yes | no (external store) |
+| Survives loss of the cluster/controller key | **yes** (multi-recipient) | no (single keypair) | yes | n/a |
+| Kubernetes-native reconcile | yes (CRD + controller) | yes | via operator | via ESO/agent |
+| Useful with no Kubernetes | yes (CLI) | no | yes | no |
+| External service to operate | no | no | no | yes |
+
+See [docs/security/design-rationale.md](docs/security/design-rationale.md) for how
+the architecture got here.
 
 ## Features
 
 - **Transparent encryption**: git hooks (`pre-commit`, `post-checkout`, `post-merge`, `pre-push`) encrypt/decrypt automatically as you commit, checkout, merge, and push — no manual encrypt/decrypt step in the common case.
 - **Modern AEAD crypto**: XChaCha20-Poly1305 by default (AES-256-GCM available) does the actual file encryption either way — GPG is never in that path, so `file`/`env` need no GPG dependency at all.
 - **Config-driven**: glob `patterns` in a committed `.repo-enc.yml` decide which files are in scope; everything else is left untouched.
-- **Pluggable key backends**: `file` (a local, gitignored key file), `env` (an environment variable), or `gpg` (wraps the key to one or more existing GPG identities — safe to commit, no out-of-band key transfer needed). The `Backend` interface makes adding KMS backends straightforward too.
+- **Pluggable key backends**: `gpg` (wraps the key to one or more existing GPG identities — safe to commit, no out-of-band transfer, and the only backend that works with automated consumers or survives the loss of a single key — **recommended**), `file` (a local, gitignored key file — quick start, local/solo only), or `env` (an environment variable). The `Backend` interface makes adding KMS backends straightforward too.
 - **Safety net**: `verify` and the `pre-push` hook refuse to let plaintext that slipped past `pre-commit` (e.g. via `--no-verify`) reach a remote.
 - **Cross-platform**: pure Go, no runtime dependencies beyond `git` itself (`gpg` is an optional extra, only needed if you choose that backend). Installed hooks ship as both POSIX shell and PowerShell scripts.
 
@@ -40,15 +78,31 @@ Once `git-secret` is on your `PATH`, `git secret <command>` works as a git subco
 
 ```bash
 cd your-repo
-git secret init                 # writes .repo-enc.yml, generates a key, installs hooks
-git add .repo-enc.yml .gitignore
+
+# Recommended for any team, and required for Kubernetes/CI: the gpg backend,
+# with every human AND every service that needs access as its own recipient.
+git secret init --key-backend gpg \
+  --gpg-recipient <your-fingerprint> --gpg-recipient <teammate-fingerprint>
+git add .repo-enc.yml .repo-enc/key.gpg .gitignore
 git commit -m "chore: configure repo-enc"
 ```
 
+**Which backend?** `gpg` (above) is the only one that works with
+`git-secret-controller` or any automated consumer, and the only one where losing
+one key doesn't threaten recoverability — its wrapped key is safe to commit, no
+out-of-band key transfer. The `file` backend (`git secret init` with no
+`--key-backend`) is a quick local/solo on-ramp, but its key never enters git, so
+adopting Kubernetes or CI later forces a full re-seal. Start on `gpg` unless you
+are certain automation will never be in scope.
+
+```bash
+git secret init                 # 'file' backend: quick start, local/solo only
+```
+
 `.repo-enc.yml` must be committed — it's how a teammate's clone knows which
-patterns to encrypt/decrypt. The generated key must **not** be committed
-(`init` already gitignores it for the `file` backend); share it with
-collaborators out-of-band instead.
+patterns to encrypt/decrypt. For the `file` backend the generated key must
+**not** be committed (`init` gitignores it); share it out-of-band. For `gpg`,
+`.repo-enc/key.gpg` **is** committed and no key transfer is needed.
 
 By default `init` seeds `.repo-enc.yml` with the pattern `secrets/**`. Pass your own patterns instead:
 
@@ -309,6 +363,8 @@ A container image and Helm chart ship on every tagged release
   controller loss, cluster loss, key loss, and key compromise.
 - [Recipient & key lifecycle](docs/security/recipient-lifecycle.md) — roles,
   rotation workflows, and what removing a recipient does and doesn't undo.
+- [Multi-cluster operation](docs/architecture/multi-cluster.md) — one encrypted
+  repo, per-cluster controller identities, no central store.
 - [Reporting a vulnerability](SECURITY.md).
 
 The core property: the encrypted repository is the durable source of truth, and

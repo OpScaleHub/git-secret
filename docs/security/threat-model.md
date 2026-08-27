@@ -79,7 +79,7 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 | T6 | Operator workstation compromised | C | **Out of scope to prevent.** Blast radius = everything that workstation's keyring can decrypt. Mitigation is operational: per-person keys, hardware-backed keys, offline recovery key not on any workstation. |
 | T7 | Plaintext leak via logs / Events / `status` / metrics | C | **Invariant (I3), regression-tested.** `TestUnseal_ErrorDoesNotLeakPlaintext` asserts a tampered-envelope failure never echoes the plaintext into the returned error (which the controller copies into `.status`). |
 | T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-secret`. |
-| T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller (per-cluster/per-env recipients, #43); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
+| T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller — per-cluster / per-env recipient sets ([multi-cluster.md](../architecture/multi-cluster.md)); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
 | T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | An old object version re-applied re-installs old secret values silently. Provenance (which Git revision produced this Secret) is not surfaced — future work. |
 | T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Partial.** `spec.recipients` now lists the fingerprints on the object, so adding one is a visible one-line diff in review; `sealer.VerifyRecipients` cross-checks the count against the blob and the controller logs a warning on mismatch. Not yet enforced by admission (#41). |
 | T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Handled.** A colliding `Secret` this `GitSecret` does not own is left untouched and a `TargetConflict` Ready=False condition is set, unless the operator opts in with `spec.target.adopt`. Tests `TestReconcile_DoesNotClobberUnownedSecret` / `_AdoptsUnownedSecretWhenOptedIn`. |
@@ -134,10 +134,11 @@ regression regardless of the feature it enables.
 
 ## 6. Open items feeding this model
 
-#43 (multi-cluster blast radius) · #47 (keyring / pubkey discovery) · admission
-enforcement of `spec.recipients` (deferred from #41).
+#47 (keyring / pubkey discovery) · admission enforcement of `spec.recipients`
+(deferred from #41) · provenance / which-Git-revision-produced-this-Secret (T10).
 
 Closed: #38 (this doc) · #39 (DR runbooks + tests) · #40 (`spec.recipients` +
 status mirror + `VerifyRecipients`) · #41 (recipient roles + `git-secret-seal
 recipients` + [lifecycle doc](recipient-lifecycle.md)) · #42 (controller adoption
-guard, input bounds, status-leak regression test).
+guard, input bounds, status-leak regression test) · #43
+([multi-cluster.md](../architecture/multi-cluster.md)).
