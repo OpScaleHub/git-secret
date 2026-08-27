@@ -285,6 +285,8 @@ A container image and Helm chart ship on every tagged release
   threats, and the invariants the code must preserve.
 - [Design rationale & history](docs/security/design-rationale.md) — why the
   architecture has the shape it has.
+- [Architecture overview](docs/architecture/overview.md) — ASCII diagrams of the
+  seal → apply → reconcile flow, the two-layer envelope, and the recovery model.
 - [Reporting a vulnerability](SECURITY.md).
 
 The core property: the encrypted repository is the durable source of truth, and

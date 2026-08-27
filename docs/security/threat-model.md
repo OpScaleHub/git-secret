@@ -7,6 +7,9 @@ Status: **initial draft** (tracking issue #38). Covers the two shipped shapes:
 2. **`GitSecret` CRD + `git-secret-controller`** — inline ciphertext reconciled
    into a Kubernetes `Secret`.
 
+See [architecture/overview.md](../architecture/overview.md) for diagrams of the
+flow, the envelope, and the trust/recovery model.
+
 The legacy ESO webhook bridge (`git-secret-server`) is in maintenance and is not
 re-analysed here; its review is issues #1–#25.
 
