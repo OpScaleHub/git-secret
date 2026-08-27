@@ -351,6 +351,13 @@ deletes the `Secret`). If a `Secret` with the target name already exists and is
 `TargetConflict` condition rather than clobbering it — set `spec.target.adopt:
 true` to deliberately take it over.
 
+An optional **validating admission webhook** (`webhook.enabled` in the chart)
+rejects a `GitSecret` whose `spec.recipients` disagrees with its `encryptedKey`,
+and enforces a per-namespace required-recipient set
+(`git-secret.opscalehub.io/required-recipients` on the `Namespace`). It manages
+its own self-signed cert — no cert-manager. See
+[docs/architecture/admission-webhook.md](docs/architecture/admission-webhook.md).
+
 `git-secret-controller` needs its own dedicated GPG identity, imported at
 startup into an isolated `GNUPGHOME`
 (`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, key zeroed from memory

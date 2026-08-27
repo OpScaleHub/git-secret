@@ -42,6 +42,10 @@ production-grade integration. No breaking changes; one additive CRD field
 
 - `--print-public-key` — import the configured key and print its fingerprint +
   armored public key, for handing to whoever seals to this controller.
+- `--enable-webhook` — an optional validating admission webhook for `GitSecret`
+  that rejects a `spec.recipients` / `encryptedKey` mismatch and enforces a
+  per-namespace required-recipient set. Self-signed cert managed by the
+  controller, no cert-manager. Chart: `webhook.enabled`.
 
 ### CLI
 

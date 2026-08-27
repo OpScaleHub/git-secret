@@ -70,3 +70,19 @@ kubectl apply -f gitsecret.yaml
 Set `replicaCount` above 1 for availability; `leaderElection.enabled`
 (default `true`) is what keeps only one replica actually reconciling at a
 time — it's safe to leave enabled even at `replicaCount: 1`.
+
+## Validating admission webhook
+
+`webhook.enabled: true` makes the controller also serve a validating
+admission webhook for `GitSecret` objects. It rejects a `GitSecret` whose
+`spec.recipients` count disagrees with its `encryptedKey`, and enforces a
+per-namespace required-recipient set via the
+`git-secret.opscalehub.io/required-recipients` annotation on the
+`Namespace`. The controller generates its own self-signed serving
+certificate at startup and patches the CA into the
+`ValidatingWebhookConfiguration` — **no cert-manager required**.
+
+This adds RBAC for `namespaces` (get) and
+`validatingwebhookconfigurations` (get/update), a webhook `Service`, and
+a `POD_NAMESPACE` env via the downward API. Leave `webhook.failurePolicy`
+at `Fail`. See `docs/architecture/admission-webhook.md`.

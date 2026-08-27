@@ -19,6 +19,8 @@
   per-cluster controller identities, per-environment recipient sets.
 - [keyring.md](architecture/keyring.md) — `--print-public-key`,
   `git-secret-seal --keyring`, discoverable recipient public keys.
+- [admission-webhook.md](architecture/admission-webhook.md) — optional validating
+  webhook enforcing `spec.recipients` and per-namespace required recipients.
 - [sealing-console.md](architecture/sealing-console.md) — feasibility analysis for
   a web sealing UI (not scheduled).
 
