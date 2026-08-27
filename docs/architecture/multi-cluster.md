@@ -41,8 +41,11 @@ git-secret-seal recipients list -f gitsecret.yaml
 # stage: <stage-controller>:controller <recovery>:recovery
 ```
 
-A future `git-secret-seal` policy/profile file could enforce "objects under
-`envs/prod/**` must be sealed to exactly this set" — tracked with #47 (keyring).
+Keep one [keyring file](keyring.md) per environment
+(`envs/prod/keyring.yaml`, ...) and seal with `git-secret-seal --keyring
+envs/prod/keyring.yaml` so the recipient boundary is a reviewable file, not
+tribal knowledge. Admission enforcement that objects under `envs/prod/**` match
+the prod keyring is a planned follow-up.
 
 ## Runbooks
 
@@ -71,7 +74,6 @@ wrapped to that key.
 
 ## Open questions (not blocking)
 
-- A `git-secret-seal` policy file for enforcing per-environment recipient sets.
-- Whether the controller should expose, in `status`, which *other* clusters'
-  fingerprints an object is wrapped to (it can already list the fingerprints; it
-  cannot label them by cluster without the keyring in #47).
+- Admission enforcement of per-environment recipient sets against the keyring.
+- Whether the controller should label recipient fingerprints by cluster in
+  `status` (it lists them already; labelling needs the keyring).

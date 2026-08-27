@@ -282,3 +282,25 @@ func TestCountRecipients(t *testing.T) {
 		t.Fatal("CountRecipients accepted garbage")
 	}
 }
+
+func TestExportPublicKey(t *testing.T) {
+	fpr := newTestKeyring(t, "Export <export@example.com>")
+
+	pub, err := ExportPublicKey(fpr)
+	if err != nil {
+		t.Fatalf("ExportPublicKey: %v", err)
+	}
+	if !bytes.Contains(pub, []byte("BEGIN PGP PUBLIC KEY BLOCK")) {
+		t.Fatalf("not an armored public key: %q", pub)
+	}
+	if bytes.Contains(pub, []byte("PRIVATE KEY")) {
+		t.Fatal("ExportPublicKey leaked private key material")
+	}
+
+	if _, err := ExportPublicKey("DEADBEEF"); err == nil {
+		t.Fatal("ExportPublicKey accepted a short key ID")
+	}
+	if _, err := ExportPublicKey("0000000000000000000000000000000000000000"); err == nil {
+		t.Fatal("ExportPublicKey returned success for an unknown fingerprint")
+	}
+}
