@@ -20,10 +20,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	crwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
 	gitsecretv1alpha1 "github.com/OpScaleHub/git-secret/api/v1alpha1"
 	"github.com/OpScaleHub/git-secret/internal/controller"
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	gswebhook "github.com/OpScaleHub/git-secret/internal/webhook"
 )
 
 var version = "dev"
@@ -46,6 +48,9 @@ func run(args []string, environ []string) int {
 	leaderElect := fs.Bool("leader-elect", false, "enable leader election so only one replica reconciles at a time (env LEADER_ELECT)")
 	gpgPrivateKeyFile := fs.String("gpg-private-key-file", "", "path to this controller's armored GPG private key, imported at startup (env GPG_PRIVATE_KEY_FILE)")
 	printPublicKey := fs.Bool("print-public-key", false, "import the key, print its fingerprint and armored PUBLIC key to stdout, and exit (for handing to whoever seals GitSecrets to this controller)")
+	enableWebhook := fs.Bool("enable-webhook", false, "serve the GitSecret validating admission webhook (env ENABLE_WEBHOOK)")
+	webhookService := fs.String("webhook-service", "git-secret-controller-webhook", "name of the Service fronting the webhook, for the self-signed serving cert SAN (env WEBHOOK_SERVICE)")
+	webhookConfigName := fs.String("webhook-config-name", "git-secret-controller", "name of the ValidatingWebhookConfiguration to inject the self-signed CA into (env WEBHOOK_CONFIG_NAME)")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -118,7 +123,9 @@ func run(args []string, environ []string) int {
 		return 0
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	webhookOn := *enableWebhook || env["ENABLE_WEBHOOK"] == "true"
+
+	mgrOpts := ctrl.Options{
 		Scheme: scheme,
 		Metrics: server.Options{
 			BindAddress: *metricsAddr,
@@ -126,7 +133,29 @@ func run(args []string, environ []string) int {
 		HealthProbeBindAddress: *healthAddr,
 		LeaderElection:         *leaderElect,
 		LeaderElectionID:       "git-secret-controller.git-secret.opscalehub.io",
-	})
+	}
+
+	var webhookCerts *gswebhook.Certs
+	if webhookOn {
+		svc := firstNonEmpty(env["WEBHOOK_SERVICE"], *webhookService)
+		ns := firstNonEmpty(env["POD_NAMESPACE"], env["WEBHOOK_NAMESPACE"])
+		if ns == "" {
+			setupLog.Error(nil, "webhook enabled but no namespace: set POD_NAMESPACE (downward API) or WEBHOOK_NAMESPACE")
+			return exitError
+		}
+		webhookCerts, err = gswebhook.GenerateCerts(svc, ns)
+		if err != nil {
+			setupLog.Error(err, "generate webhook serving cert")
+			return exitError
+		}
+		defer os.RemoveAll(webhookCerts.CertDir)
+		mgrOpts.WebhookServer = crwebhook.NewServer(crwebhook.Options{
+			Port:    9443,
+			CertDir: webhookCerts.CertDir,
+		})
+	}
+
+	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), mgrOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
 		return exitError
@@ -135,6 +164,19 @@ func run(args []string, environ []string) int {
 	if err := (&controller.GitSecretReconciler{Client: mgr.GetClient()}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GitSecret")
 		return exitError
+	}
+
+	if webhookOn {
+		if err := gswebhook.SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to set up validating webhook")
+			return exitError
+		}
+		cfgName := firstNonEmpty(env["WEBHOOK_CONFIG_NAME"], *webhookConfigName)
+		if err := mgr.Add(gswebhook.InjectCABundle(mgr, cfgName, webhookCerts.CAPEM)); err != nil {
+			setupLog.Error(err, "unable to schedule caBundle injection")
+			return exitError
+		}
+		setupLog.Info("validating webhook enabled", "path", gswebhook.WebhookPath)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
