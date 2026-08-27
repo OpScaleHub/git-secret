@@ -181,7 +181,9 @@ gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
 
 ### Key backends
 
-- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`. Giving a teammate access means copying this raw key to them out-of-band.
+**Use `gpg` for anything beyond a solo local repo** — it is the only backend that works with `git-secret-controller` or any automated consumer, and the only one where losing a single key doesn't threaten recoverability. `init` prints a nudge when it falls back to `file`.
+
+- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`. Giving a teammate access means copying this raw key to them out-of-band. Structurally incompatible with automated decryption — the key never enters git.
 - **`env`**: the key is read from the environment variable named by `key_source`. `init`/`rotate-keys` print an `export VAR=<hex>` line when they generate a new one — this backend can't persist anything to disk for you, so copy that value down before the process exits.
 - **`gpg`**: the same random 32-byte key, but wrapped (GPG-encrypted) to one or more recipients instead of stored raw. The wrapped blob (default `.repo-enc/key.gpg`) is **safe to commit** — unlike the `file` backend's key — since only a matching GPG private key can unwrap it. This solves the onboarding pain point above: a teammate who's already a configured recipient just needs `git secret init` (installs hooks; the committed config already has everything else) and their own existing keyring does the rest, no manual key transfer required.
 
@@ -318,7 +320,16 @@ git-secret-seal recipients list -f gitsecret.yaml       # who can decrypt, and t
 # ...or set the whole list explicitly:
 git-secret-seal --rewrap gitsecret.yaml \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
+
+# ...or resolve recipients from a committed keyring file instead of typing them:
+git-secret-seal --namespace myapp --name my-secrets \
+  --keyring envs/prod/keyring.yaml --from-env-file app.env > gitsecret.yaml
 ```
+
+Get the controller's own fingerprint + public key with
+`git-secret-controller --gpg-private-key-file <key> --print-public-key`. See
+[docs/architecture/keyring.md](docs/architecture/keyring.md) for the keyring
+format and per-environment layout.
 
 The generated manifest records the fingerprints it was sealed to in
 `spec.recipients`, so adding or removing a recipient shows up as a one-line
