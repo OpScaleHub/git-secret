@@ -42,6 +42,9 @@ spec:
             - --webhook-service={{ include "git-secret-controller.fullname" . }}-webhook
             - --webhook-config-name={{ include "git-secret-controller.fullname" . }}
             {{- end }}
+            {{- if .Values.servePubKey.enabled }}
+            - --serve-pubkey-address=:{{ .Values.servePubKey.port }}
+            {{- end }}
           {{- if .Values.webhook.enabled }}
           env:
             - name: POD_NAMESPACE
@@ -59,6 +62,11 @@ spec:
             {{- if .Values.webhook.enabled }}
             - name: webhook
               containerPort: {{ .Values.webhook.port }}
+              protocol: TCP
+            {{- end }}
+            {{- if .Values.servePubKey.enabled }}
+            - name: pubkey
+              containerPort: {{ .Values.servePubKey.port }}
               protocol: TCP
             {{- end }}
           livenessProbe:

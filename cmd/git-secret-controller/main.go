@@ -8,10 +8,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -19,6 +22,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	crwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
@@ -51,6 +55,7 @@ func run(args []string, environ []string) int {
 	enableWebhook := fs.Bool("enable-webhook", false, "serve the GitSecret validating admission webhook (env ENABLE_WEBHOOK)")
 	webhookService := fs.String("webhook-service", "git-secret-controller-webhook", "name of the Service fronting the webhook, for the self-signed serving cert SAN (env WEBHOOK_SERVICE)")
 	webhookConfigName := fs.String("webhook-config-name", "git-secret-controller", "name of the ValidatingWebhookConfiguration to inject the self-signed CA into (env WEBHOOK_CONFIG_NAME)")
+	servePubKeyAddr := fs.String("serve-pubkey-address", "", "if set, serve GET /pubkey (this controller's fingerprint + armored public key) on this address, e.g. :8082 (env SERVE_PUBKEY_ADDRESS)")
 	showVersion := fs.Bool("version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
@@ -107,23 +112,26 @@ func run(args []string, environ []string) int {
 	}
 	gpgKey = nil
 
+	keys, err := gpgutil.ListSecretKeys()
+	if err != nil || len(keys) == 0 {
+		setupLog.Error(err, "list imported secret key")
+		return exitError
+	}
+	ownFingerprint := keys[0].Fingerprint
+	ownPubKey, err := gpgutil.ExportPublicKey(ownFingerprint)
+	if err != nil {
+		setupLog.Error(err, "export public key")
+		return exitError
+	}
+
 	if *printPublicKey {
-		keys, err := gpgutil.ListSecretKeys()
-		if err != nil || len(keys) == 0 {
-			setupLog.Error(err, "list imported secret key")
-			return exitError
-		}
-		pub, err := gpgutil.ExportPublicKey(keys[0].Fingerprint)
-		if err != nil {
-			setupLog.Error(err, "export public key")
-			return exitError
-		}
-		fmt.Println(keys[0].Fingerprint)
-		os.Stdout.Write(pub)
+		fmt.Println(ownFingerprint)
+		os.Stdout.Write(ownPubKey)
 		return 0
 	}
 
 	webhookOn := *enableWebhook || env["ENABLE_WEBHOOK"] == "true"
+	pubKeyAddr := firstNonEmpty(*servePubKeyAddr, env["SERVE_PUBKEY_ADDRESS"])
 
 	mgrOpts := ctrl.Options{
 		Scheme: scheme,
@@ -179,6 +187,14 @@ func run(args []string, environ []string) int {
 		setupLog.Info("validating webhook enabled", "path", gswebhook.WebhookPath)
 	}
 
+	if pubKeyAddr != "" {
+		if err := mgr.Add(servePubKey(pubKeyAddr, ownFingerprint, ownPubKey)); err != nil {
+			setupLog.Error(err, "unable to schedule pubkey server")
+			return exitError
+		}
+		setupLog.Info("serving GET /pubkey", "address", pubKeyAddr, "fingerprint", ownFingerprint)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		return exitError
@@ -200,6 +216,35 @@ const (
 	exitUsage = 2
 	exitError = 1
 )
+
+// servePubKey returns a manager.Runnable serving GET /pubkey -- the
+// controller's own fingerprint on the first line, then its armored public
+// key. Public data; no auth. Anything else 404s.
+func servePubKey(addr, fingerprint string, pub []byte) manager.Runnable {
+	body := append([]byte(fingerprint+"\n"), pub...)
+	return manager.RunnableFunc(func(ctx context.Context) error {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/pubkey", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.Write(body)
+		})
+		srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			<-ctx.Done()
+			shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = srv.Shutdown(shutCtx)
+		}()
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			return err
+		}
+		return nil
+	})
+}
 
 func envMap(environ []string) map[string]string {
 	m := make(map[string]string, len(environ))
