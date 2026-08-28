@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.9.0 — 2026-08-28
+
+### `git-secret-seal ui`
+
+- A public-key-only web form for producing `GitSecret` manifests, for people who
+  would rather not drive the CLI. It never decrypts, never touches the Kubernetes
+  API, and never persists anything — the output is a manifest you review and
+  `kubectl apply` yourself.
+  - Run locally: `git-secret-seal ui` (binds `127.0.0.1:8765`).
+  - Run in-cluster: chart `sealUi.enabled` deploys it (`automountServiceAccountToken:
+    false` — it cannot reach the API), reached only by `kubectl port-forward`.
+  - `--keyring FILE|URL` pre-fills the recipient picker; keyring entries may carry
+    an armored `publicKey` so in-cluster sealing needs no operator keyring.
+- The controller image now bundles the `git-secret-seal` binary.
+
+### Docs
+
+- `docs/architecture/admission-webhook.md` records the live end-to-end
+  verification of the validating webhook against a real cluster (2026-08-28).
+
 ## v0.8.0 — 2026-08-27 — security hardening (#38–#58)
 
 A backlog reset focused on making the `GitSecret` CRD a defensible
