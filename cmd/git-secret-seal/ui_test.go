@@ -124,3 +124,21 @@ func TestUI_IndexServesPage(t *testing.T) {
 		t.Fatalf("GET /nope = %d, want 404", rec.Code)
 	}
 }
+
+func TestUI_SealRejectsOversizedInput(t *testing.T) {
+	home := shortTempDir(t)
+	fpr := genTestKey(t, home)
+	t.Setenv("GNUPGHOME", home)
+	srv := &uiServer{}
+
+	big := map[string]string{}
+	for i := 0; i < 2000; i++ {
+		big[string(rune('a'))+string(rune(i))] = "x"
+	}
+	b, _ := json.Marshal(sealRequest{Namespace: "n", Name: "x", Recipients: []keyringEntry{{Fingerprint: fpr}}, Data: big})
+	rec := httptest.NewRecorder()
+	srv.handleSeal(rec, httptest.NewRequest(http.MethodPost, "/api/seal", bytes.NewReader(b)))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "too many keys") {
+		t.Fatalf("oversized key count: %d %s", rec.Code, rec.Body)
+	}
+}

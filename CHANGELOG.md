@@ -18,6 +18,15 @@
   carries public keys, so the in-cluster deployment works on a read-only root
   filesystem.
 
+### Hardening (pre-freeze audit)
+
+- `git-secret-seal ui` bounds a single `/api/seal` request (key count + total
+  value bytes) to the same limits the sealer enforces per object.
+- `gpgutil.CountRecipients` — the admission-webhook recipient check, which parses
+  the object's attacker-controlled `encryptedKey` — runs under a 5s timeout; the
+  `ValidatingWebhookConfiguration` gets `timeoutSeconds: 10`.
+- `--keyring` URL fetches stop after 3 redirects.
+
 ### Docs
 
 - `docs/architecture/admission-webhook.md` records the live end-to-end

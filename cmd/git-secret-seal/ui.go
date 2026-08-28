@@ -174,6 +174,20 @@ func (s *uiServer) handleSeal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one key/value is required"})
 		return
 	}
+	// Bound the work a single request can ask for -- matches sealer's own
+	// per-object limits, so a hostile POST can't tie up the process.
+	if len(req.Data) > sealer.MaxEntries {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many keys (%d, limit %d)", len(req.Data), sealer.MaxEntries)})
+		return
+	}
+	total := 0
+	for _, v := range req.Data {
+		total += len(v)
+	}
+	if total > sealer.MaxValueBytes {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("values total %d bytes, over the %d limit", total, sealer.MaxValueBytes)})
+		return
+	}
 	var fps []string
 	roles := map[string]v1alpha1.RecipientRole{}
 	for _, rc := range req.Recipients {

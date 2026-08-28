@@ -137,7 +137,17 @@ func loadKeyring(src string) (fingerprints []string, roles map[string]v1alpha1.R
 }
 
 func fetchKeyring(url string) ([]byte, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		// Cap redirects tightly -- a keyring URL is operator-chosen, but a
+		// misbehaving host shouldn't be able to bounce the fetch around.
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("stopped after 3 redirects")
+			}
+			return nil
+		},
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err
