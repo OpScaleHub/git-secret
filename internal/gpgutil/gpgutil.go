@@ -7,10 +7,12 @@ package gpgutil
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Binary is the gpg executable invoked for every operation.
@@ -172,6 +174,16 @@ func ImportSecretKey(armored []byte) error {
 	return nil
 }
 
+// ImportPublicKey imports an armored public key into the current
+// GNUPGHOME so it can be used as an --encrypt recipient. Public keys are
+// not secret; this is safe to call with keyring-provided material.
+func ImportPublicKey(armored []byte) error {
+	if _, err := run(armored, "--batch", "--import"); err != nil {
+		return fmt.Errorf("gpgutil: import public key: %w", err)
+	}
+	return nil
+}
+
 // ExportPublicKey returns the ASCII-armored public key for fpr from the
 // current GNUPGHOME. Public keys are not secret -- this is used to hand a
 // controller's own public key to whoever needs to seal GitSecrets to it,
@@ -196,8 +208,14 @@ func ExportPublicKey(fpr string) ([]byte, error) {
 // encryption-subkey ID, not the primary-key fingerprint -- so this is a
 // count check only (see sealer.VerifyRecipients). --list-packets does not
 // decrypt, so no secret key or agent is required.
+//
+// It runs under a 5s timeout: this parses attacker-controlled input (the
+// GitSecret's encryptedKey) on the admission webhook path, and a crafted
+// packet must not be able to hang the handler.
 func CountRecipients(armored []byte) (int, error) {
-	out, err := run(armored, "--batch", "--list-packets")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := runCtx(ctx, armored, "--batch", "--list-packets")
 	if err != nil {
 		return 0, fmt.Errorf("gpgutil: list-packets: %w", err)
 	}
@@ -216,7 +234,13 @@ func CountRecipients(armored []byte) (int, error) {
 // pinned in .repo-enc.yml), not something gpg's trust model needs to
 // independently vouch for.
 func run(stdin []byte, args ...string) ([]byte, error) {
-	cmd := exec.Command(Binary, args...)
+	return runCtx(context.Background(), stdin, args...)
+}
+
+// runCtx is run with a cancellation/timeout context -- the process is
+// killed if ctx is done before it exits.
+func runCtx(ctx context.Context, stdin []byte, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, Binary, args...)
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
@@ -224,6 +248,9 @@ func run(stdin []byte, args ...string) ([]byte, error) {
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%s timed out: %w", Binary, ctx.Err())
+		}
 		return nil, fmt.Errorf("%v: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil

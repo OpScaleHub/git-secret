@@ -23,13 +23,19 @@ import (
 //	recipients:
 //	  - fingerprint: AAAA...   # 40 or 64 hex
 //	    role: controller       # human|controller|recovery|deprecated (optional)
+//	    publicKey: |            # optional armored public key (still not secret)
+//	      -----BEGIN PGP PUBLIC KEY BLOCK-----
+//	      ...
 //	  - fingerprint: BBBB...
 //	    role: recovery
 type keyringFile struct {
-	Recipients []struct {
-		Fingerprint string `json:"fingerprint"`
-		Role        string `json:"role,omitempty"`
-	} `json:"recipients"`
+	Recipients []keyringFileEntry `json:"recipients"`
+}
+
+type keyringFileEntry struct {
+	Fingerprint string `json:"fingerprint"`
+	Role        string `json:"role,omitempty"`
+	PublicKey   string `json:"publicKey,omitempty"`
 }
 
 // loadKeyring reads a keyring from a local path or an http(s):// URL and
@@ -40,13 +46,62 @@ type keyringFile struct {
 // the caller still needs each recipient's public key in their local
 // keyring to actually seal, so a tampered keyring fails closed at seal
 // time rather than leaking anything.
-func loadKeyring(src string) (fingerprints []string, roles map[string]v1alpha1.RecipientRole, err error) {
-	var raw []byte
+func readKeyringBytes(src string) ([]byte, error) {
 	if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") {
-		raw, err = fetchKeyring(src)
-	} else {
-		raw, err = os.ReadFile(src)
+		return fetchKeyring(src)
 	}
+	return os.ReadFile(src)
+}
+
+// keyringHasPublicKeys reports whether the keyring at src carries any
+// armored publicKey blocks (the signal that sealing should run against an
+// isolated keyring rather than the operator's own).
+func keyringHasPublicKeys(src string) (bool, error) {
+	raw, err := readKeyringBytes(src)
+	if err != nil {
+		return false, fmt.Errorf("read keyring %s: %w", src, err)
+	}
+	var kr keyringFile
+	if err := sigsyaml.Unmarshal(raw, &kr); err != nil {
+		return false, fmt.Errorf("parse keyring %s: %w", src, err)
+	}
+	for _, r := range kr.Recipients {
+		if strings.TrimSpace(r.PublicKey) != "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// importKeyringPubKeys imports any armored publicKey entries from the
+// keyring at src into the current GNUPGHOME, so server-side sealing works
+// without the operator's own keyring. Entries with no publicKey are
+// skipped silently (they must already be in the keyring). Returns the
+// number imported.
+func importKeyringPubKeys(src string) (int, error) {
+	raw, err := readKeyringBytes(src)
+	if err != nil {
+		return 0, fmt.Errorf("read keyring %s: %w", src, err)
+	}
+	var kr keyringFile
+	if err := sigsyaml.Unmarshal(raw, &kr); err != nil {
+		return 0, fmt.Errorf("parse keyring %s: %w", src, err)
+	}
+	n := 0
+	for _, r := range kr.Recipients {
+		if strings.TrimSpace(r.PublicKey) == "" {
+			continue
+		}
+		if err := gpgutil.ImportPublicKey([]byte(r.PublicKey)); err != nil {
+			return n, fmt.Errorf("import public key for %s: %w", r.Fingerprint, err)
+		}
+		n++
+	}
+	return n, nil
+}
+
+func loadKeyring(src string) (fingerprints []string, roles map[string]v1alpha1.RecipientRole, err error) {
+	raw, err := readKeyringBytes(src)
 	if err != nil {
 		return nil, nil, fmt.Errorf("read keyring %s: %w", src, err)
 	}
@@ -82,7 +137,17 @@ func loadKeyring(src string) (fingerprints []string, roles map[string]v1alpha1.R
 }
 
 func fetchKeyring(url string) ([]byte, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		// Cap redirects tightly -- a keyring URL is operator-chosen, but a
+		// misbehaving host shouldn't be able to bounce the fetch around.
+		CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("stopped after 3 redirects")
+			}
+			return nil
+		},
+	}
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err

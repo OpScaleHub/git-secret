@@ -331,6 +331,12 @@ Get the controller's own fingerprint + public key with
 [docs/architecture/keyring.md](docs/architecture/keyring.md) for the keyring
 format and per-environment layout.
 
+Prefer a form to the flags? `git-secret-seal ui` serves a local, public-key-only
+web page for producing manifests (`http://127.0.0.1:8765`); the chart's
+`sealUi.enabled` runs the same thing in-cluster behind `kubectl port-forward`. It
+never decrypts, never touches the cluster API, never persists — see
+[docs/architecture/sealing-console.md](docs/architecture/sealing-console.md).
+
 The generated manifest records the fingerprints it was sealed to in
 `spec.recipients`, so adding or removing a recipient shows up as a one-line
 change in review rather than an opaque blob churn. The controller mirrors this

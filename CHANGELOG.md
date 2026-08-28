@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.9.0 — 2026-08-28
+
+### `git-secret-seal ui`
+
+- A public-key-only web form for producing `GitSecret` manifests, for people who
+  would rather not drive the CLI. It never decrypts, never touches the Kubernetes
+  API, and never persists anything — the output is a manifest you review and
+  `kubectl apply` yourself.
+  - Run locally: `git-secret-seal ui` (binds `127.0.0.1:8765`).
+  - Run in-cluster: chart `sealUi.enabled` deploys it (`automountServiceAccountToken:
+    false` — it cannot reach the API), reached only by `kubectl port-forward`.
+  - `--keyring FILE|URL` pre-fills the recipient picker; keyring entries may carry
+    an armored `publicKey` so in-cluster sealing needs no operator keyring.
+- The controller image now bundles the `git-secret-seal` binary.
+- `git-secret-seal ui` sets up its own isolated GNUPGHOME when the keyring
+  carries public keys, so the in-cluster deployment works on a read-only root
+  filesystem.
+
+### Hardening (pre-freeze audit)
+
+- `git-secret-seal ui` bounds a single `/api/seal` request (key count + total
+  value bytes) to the same limits the sealer enforces per object.
+- `gpgutil.CountRecipients` — the admission-webhook recipient check, which parses
+  the object's attacker-controlled `encryptedKey` — runs under a 5s timeout; the
+  `ValidatingWebhookConfiguration` gets `timeoutSeconds: 10`.
+- `--keyring` URL fetches stop after 3 redirects.
+
+### Docs
+
+- `docs/architecture/admission-webhook.md` records the live end-to-end
+  verification of the validating webhook against a real cluster (2026-08-28).
+
 ## v0.8.0 — 2026-08-27 — security hardening (#38–#58)
 
 A backlog reset focused on making the `GitSecret` CRD a defensible
@@ -38,7 +70,12 @@ production-grade integration. No breaking changes; additive CRD fields only
 - Recipient roles (`human` / `controller` / `recovery` / `deprecated`) recorded
   in the `git-secret.opscalehub.io/recipient-roles` annotation.
 - `--keyring FILE` resolves recipients (and roles) from a committed keyring file.
-  `--keyring` also accepts an `http(s)://` URL.
+  `--keyring` also accepts an `http(s)://` URL, and keyring entries may carry an
+  armored `publicKey`.
+- `git-secret-seal ui` — a public-key-only web form for producing GitSecret
+  manifests. Never decrypts, never touches the cluster API, never persists. Run
+  locally (`127.0.0.1:8765`) or in-cluster via the chart's `sealUi.enabled`
+  (reached by `kubectl port-forward`).
 
 ### `git-secret-controller`
 

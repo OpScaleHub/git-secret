@@ -693,7 +693,8 @@ gpg_recipients:
         </div>
       </div>
 
-      <p class="lede" style="margin-top:var(--sp-3)">A container image and Helm chart (<code>charts/git-secret-controller</code>) ship on every tagged release. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Prefer a form to the flags? <code>git-secret-seal ui</code> serves a local, public-key-only web page for producing these manifests — it never decrypts, never touches the cluster, never persists.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">A container image and Helm chart (<code>charts/git-secret-controller</code>) ship on every tagged release. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, the sealing UI, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
     </div>
   </section>
 
