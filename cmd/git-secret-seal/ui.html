@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>git-secret · seal</title>
+<style>
+  :root{color-scheme:light dark;--bg:#fbfbfa;--fg:#1a1a1a;--muted:#6b6b6b;--line:#e2e2df;--accent:#3a5a40;--card:#fff;--code:#f4f4f2}
+  @media (prefers-color-scheme:dark){:root{--bg:#161615;--fg:#e8e8e6;--muted:#9a9a97;--line:#2e2e2c;--accent:#a3c9a8;--card:#1f1f1d;--code:#141413}}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--fg)}
+  main{max-width:760px;margin:0 auto;padding:2rem 1.25rem 4rem}
+  h1{font-size:1.3rem;margin:0 0 .25rem}
+  .sub{color:var(--muted);margin:0 0 1.5rem}
+  fieldset{border:1px solid var(--line);border-radius:10px;margin:0 0 1rem;padding:1rem 1.1rem}
+  legend{padding:0 .4rem;color:var(--muted);font-size:.85rem;text-transform:uppercase;letter-spacing:.04em}
+  label{display:block;font-size:.85rem;color:var(--muted);margin:.6rem 0 .2rem}
+  input,select,textarea{width:100%;padding:.5rem .6rem;border:1px solid var(--line);border-radius:7px;background:var(--card);color:var(--fg);font:inherit}
+  .row{display:grid;grid-template-columns:1fr 1fr auto;gap:.5rem;align-items:end;margin-bottom:.4rem}
+  .row input{margin:0}
+  .rm{background:none;border:1px solid var(--line);border-radius:7px;padding:.5rem .7rem;cursor:pointer;color:var(--muted)}
+  .add{background:none;border:1px dashed var(--line);border-radius:7px;padding:.45rem .8rem;cursor:pointer;color:var(--muted);font:inherit;margin-top:.3rem}
+  .recip{display:flex;gap:.5rem;align-items:center;margin-bottom:.35rem}
+  .recip input{flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.82rem}
+  .recip .role{flex:0 0 130px}
+  button.primary{background:var(--accent);color:#fff;border:0;border-radius:8px;padding:.65rem 1.4rem;font:inherit;font-weight:600;cursor:pointer}
+  @media (prefers-color-scheme:dark){button.primary{color:#161615}}
+  pre{background:var(--code);border:1px solid var(--line);border-radius:9px;padding:1rem;overflow:auto;font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-all}
+  .out{margin-top:1.25rem}
+  .out .bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem}
+  .copy{background:none;border:1px solid var(--line);border-radius:7px;padding:.35rem .8rem;cursor:pointer;color:var(--fg);font:inherit}
+  .err{color:#b3261e;background:#b3261e15;border:1px solid #b3261e40;border-radius:8px;padding:.7rem .9rem;margin-top:1rem;font-size:.9rem}
+  .hint{color:var(--muted);font-size:.82rem;margin-top:.5rem}
+  code{background:var(--code);padding:.1rem .35rem;border-radius:4px;font-size:.85em}
+  .banner{background:var(--accent)15;border:1px solid var(--accent)40;border-radius:8px;padding:.6rem .9rem;font-size:.85rem;margin-bottom:1.5rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <h1>git-secret · seal</h1>
+  <p class="sub">Produce a <code>GitSecret</code> manifest. Public-key only — this page never decrypts, never talks to your cluster, never stores anything.</p>
+  <div class="banner">Review the output, then apply it yourself: <code>kubectl apply -f gitsecret.yaml</code>. Nothing leaves this page until you do.</div>
+
+  <form id="f">
+    <fieldset>
+      <legend>Target</legend>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem">
+        <div><label>Namespace</label><input id="ns" required autocomplete="off"></div>
+        <div><label>Name</label><input id="name" required autocomplete="off"></div>
+      </div>
+      <label>Secret type</label>
+      <input id="type" placeholder="Opaque" autocomplete="off">
+    </fieldset>
+
+    <fieldset>
+      <legend>Recipients <span id="rcount"></span></legend>
+      <div id="recips"></div>
+      <button type="button" class="add" id="addRecip">+ recipient fingerprint</button>
+      <p class="hint">Full 40/64-hex GPG fingerprints. The controller's own fingerprint plus every human who should be able to decrypt. Pre-filled from the keyring if one is configured.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Values</legend>
+      <div id="kvs"></div>
+      <button type="button" class="add" id="addKv">+ key / value</button>
+    </fieldset>
+
+    <button type="submit" class="primary">Seal</button>
+  </form>
+
+  <div id="result"></div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const el = (t,a={},...c) => { const e=document.createElement(t); for(const k in a) e.setAttribute(k,a[k]); c.forEach(x=>e.append(x)); return e; };
+
+function recipRow(fp='', role=''){
+  const inp = el('input',{placeholder:'0000000000000000000000000000000000000000',value:fp});
+  const sel = el('select',{class:'role'});
+  ['','human','controller','recovery','deprecated'].forEach(r=>{
+    const o=el('option',{value:r}); o.textContent = r||'(role)'; if(r===role)o.selected=true; sel.append(o);
+  });
+  const rm = el('button',{type:'button',class:'rm'}); rm.textContent='×';
+  const div = el('div',{class:'recip'}, inp, sel, rm);
+  rm.onclick = () => { div.remove(); updateCount(); };
+  return div;
+}
+function kvRow(k='',v=''){
+  const ki = el('input',{placeholder:'API_KEY',value:k});
+  const vi = el('input',{placeholder:'value',value:v});
+  const rm = el('button',{type:'button',class:'rm'}); rm.textContent='×';
+  const div = el('div',{class:'row'}, el('div',{}, el('label',{},'key'), ki), el('div',{}, el('label',{},'value'), vi), rm);
+  rm.onclick = () => div.remove();
+  return div;
+}
+function updateCount(){ $('#rcount').textContent = '· ' + $('#recips').querySelectorAll('.recip').length; }
+
+$('#addRecip').onclick = () => { $('#recips').append(recipRow()); updateCount(); };
+$('#addKv').onclick = () => $('#kvs').append(kvRow());
+
+fetch('api/config').then(r=>r.json()).then(cfg=>{
+  if(cfg.defaultNamespace) $('#ns').value = cfg.defaultNamespace;
+  (cfg.recipients||[]).forEach(r => $('#recips').append(recipRow(r.fingerprint, r.role||'')));
+  if(!$('#recips').children.length) $('#recips').append(recipRow());
+  updateCount();
+}).catch(()=>{ $('#recips').append(recipRow()); updateCount(); });
+$('#kvs').append(kvRow());
+
+$('#f').onsubmit = async e => {
+  e.preventDefault();
+  $('#result').innerHTML = '';
+  const recipients = [...$('#recips').querySelectorAll('.recip')].map(d=>{
+    const [inp,sel]=d.querySelectorAll('input,select'); return {fingerprint:inp.value.trim(), role:sel.value};
+  }).filter(r=>r.fingerprint);
+  const data = {};
+  for(const d of $('#kvs').querySelectorAll('.row')){
+    const [k,v]=d.querySelectorAll('input'); if(k.value.trim()) data[k.value.trim()] = v.value;
+  }
+  const body = { namespace:$('#ns').value.trim(), name:$('#name').value.trim(), targetType:$('#type').value.trim(), recipients, data };
+  const res = await fetch('api/seal',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+  const j = await res.json();
+  if(!res.ok){ $('#result').innerHTML = ''; $('#result').append(el('div',{class:'err'}, j.error||('HTTP '+res.status))); return; }
+  const pre = el('pre',{}, j.yaml);
+  const copy = el('button',{class:'copy'}); copy.textContent='Copy';
+  copy.onclick = () => { navigator.clipboard.writeText(j.yaml); copy.textContent='Copied'; setTimeout(()=>copy.textContent='Copy',1200); };
+  const out = el('div',{class:'out'}, el('div',{class:'bar'}, el('strong',{},'gitsecret.yaml'), copy), pre,
+    el('p',{class:'hint'},'Save it and apply with kubectl, or pipe: pbpaste | kubectl apply -f -'));
+  $('#result').append(out);
+};
+</script>
+</body>
+</html>

@@ -55,6 +55,25 @@ Manually: run the controller with `--enable-webhook --webhook-service <svc>
 443 → container port 9443 and a `ValidatingWebhookConfiguration` pointing at
 `/validate-git-secret-opscalehub-io-v1alpha1-gitsecret` with an empty `caBundle`.
 
+## Verified live (2026-08-28, k0s v1.36.2)
+
+End-to-end against a real apiserver with the `v0.8.0` controller image and the
+`v0.8.0` CRD, in an isolated namespace with a `namespaceSelector`-scoped
+`ValidatingWebhookConfiguration`:
+
+| Check | Result |
+|---|---|
+| Controller generates + serves its self-signed cert on `:9443` | ✅ `Updated current TLS certificate` |
+| CA injected into the `ValidatingWebhookConfiguration` at runtime | ✅ `injected caBundle` log line |
+| Valid `GitSecret` (recipients match `encryptedKey`) | ✅ admitted, then decrypted into a `Secret` |
+| `spec.recipients` lists 2 fingerprints, blob wrapped to 1 | ✅ **denied**: `spec.recipients does not match encryptedKey: sealer: spec.recipients lists 2 fingerprint(s) but encryptedKey is wrapped to 1 recipient(s)` |
+| Namespace has `git-secret.opscalehub.io/required-recipients` and the object omits one | ✅ **denied**: `namespace "…" requires recipient(s) missing from spec.recipients: …` |
+
+No reconcile hot-loop — an early observation of one was traced to *two*
+controllers (a cluster-wide one plus the isolated test one) both writing the same
+object's status; a single controller settles to `Ready` in one reconcile. Open
+follow-up on live status fields: #65.
+
 ## Not covered
 
 Matching against a full keyring file / `ClusterKeyring` object (only the simpler

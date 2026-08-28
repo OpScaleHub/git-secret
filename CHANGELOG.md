@@ -38,7 +38,12 @@ production-grade integration. No breaking changes; additive CRD fields only
 - Recipient roles (`human` / `controller` / `recovery` / `deprecated`) recorded
   in the `git-secret.opscalehub.io/recipient-roles` annotation.
 - `--keyring FILE` resolves recipients (and roles) from a committed keyring file.
-  `--keyring` also accepts an `http(s)://` URL.
+  `--keyring` also accepts an `http(s)://` URL, and keyring entries may carry an
+  armored `publicKey`.
+- `git-secret-seal ui` — a public-key-only web form for producing GitSecret
+  manifests. Never decrypts, never touches the cluster API, never persists. Run
+  locally (`127.0.0.1:8765`) or in-cluster via the chart's `sealUi.enabled`
+  (reached by `kubectl port-forward`).
 
 ### `git-secret-controller`
 

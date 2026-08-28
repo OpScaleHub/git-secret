@@ -122,6 +122,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && args[0] == "recipients" {
 		return runRecipients(args[1:], stdout, stderr)
 	}
+	if len(args) > 0 && args[0] == "ui" {
+		return runUI(args[1:], stdout, stderr)
+	}
 
 	fs := flag.NewFlagSet("git-secret-seal", flag.ContinueOnError)
 	fs.SetOutput(stderr)

@@ -23,8 +23,8 @@
   webhook enforcing `spec.recipients` and per-namespace required recipients.
 - [provenance.md](architecture/provenance.md) — recording which Git revision
   produced a Secret.
-- [sealing-console.md](architecture/sealing-console.md) — feasibility analysis for
-  a web sealing UI (not scheduled).
+- [sealing-console.md](architecture/sealing-console.md) — `git-secret-seal ui`, a
+  public-key-only web form for producing GitSecret manifests (local or in-cluster).
 
 ## Reporting a vulnerability
 

@@ -1,0 +1,84 @@
+{{- if .Values.sealUi.enabled }}
+{{- $name := printf "%s-seal-ui" (include "git-secret-controller.fullname" .) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "git-secret-controller.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: seal-ui
+  template:
+    metadata:
+      labels:
+        {{- include "git-secret-controller.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: seal-ui
+    spec:
+      # No ServiceAccount token: the UI never talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: seal-ui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/git-secret-seal"]
+          args:
+            - ui
+            - --addr=:{{ .Values.sealUi.port }}
+            {{- if .Values.sealUi.keyringConfigMap }}
+            - --keyring=/keyring/keyring.yaml
+            {{- end }}
+            {{- if .Values.sealUi.defaultNamespace }}
+            - --namespace={{ .Values.sealUi.defaultNamespace }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.sealUi.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- if .Values.sealUi.keyringConfigMap }}
+            - name: keyring
+              mountPath: /keyring
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if .Values.sealUi.keyringConfigMap }}
+        - name: keyring
+          configMap:
+            name: {{ .Values.sealUi.keyringConfigMap }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+spec:
+  selector:
+    {{- include "git-secret-controller.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+{{- end }}
