@@ -66,8 +66,25 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "error:", err)
 			return exitError
 		}
-		if err := importKeyringPubKeys(*keyringSrc); err != nil {
-			fmt.Fprintln(stderr, "warning: could not import keyring public keys:", err)
+		// If the keyring carries armored public keys, seal against an
+		// isolated, process-private GNUPGHOME rather than the operator's
+		// own keyring -- this is what makes the in-cluster deployment work
+		// (no operator keyring, read-only root filesystem).
+		if hasPub, _ := keyringHasPublicKeys(*keyringSrc); hasPub {
+			home, err := os.MkdirTemp("", "git-secret-seal-ui-gnupg-")
+			if err != nil {
+				fmt.Fprintln(stderr, "error: create keyring dir:", err)
+				return exitError
+			}
+			_ = os.Chmod(home, 0o700)
+			os.Setenv("GNUPGHOME", home)
+			defer os.RemoveAll(home)
+			if n, err := importKeyringPubKeys(*keyringSrc); err != nil {
+				fmt.Fprintln(stderr, "error: import keyring public keys:", err)
+				return exitError
+			} else {
+				fmt.Fprintf(stdout, "imported %d public key(s) from the keyring into %s\n", n, home)
+			}
 		}
 		for _, fp := range fps {
 			recips = append(recips, keyringEntry{Fingerprint: fp, Role: string(roles[upperFP(fp)])})
@@ -155,6 +172,20 @@ func (s *uiServer) handleSeal(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Data) == 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one key/value is required"})
+		return
+	}
+	// Bound the work a single request can ask for -- matches sealer's own
+	// per-object limits, so a hostile POST can't tie up the process.
+	if len(req.Data) > sealer.MaxEntries {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many keys (%d, limit %d)", len(req.Data), sealer.MaxEntries)})
+		return
+	}
+	total := 0
+	for _, v := range req.Data {
+		total += len(v)
+	}
+	if total > sealer.MaxValueBytes {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("values total %d bytes, over the %d limit", total, sealer.MaxValueBytes)})
 		return
 	}
 	var fps []string

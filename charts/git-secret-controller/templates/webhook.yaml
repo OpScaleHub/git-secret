@@ -25,6 +25,7 @@ webhooks:
     admissionReviewVersions: ["v1"]
     sideEffects: None
     failurePolicy: {{ .Values.webhook.failurePolicy }}
+    timeoutSeconds: 10
     # caBundle is intentionally omitted: the controller generates a
     # self-signed CA at startup and patches it in here (see
     # internal/webhook.InjectCABundle). Until it does, the apiserver

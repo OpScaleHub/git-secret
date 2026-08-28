@@ -14,6 +14,18 @@
   - `--keyring FILE|URL` pre-fills the recipient picker; keyring entries may carry
     an armored `publicKey` so in-cluster sealing needs no operator keyring.
 - The controller image now bundles the `git-secret-seal` binary.
+- `git-secret-seal ui` sets up its own isolated GNUPGHOME when the keyring
+  carries public keys, so the in-cluster deployment works on a read-only root
+  filesystem.
+
+### Hardening (pre-freeze audit)
+
+- `git-secret-seal ui` bounds a single `/api/seal` request (key count + total
+  value bytes) to the same limits the sealer enforces per object.
+- `gpgutil.CountRecipients` — the admission-webhook recipient check, which parses
+  the object's attacker-controlled `encryptedKey` — runs under a 5s timeout; the
+  `ValidatingWebhookConfiguration` gets `timeoutSeconds: 10`.
+- `--keyring` URL fetches stop after 3 redirects.
 
 ### Docs
 

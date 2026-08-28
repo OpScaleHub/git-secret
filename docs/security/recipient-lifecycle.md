@@ -47,7 +47,7 @@ in the manifest and `status.recipients` on the live object
 manifest; commit it and the controller reconciles. Both need a local GPG secret
 key that can already open the object (run them as a current recipient); `add`
 also needs the new fingerprint's public key in your keyring (`gpg --import`, WKD,
-or a keyserver — see #47 for making this discoverable).
+or a keyserver — see [keyring.md](../architecture/keyring.md)).
 
 ## Key expiry
 
