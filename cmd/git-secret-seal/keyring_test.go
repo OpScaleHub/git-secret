@@ -123,3 +123,35 @@ func TestRun_KeyringHTTPError(t *testing.T) {
 		t.Fatal("expected failure on 404 keyring")
 	}
 }
+
+func TestKeyringPublicKeys(t *testing.T) {
+	home := shortTempDir(t)
+	fpr := genTestKey(t, home)
+	t.Setenv("GNUPGHOME", home)
+	pub := exportPublicKeyCLI(t, home, fpr)
+
+	withPub := "recipients:\n  - fingerprint: " + fpr + "\n    role: controller\n    publicKey: |\n"
+	for _, line := range strings.Split(strings.TrimRight(string(pub), "\n"), "\n") {
+		withPub += "      " + line + "\n"
+	}
+	pWith := t.TempDir() + "/with.yaml"
+	os.WriteFile(pWith, []byte(withPub), 0o644)
+
+	pWithout := t.TempDir() + "/without.yaml"
+	os.WriteFile(pWithout, []byte("recipients:\n  - fingerprint: "+fpr+"\n    role: controller\n"), 0o644)
+
+	if has, err := keyringHasPublicKeys(pWith); err != nil || !has {
+		t.Fatalf("keyringHasPublicKeys(with) = %v, %v; want true", has, err)
+	}
+	if has, err := keyringHasPublicKeys(pWithout); err != nil || has {
+		t.Fatalf("keyringHasPublicKeys(without) = %v, %v; want false", has, err)
+	}
+
+	// Import into a fresh keyring works.
+	fresh := shortTempDir(t)
+	t.Setenv("GNUPGHOME", fresh)
+	n, err := importKeyringPubKeys(pWith)
+	if err != nil || n != 1 {
+		t.Fatalf("importKeyringPubKeys = %d, %v; want 1, nil", n, err)
+	}
+}

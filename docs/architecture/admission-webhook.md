@@ -71,11 +71,11 @@ End-to-end against a real apiserver with the `v0.8.0` controller image and the
 
 No reconcile hot-loop — an early observation of one was traced to *two*
 controllers (a cluster-wide one plus the isolated test one) both writing the same
-object's status; a single controller settles to `Ready` in one reconcile. Open
-follow-up on live status fields: #65.
+object's status; a single controller settles to `Ready` in one reconcile. The
+live status fields (`recipientCount`, `recipients`, `sourceRevision`) were
+re-checked on a clean single-controller deploy and populate correctly (#65).
 
 ## Not covered
 
 Matching against a full keyring file / `ClusterKeyring` object (only the simpler
-Namespace-annotation form is implemented), and mutating defaults. See #56 for
-keyring-over-HTTP.
+Namespace-annotation form is implemented), and mutating defaults. Keyring-over-HTTP is covered in [keyring.md](keyring.md).

@@ -53,28 +53,51 @@ func readKeyringBytes(src string) ([]byte, error) {
 	return os.ReadFile(src)
 }
 
-// importKeyringPubKeys imports any armored publicKey entries from the
-// keyring at src into the current GNUPGHOME, so server-side sealing works
-// without the operator's own keyring. Entries with no publicKey are
-// skipped silently (they must already be in the keyring).
-func importKeyringPubKeys(src string) error {
+// keyringHasPublicKeys reports whether the keyring at src carries any
+// armored publicKey blocks (the signal that sealing should run against an
+// isolated keyring rather than the operator's own).
+func keyringHasPublicKeys(src string) (bool, error) {
 	raw, err := readKeyringBytes(src)
 	if err != nil {
-		return fmt.Errorf("read keyring %s: %w", src, err)
+		return false, fmt.Errorf("read keyring %s: %w", src, err)
 	}
 	var kr keyringFile
 	if err := sigsyaml.Unmarshal(raw, &kr); err != nil {
-		return fmt.Errorf("parse keyring %s: %w", src, err)
+		return false, fmt.Errorf("parse keyring %s: %w", src, err)
 	}
+	for _, r := range kr.Recipients {
+		if strings.TrimSpace(r.PublicKey) != "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// importKeyringPubKeys imports any armored publicKey entries from the
+// keyring at src into the current GNUPGHOME, so server-side sealing works
+// without the operator's own keyring. Entries with no publicKey are
+// skipped silently (they must already be in the keyring). Returns the
+// number imported.
+func importKeyringPubKeys(src string) (int, error) {
+	raw, err := readKeyringBytes(src)
+	if err != nil {
+		return 0, fmt.Errorf("read keyring %s: %w", src, err)
+	}
+	var kr keyringFile
+	if err := sigsyaml.Unmarshal(raw, &kr); err != nil {
+		return 0, fmt.Errorf("parse keyring %s: %w", src, err)
+	}
+	n := 0
 	for _, r := range kr.Recipients {
 		if strings.TrimSpace(r.PublicKey) == "" {
 			continue
 		}
 		if err := gpgutil.ImportPublicKey([]byte(r.PublicKey)); err != nil {
-			return fmt.Errorf("import public key for %s: %w", r.Fingerprint, err)
+			return n, fmt.Errorf("import public key for %s: %w", r.Fingerprint, err)
 		}
+		n++
 	}
-	return nil
+	return n, nil
 }
 
 func loadKeyring(src string) (fingerprints []string, roles map[string]v1alpha1.RecipientRole, err error) {
