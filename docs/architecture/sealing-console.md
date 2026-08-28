@@ -1,66 +1,81 @@
-# Sealing console — feasibility (not scheduled)
+# Sealing console (`git-secret-seal ui`)
 
-Status: **design analysis only.** No console is built or planned. This records the
-thinking so a future decision starts from here instead of from scratch (#46).
+A web form for producing `GitSecret` manifests, for people who would rather not
+drive the `git-secret-seal` CLI — especially non-Linux users. It is **public-key
+only**: it never decrypts, never touches the Kubernetes API, and never persists
+anything. The output is a manifest you review and `kubectl apply` yourself.
 
-## What it would be
+## Run it locally
 
-A web UI for the `git-secret-seal` workflow: pick recipients, enter key/value
-pairs (or paste a `Secret` manifest), see the YAML, get a `GitSecret` manifest
-out. Nothing else.
+```
+git-secret-seal ui                 # http://127.0.0.1:8765
+git-secret-seal ui --keyring envs/prod/keyring.yaml --namespace prod
+```
 
-## What it is not, ever
+Same trust boundary as running `git-secret-seal` directly — the sealing happens
+in the process, using the recipient **public** keys in your gpg keyring (or the
+ones carried in `--keyring`). Nothing leaves your machine.
 
-- **Not a decrypt endpoint.** Sealing is a one-way, public-key-only operation — it
-  needs recipient *public* keys and plaintext input, and produces ciphertext. It
-  never holds or needs a private key.
-- **Not part of `git-secret-controller`.** A separate binary / Deployment, always.
-  Bolting a sealing endpoint onto the always-on process that holds the decrypt
-  key is exactly the trust-domain mixing the CRD design exists to avoid.
-- **Not an authorization point.** The generated manifest still goes through
-  `kubectl apply` / ArgoCD / PR review. The apply path is the control boundary;
-  the console is an authoring convenience.
+## Run it in-cluster
 
-## Deployment shapes
+Helm (`charts/git-secret-controller`):
 
-| Shape | Exposure | Notes |
-|---|---|---|
-| **Local, CLI-launched** (`git-secret-seal ui`, binds `127.0.0.1`, auto-exits) | Lowest — plaintext never leaves the operator's machine | Same trust boundary as running the CLI today |
-| **In-cluster Deployment**, reached by `kubectl port-forward` (no Ingress) | Medium — see risks below | A shared, always-available authoring surface |
-| **In-cluster sidecar / one-shot Job** | Medium | On-demand variant of the above |
+```yaml
+sealUi:
+  enabled: true
+  keyringConfigMap: git-secret-keyring   # optional: pre-fills recipients
+  defaultNamespace: ""
+```
 
-## Residual risks for an in-cluster console, and mitigations
+This deploys a small `Deployment` + `Service` running `git-secret-seal ui` from
+the controller image (the binary is bundled). The pod has
+`automountServiceAccountToken: false` — it genuinely cannot reach the API.
 
-1. **Plaintext in transit / in the pod.** *Mitigation:* do the GPG sealing
-   **client-side in the browser** (WASM OpenPGP). The server then serves only
-   static assets + the recipient public-key list (from the [keyring](keyring.md)),
-   and plaintext never leaves the browser tab. This is the design that makes
-   in-cluster ≈ as safe as local, and is the thing to **prototype first** before
-   committing.
-2. **Recipient substitution** (a compromised console seals to an attacker key
-   too). *Mitigation:* `spec.recipients` is visible in the manifest diff and the
-   manifest goes through review before it means anything.
-3. **Authz** (who may use it, for which namespace). *Mitigation:* not the
-   console's job — the apply path already gates this. Optionally put the
-   port-forward behind the cluster's normal auth proxy.
+Reach it by port-forward — **no Ingress**:
 
-## Hard dependency
+```
+kubectl port-forward svc/git-secret-controller-seal-ui 8080:80
+open http://localhost:8080
+```
 
-Recipient public-key discovery — **done** ([keyring.md](keyring.md):
-`git-secret-controller --print-public-key`, `git-secret-seal --keyring`). A
-console would build its recipient picker on the keyring file.
+### Residual risk, stated plainly
 
-## Recommendation
+Sealing runs in the process, so for the in-cluster deployment the plaintext you
+type travels browser → `kubectl port-forward` tunnel (apiserver-authenticated
+TLS) → the pod, and sits in the pod's memory for the duration of one request. It
+is never written anywhere and never sent to the cluster API. If that transit is
+not acceptable for a given secret, run the UI locally instead, or use the CLI.
 
-**Not worth building now** — there is no demonstrated CLI pain; recent real
-production use went end-to-end on `git-secret-seal` without friction, and
-`--keyring` removes the "retype every fingerprint" annoyance that would have been
-the main driver.
+Doing the GPG work in the browser (WASM OpenPGP) would remove even that transit;
+it is a possible future hardening, not built.
 
-If sealing frequency grows enough that the CLI is a real bottleneck for several
-people, the path is:
+## The keyring
 
-1. Prototype the **local, browser-side-crypto** shape (`git-secret-seal ui`).
-2. Only if a shared surface is genuinely needed, extend the *same* browser-side
-   -crypto build to an in-cluster Deployment behind `port-forward`.
-3. Never a server-side-seal endpoint; never on the controller.
+`keyringConfigMap` names a `ConfigMap` with a `keyring.yaml` key in the
+[keyring format](keyring.md), extended with an optional armored `publicKey` per
+entry:
+
+```yaml
+recipients:
+  - fingerprint: 1111...
+    role: controller
+    publicKey: |
+      -----BEGIN PGP PUBLIC KEY BLOCK-----
+      ...
+  - fingerprint: 2222...
+    role: recovery
+    publicKey: |
+      -----BEGIN PGP PUBLIC KEY BLOCK-----
+      ...
+```
+
+The UI imports those public keys into an ephemeral keyring at startup, so
+in-cluster sealing works without any operator keyring. Build the `publicKey`
+blocks with `gpg --armor --export <fpr>` (or, for the controller's own key,
+`git-secret-controller --print-public-key`).
+
+## What it does not do
+
+No decryption. No `kubectl apply`. No cluster API access. No storage. No auth of
+its own — the port-forward (and, if you add one, your cluster's auth proxy) is
+the boundary. It is an authoring convenience, not a control point.

@@ -64,6 +64,21 @@ publishPublicKey:
   enabled: false
   configMapName: git-secret-controller-pubkey
 
+# A web form for producing GitSecret manifests -- `git-secret-seal ui`, run
+# in-cluster from this same image. Public-key only: it never decrypts,
+# never touches the Kubernetes API, never persists anything; the output is
+# a manifest an operator copies and applies themselves. Reach it with
+# `kubectl port-forward svc/<release>-seal-ui 8080:80` -- no Ingress.
+# keyringConfigMap (optional) names a ConfigMap with a key `keyring.yaml`
+# in the git-secret-seal keyring format (fingerprint + role [+ armored
+# publicKey]) to pre-fill the recipient picker and let sealing work
+# without the operator's own gpg keyring.
+sealUi:
+  enabled: false
+  port: 8080
+  keyringConfigMap: ""
+  defaultNamespace: ""
+
 resources:
   requests:
     cpu: 50m

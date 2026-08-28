@@ -101,3 +101,14 @@ optional ways to expose it:
 
 Both are off by default; use either or both. See
 `docs/architecture/keyring.md`.
+
+## Sealing web form (`sealUi.enabled`)
+
+Runs `git-secret-seal ui` in-cluster from the same image: a public-key-only
+web form for producing `GitSecret` manifests. It has
+`automountServiceAccountToken: false` -- it cannot reach the API -- never
+decrypts, and never persists. Reach it with `kubectl port-forward
+svc/<release>-seal-ui 8080:80`; there is no Ingress. `sealUi.keyringConfigMap`
+(optional) names a `ConfigMap` with a `keyring.yaml` (fingerprint + role +
+armored `publicKey`) to pre-fill the recipient picker. See
+`docs/architecture/sealing-console.md`.

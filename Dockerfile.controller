@@ -10,6 +10,11 @@ COPY . .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
     -o /out/git-secret-controller ./cmd/git-secret-controller
+# git-secret-seal is bundled too so the chart can run `git-secret-seal ui`
+# (the sealing web form) in-cluster from this same image -- it needs the
+# same gpg runtime and nothing more.
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/git-secret-seal ./cmd/git-secret-seal
 
 # gpg is a real runtime dependency, not build-time-only -- the
 # controller shells out to it on every reconcile (see internal/gpgutil)
@@ -35,6 +40,7 @@ USER 1000:1000
 WORKDIR /home/git-secret-controller
 
 COPY --from=build /out/git-secret-controller /usr/local/bin/git-secret-controller
+COPY --from=build /out/git-secret-seal /usr/local/bin/git-secret-seal
 
 EXPOSE 8443 8081
 ENTRYPOINT ["/usr/local/bin/git-secret-controller"]

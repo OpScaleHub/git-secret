@@ -172,6 +172,16 @@ func ImportSecretKey(armored []byte) error {
 	return nil
 }
 
+// ImportPublicKey imports an armored public key into the current
+// GNUPGHOME so it can be used as an --encrypt recipient. Public keys are
+// not secret; this is safe to call with keyring-provided material.
+func ImportPublicKey(armored []byte) error {
+	if _, err := run(armored, "--batch", "--import"); err != nil {
+		return fmt.Errorf("gpgutil: import public key: %w", err)
+	}
+	return nil
+}
+
 // ExportPublicKey returns the ASCII-armored public key for fpr from the
 // current GNUPGHOME. Public keys are not secret -- this is used to hand a
 // controller's own public key to whoever needs to seal GitSecrets to it,
