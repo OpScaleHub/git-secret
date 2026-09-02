@@ -38,7 +38,7 @@ in the manifest and `status.recipients` on the live object
 | Change | Command | Re-seal values? | Historical exposure? |
 |---|---|---|---|
 | Add a recipient | `git-secret-seal recipients add <fpr> -f f.yaml [--role R]` | No | — |
-| Remove a recipient (clean) | `git-secret-seal recipients remove <fpr> -f f.yaml` | No | They keep access to versions already in Git history |
+| Remove a recipient (clean) | `git-secret-seal recipients remove <fpr> -f f.yaml` | No | Rewrap only — they keep access to Git history **and to any current value not since changed** (see below) |
 | Rotate the controller identity | `recipients add <new>` then `recipients remove <old>` | No | — |
 | Rotate a **compromised** key | full `git-secret-seal` re-seal + rotate the secret values themselves | **Yes** | Permanent for anything ever committed — see below |
 | Emergency: rotate everything | re-seal every `GitSecret` to a fresh recipient set | Yes | As above |
@@ -63,11 +63,19 @@ Because a `GitSecret` is delivered through Git, **every prior version of the
 object stays in Git history**, each wrapped to whatever recipient set it had at
 the time. Consequences:
 
-- **Removing a recipient** stops them decrypting *new* object versions. It does
-  **nothing** about versions already in history that were wrapped to them, which
-  they can still open if they have a copy of the repo. For a departing operator
-  who was only ever a passive reviewer this is usually fine; treat it as a
-  compromise (below) if it isn't.
+- **Removing a recipient** (CRD `recipients remove` / `--rewrap`) re-wraps the
+  content key to the reduced set, so the removed key can no longer *unwrap* it
+  from objects sealed after the rewrap. It does **not** rotate the content key
+  and does **not** re-encrypt any `encryptedData` value (invariant #6), so a
+  recipient who already obtained that content key can still decrypt every value
+  that has not since been **changed**, plus every version already in Git history
+  that was wrapped to them. Changing a value re-seals it under a fresh content
+  key and is the only operation that cryptographically locks them out. For a
+  departing operator who was only ever a passive reviewer this is usually fine;
+  if the current unchanged values must be protected from them, treat it as a
+  compromise (below). (The CLI `git secret removeuser` is different — it forces a
+  full `rotate-keys`, so CLI removal *is* a revocation of access to current
+  data.)
 - **A compromised key** must be assumed to have decrypted everything that key was
   ever a recipient of, across all of history. `--rewrap` / `recipients remove`
   cannot reach into history. The only real remediation is to **rotate the secret

@@ -1,9 +1,13 @@
 apiVersion: v2
 name: git-secret-server
 description: >-
-  Stateless HTTP bridge letting External Secrets Operator's generic Webhook
-  provider pull decrypted values out of a git-secret-protected repository.
+  DEPRECATED. Stateless HTTP bridge letting External Secrets Operator's generic
+  Webhook provider pull decrypted values out of a git-secret-protected
+  repository. Superseded by the native GitSecret CRD + git-secret-controller
+  (chart: git-secret-controller). Retained for existing ESO users; receives
+  security fixes only, no new features. New deployments should use the CRD.
 type: application
+deprecated: true
 version: 0.1.0
 appVersion: "0.1.0"
 home: https://git-secret.opscale.ir

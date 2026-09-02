@@ -161,8 +161,12 @@ jobs:
             ${{ env.CONTROLLER_ASSET_PATH }}
             ${{ env.CONTROLLER_ASSET_PATH }}.sha256
 
+  # git-secret-server is a DEPRECATED component (superseded by the GitSecret
+  # CRD + git-secret-controller). Its image and chart are still published so
+  # existing External Secrets Operator users are not broken -- security fixes
+  # only, no new features. New deployments should use git-secret-controller.
   docker-release:
-    name: Build & push git-secret-server image
+    name: Build & push git-secret-server image (deprecated component)
     runs-on: ubuntu-latest
     permissions:
       contents: read

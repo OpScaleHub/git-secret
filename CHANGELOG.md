@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Deprecations
+
+- **`git-secret-server` (the ESO webhook bridge) is now explicitly deprecated.**
+  It is superseded by the native `GitSecret` CRD + `git-secret-controller`. The
+  binary, image, and Helm chart are still published so existing External Secrets
+  Operator users are not broken, and it receives security fixes only — no new
+  features. New deployments should use the `GitSecret` CRD. The chart is marked
+  `deprecated: true`.
+
+### Docs
+
+- Landing page: corrected the hook-skip note — only `SECRETIZE_SKIP_HOOKS=1`
+  skips hooks; the ambient `CI` variable deliberately does not (it previously
+  implied `CI=1` would).
+- `disaster-recovery.md` / `recipient-lifecycle.md`: clarified that CRD
+  `recipients remove` performs a *rewrap* (same content key, `encryptedData`
+  untouched), not a content-key rotation — a removed recipient who cached the
+  content key can still decrypt values that have not since changed. The CLI
+  `git secret removeuser` still forces a full `rotate-keys` and is unchanged.
+
 ## v0.9.0 — 2026-08-28
 
 ### `git-secret-seal ui`

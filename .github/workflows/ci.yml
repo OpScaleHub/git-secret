@@ -78,6 +78,9 @@ jobs:
 
       - name: helm lint
         run: |
+          # git-secret-server is deprecated (superseded by the GitSecret CRD +
+          # git-secret-controller); still linted so it keeps building for
+          # existing ESO users, not because it is a recommended path.
           helm lint ./charts/git-secret-server
           helm lint ./charts/git-secret-controller
 

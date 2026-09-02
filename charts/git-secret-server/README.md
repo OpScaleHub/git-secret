@@ -1,19 +1,32 @@
 # git-secret-server
 
+> **⚠️ Deprecated — retained for compatibility, not a first-class integration.**
+>
+> This chart deploys the ESO webhook bridge (`cmd/git-secret-server`), an
+> architecture that has been **superseded by the native `GitSecret` CRD +
+> `git-secret-controller`** (see [`charts/git-secret-controller`](../git-secret-controller)
+> and [design rationale §3–4](../../docs/security/design-rationale.md)). It still
+> builds and is still published so **existing External Secrets Operator users are
+> not broken**, and it receives **security fixes only — no new features**.
+>
+> **New deployments should use the `GitSecret` CRD instead** — it needs no repo
+> clone in the cluster, no SSH transport, and no long-lived network-reachable
+> process holding a live decryption key.
+
 Deploys the stateless HTTP bridge (`cmd/git-secret-server`) that lets External
 Secrets Operator's generic Webhook provider pull decrypted values out of a
-git-secret-protected repository — no third-party secret store, no ArgoCD
-plugin. See the main [README](../../README.md#git-secret-server) for the full
-architecture and why it's shaped this way.
+git-secret-protected repository. See
+[design-rationale.md §3](../../docs/security/design-rationale.md) for the full
+architecture, why it was built, and why it was superseded.
 
 ## Namespace
 
-**Recommended: install `git-secret-server` into the same namespace External Secrets
-Operator itself runs in** (commonly `external-secrets`, ESO's own chart's default).
-This is a small, single-purpose platform service — not a per-app workload — so it
-belongs alongside the platform component that's its only real caller, the same way
-you wouldn't normally split `cert-manager` or `argocd` across namespaces from their
-own controllers either.
+If you are keeping an existing `git-secret-server` deployment: install it into
+the same namespace External Secrets Operator itself runs in (commonly
+`external-secrets`, ESO's own chart's default). It is a small, single-purpose
+platform service — not a per-app workload — so it belongs alongside the platform
+component that's its only real caller, the same way you wouldn't normally split
+`cert-manager` or `argocd` across namespaces from their own controllers either.
 
 The chart's default `networkPolicy.allowFrom` assumes this: it uses a bare
 `podSelector` (no `namespaceSelector`), which Kubernetes scopes to same-namespace
