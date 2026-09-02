@@ -103,11 +103,34 @@ git-secret-seal recipients remove <departing-fpr> -f gitsecret.yaml
 --recipient <controller-fpr> --recipient <remaining-human-fpr> --recipient
 <recovery-fpr>`).
 
-They can no longer decrypt any **future** version of the object. They **can**
-still decrypt any version already in Git history that was wrapped to them — if
-that matters, treat it as §E (compromise) instead.
+Their key can no longer **unwrap the content key** from any version of the
+object sealed after this rewrap.
 
-Proven by `TestRecovery_OperatorLeaves_RewrapRevokesFutureAccess`.
+What this does **not** do: `recipients remove` on the CRD path performs a
+*rewrap* — it re-encrypts `spec.encryptedKey` to the new recipient set but keeps
+the **same content key** and leaves every `spec.encryptedData` value untouched
+(invariant #6). A departing operator whose key ever unwrapped that content key
+(one `git-secret-seal` unseal, or a copy of a historical `encryptedKey` wrapped
+to them) may have kept it, and it still opens every `encryptedData` value that
+has not since been **changed**. Only changing a value — which forces a full
+re-`Seal` under a fresh content key (§E, step 2) — cryptographically locks them
+out. They can likewise still decrypt any version already in Git history that was
+wrapped to them.
+
+For a passive reviewer leaving on good terms this is usually fine. If the
+departing operator must be denied access to the *current, unchanged* secret
+values, treat it as §E (compromise): rotate the values at their source and
+re-seal.
+
+> The CLI path differs. `git secret removeuser` (the `gpg` file backend) forces a
+> full `rotate-keys` — a fresh content key, every matched file re-encrypted — so
+> CLI recipient removal **is** a cryptographic revocation of access to current
+> data. The CRD `recipients remove` is a rewrap, not a rotation; do not assume
+> the two have the same semantics.
+
+Proven by `TestRecovery_OperatorLeaves_RewrapDropsKeyUnwrap` (the removed key can
+no longer unwrap the rewrapped `encryptedKey`); the residual-access limit is
+covered by `TestRecovery_KeyCompromise_RewrapAloneIsInsufficient`.
 
 ## E — recipient key compromised
 

@@ -118,10 +118,15 @@ func TestRecovery_ControllerKeyLost_HumanRewrapsToNewController(t *testing.T) {
 }
 
 // Scenario D -- an operator leaves. Rewrapping without their fingerprint means
-// they cannot decrypt any *future* version of the object. (They can still read
-// whatever they already pulled from git history -- that is the compromise
-// case, scenario E, not this one.)
-func TestRecovery_OperatorLeaves_RewrapRevokesFutureAccess(t *testing.T) {
+// their key can no longer *unwrap the content key* from the rewrapped object.
+//
+// NOTE: this is not full cryptographic revocation. Rewrap keeps the same
+// content key and never touches encryptedData (invariant #6), so an operator
+// who already unwrapped that content key once can still open any value that has
+// not since been *changed* -- a value change re-seals under a fresh key. Denying
+// access to current, unchanged data is the compromise case, scenario E. They
+// can also still read whatever they already pulled from git history.
+func TestRecovery_OperatorLeaves_RewrapDropsKeyUnwrap(t *testing.T) {
 	aliceHome := shortTempDir(t)
 	aliceFpr := genTestKey(t, aliceHome)
 	bobHome := shortTempDir(t)
@@ -146,10 +151,14 @@ func TestRecovery_OperatorLeaves_RewrapRevokesFutureAccess(t *testing.T) {
 		t.Fatalf("Bob lost access after his own rewrap: got=%v err=%v", got, err)
 	}
 
-	// Alice cannot open the rewrapped object.
+	// Alice's key can no longer unwrap the content key from the rewrapped
+	// object (Unseal goes through gpg --decrypt on encryptedKey, which is now
+	// wrapped only to Bob). This is the unwrap path only -- see the note on
+	// this function about residual access to unchanged values via a cached
+	// content key.
 	t.Setenv("GNUPGHOME", aliceHome)
 	if _, err := Unseal("prod", "app-secrets", rewrapped); err == nil {
-		t.Fatal("Alice could still decrypt after being dropped from the recipient list")
+		t.Fatal("Alice's key still unwrapped the rewrapped encryptedKey after being dropped")
 	}
 }
 

@@ -1,3 +1,8 @@
+NOTE: git-secret-server is DEPRECATED. It is superseded by the native GitSecret
+CRD + git-secret-controller (chart: git-secret-controller) and receives security
+fixes only. This chart is retained so existing External Secrets Operator users
+are not broken; new deployments should use the GitSecret CRD instead.
+
 git-secret-server is running as {{ include "git-secret-server.fullname" . }} in {{ .Release.Namespace }}.
 
 Point an ESO SecretStore at it, e.g.:
