@@ -8,6 +8,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -54,6 +55,14 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, fmt.Errorf("get GitSecret: %w", err)
 	}
 
+	// Snapshot the status as it stands in etcd. Every status write below
+	// is gated on this actually changing something meaningful: an
+	// unconditional Status().Update returns straight back through this
+	// controller's own GitSecret watch as an Update event and re-enqueues
+	// the object, so a per-reconcile timestamp bump would reconcile the
+	// object forever (once per watch round-trip, one etcd write each).
+	origStatus := gs.Status.DeepCopy()
+
 	targetName := gs.Spec.Target.Name
 	if targetName == "" {
 		targetName = gs.Name
@@ -77,7 +86,7 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if unsealErr != nil {
 		logger.Error(unsealErr, "unseal failed", "gitsecret", req.NamespacedName)
 		r.setCondition(&gs, metav1.ConditionFalse, "UnsealFailed", unsealErr.Error())
-		if statusErr := r.Status().Update(ctx, &gs); statusErr != nil {
+		if statusErr := r.persistStatus(ctx, &gs, origStatus); statusErr != nil {
 			logger.Error(statusErr, "failed to record UnsealFailed status")
 		}
 		// Do not requeue tightly on a decrypt failure -- it will not
@@ -105,7 +114,7 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			msg := fmt.Sprintf("Secret/%s already exists and is not managed by this GitSecret; set spec.target.adopt to take it over", targetName)
 			logger.Info("target Secret conflict", "gitsecret", req.NamespacedName, "secret", targetName)
 			r.setCondition(&gs, metav1.ConditionFalse, "TargetConflict", msg)
-			if statusErr := r.Status().Update(ctx, &gs); statusErr != nil {
+			if statusErr := r.persistStatus(ctx, &gs, origStatus); statusErr != nil {
 				logger.Error(statusErr, "failed to record TargetConflict status")
 			}
 			return ctrl.Result{}, nil
@@ -154,25 +163,68 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err != nil {
 		logger.Error(err, "failed to create/update target Secret")
 		r.setCondition(&gs, metav1.ConditionFalse, "ApplyFailed", err.Error())
-		if statusErr := r.Status().Update(ctx, &gs); statusErr != nil {
+		if statusErr := r.persistStatus(ctx, &gs, origStatus); statusErr != nil {
 			logger.Error(statusErr, "failed to record ApplyFailed status")
 		}
 		return ctrl.Result{}, err
 	}
-	if result != controllerutil.OperationResultNone {
+	secretWritten := result != controllerutil.OperationResultNone
+	if secretWritten {
 		logger.Info("target Secret synced", "gitsecret", req.NamespacedName, "secret", targetName, "op", result)
 	}
 
 	gs.Status.ObservedGeneration = gs.Generation
 	gs.Status.SyncedKeys = len(data)
-	now := metav1.Now()
-	gs.Status.LastSyncTime = &now
 	r.setCondition(&gs, metav1.ConditionTrue, "Synced", fmt.Sprintf("decrypted %d key(s) into Secret/%s", len(data), targetName))
-	if err := r.Status().Update(ctx, &gs); err != nil {
-		return ctrl.Result{}, fmt.Errorf("update GitSecret status: %w", err)
+	// Refresh LastSyncTime only when this reconcile actually did something
+	// -- wrote the target Secret, or moved a status field. A steady-state
+	// reconcile (nothing drifted, spec unchanged) must not write, or the
+	// write re-triggers the next reconcile (see origStatus above).
+	if secretWritten || statusMeaningfullyChanged(origStatus, &gs.Status) {
+		now := metav1.Now()
+		gs.Status.LastSyncTime = &now
+		if err := r.Status().Update(ctx, &gs); err != nil {
+			return ctrl.Result{}, fmt.Errorf("update GitSecret status: %w", err)
+		}
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// persistStatus writes gs.Status only if it differs from orig in a field
+// that matters (everything except LastSyncTime). It is how every failure
+// path records its condition without the write re-triggering the reconcile
+// on repeat -- an UnsealFailed object whose spec has not changed reconciles
+// once, writes the condition, and then stays quiet until something changes.
+func (r *GitSecretReconciler) persistStatus(ctx context.Context, gs *gitsecretv1alpha1.GitSecret, orig *gitsecretv1alpha1.GitSecretStatus) error {
+	if !statusMeaningfullyChanged(orig, &gs.Status) {
+		return nil
+	}
+	return r.Status().Update(ctx, gs)
+}
+
+// statusMeaningfullyChanged reports whether b differs from a in a way worth
+// persisting. LastSyncTime is deliberately excluded: it is only ever set
+// alongside a real change, so comparing it would defeat the point.
+func statusMeaningfullyChanged(a, b *gitsecretv1alpha1.GitSecretStatus) bool {
+	if a.ObservedGeneration != b.ObservedGeneration ||
+		a.SyncedKeys != b.SyncedKeys ||
+		a.RecipientCount != b.RecipientCount ||
+		a.SourceRevision != b.SourceRevision ||
+		!slices.Equal(a.Recipients, b.Recipients) {
+		return true
+	}
+	if len(a.Conditions) != len(b.Conditions) {
+		return true
+	}
+	for i := range a.Conditions {
+		x, y := a.Conditions[i], b.Conditions[i]
+		if x.Type != y.Type || x.Status != y.Status || x.Reason != y.Reason ||
+			x.Message != y.Message || x.ObservedGeneration != y.ObservedGeneration {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *GitSecretReconciler) setCondition(gs *gitsecretv1alpha1.GitSecret, status metav1.ConditionStatus, reason, message string) {

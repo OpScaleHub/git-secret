@@ -1,4 +1,7 @@
 {{- if .Values.webhook.enabled }}
+{{- if gt (int .Values.replicaCount) 1 }}
+{{- fail "webhook.enabled requires replicaCount: 1. The controller mints its own self-signed webhook serving cert per pod and the ValidatingWebhookConfiguration.caBundle holds exactly one, so with >1 replica the apiserver rejects admission calls routed to any pod whose cert isn't the published one. Run a single replica while the webhook is on (reconcile still recovers on restart), or terminate the webhook cert with cert-manager (not wired by this chart yet)." }}
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:

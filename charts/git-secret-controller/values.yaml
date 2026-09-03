@@ -36,12 +36,19 @@ healthProbe:
 
 # Validating admission webhook for GitSecret objects. When enabled, the
 # controller rejects a GitSecret whose spec.recipients disagrees with its
-# encryptedKey, and enforces any per-namespace required-recipient set (the
+# encryptedKey (a count check -- see threat-model T11), and enforces any
+# per-namespace required-recipient set (the
 # git-secret.opscalehub.io/required-recipients Namespace annotation). The
-# controller generates its own self-signed serving cert at startup and
-# injects the CA into the ValidatingWebhookConfiguration -- no cert-manager
-# needed. Leave failurePolicy at Fail: the whole point is to block
-# non-conforming objects, and admission is not the decrypt path.
+# controller generates its own self-signed serving cert at startup and the
+# elected leader injects the CA into the ValidatingWebhookConfiguration --
+# no cert-manager needed. Leave failurePolicy at Fail: the whole point is
+# to block non-conforming objects, and admission is not the decrypt path.
+#
+# Requires replicaCount: 1. The serving cert is per-pod and the
+# ValidatingWebhookConfiguration.caBundle holds one CA, so a multi-replica
+# webhook needs a shared cert (cert-manager) that this chart does not wire
+# up yet -- the chart refuses `webhook.enabled` with replicaCount > 1.
+# Reconcile itself is unaffected and recovers on restart.
 webhook:
   enabled: false
   port: 9443
