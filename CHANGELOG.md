@@ -1,6 +1,37 @@
 # Changelog
 
-## Unreleased
+## v0.10.0 — 2026-09-03
+
+### Whole-file encryption binds the repository (#79)
+
+- A ciphertext blob sealed in one repo now fails authentication if dropped into
+  another that merely shares the key. `init` generates a random `repo_id`,
+  commits it in `.repo-enc.yml`, and whole-file encryption folds it into the
+  AEAD's additional-authenticated-data (a v2 envelope, which also authenticates
+  the envelope header). Repos created before this keep sealing/reading v1
+  (path-only AAD) unchanged — no migration is forced; opt in with a fresh `init`
+  or by adding `repo_id` and running `rotate-keys`. **Don't change `repo_id`
+  once set** — existing v2 blobs would stop verifying.
+- This does not add freshness: rolling a tracked file back to an earlier
+  ciphertext for the same path still authenticates (no counter on the CLI path).
+  New `threat-model.md` **T10-CLI** row.
+- Documented the AES-GCM 96-bit-nonce ceiling that keeps it off the default path
+  (`crypto.Default` is always XChaCha20-Poly1305 for new seals).
+
+### CI/CD & supply-chain hardening (#78)
+
+- Every third-party GitHub Action is pinned to a commit SHA; `.github/dependabot.yml`
+  keeps the pins, Go modules, and Docker base images current (the Kubernetes
+  client stack is its own group — see #86).
+- `release.yml` runs with a default-deny token (`permissions: {}`), and every
+  released binary now carries a signed **SLSA build-provenance** attestation
+  (`gh attestation verify …`); container images are signed keyless with
+  **cosign** and carry provenance + SBOM attestations. An SPDX SBOM of the
+  module graph is attached to each release. See SECURITY.md → "Verifying a
+  release".
+- Dockerfile base images pinned by digest. CI gained advisory `govulncheck` +
+  Trivy scans, runs the race detector on Linux, and fails if the GPG test suite
+  is silently skipped there.
 
 ### Controller hardening (Beta → GA, #77)
 
@@ -33,12 +64,18 @@
 
 - Landing page: corrected the hook-skip note — only `SECRETIZE_SKIP_HOOKS=1`
   skips hooks; the ambient `CI` variable deliberately does not (it previously
-  implied `CI=1` would).
+  implied `CI=1` would). Rewrote the `GitSecret` section to stand on its own —
+  no competitor named.
 - `disaster-recovery.md` / `recipient-lifecycle.md`: clarified that CRD
   `recipients remove` performs a *rewrap* (same content key, `encryptedData`
   untouched), not a content-key rotation — a removed recipient who cached the
   content key can still decrypt values that have not since changed. The CLI
   `git secret removeuser` still forces a full `rotate-keys` and is unchanged.
+- `threat-model.md` T11 (recipient substitution) reworded "Handled" →
+  "Partial" — `sealer.VerifyRecipients` is a count check, not per-fingerprint
+  authentication.
+- `overview.md`: on unseal failure the controller leaves the last-written
+  target `Secret` in place (fail-safe) — documented, with how to force removal.
 
 ## v0.9.0 — 2026-08-28
 
