@@ -81,7 +81,7 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 | T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-secret`. |
 | T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller — per-cluster / per-env recipient sets ([multi-cluster.md](../architecture/multi-cluster.md)); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
 | T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | **Observable, not yet prevented.** `git-secret-seal` stamps `source-revision` and the controller mirrors it to `status.sourceRevision` (a `Revision` printer column), so a rollback is visible ([provenance.md](../architecture/provenance.md)). Refusing to go below an expected revision is a separate design question. |
-| T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Handled** (review + optional enforcement). `spec.recipients` lists the fingerprints on the object (one-line diff in review); the optional [validating webhook](../architecture/admission-webhook.md) rejects a `GitSecret` whose `spec.recipients` count disagrees with the blob, and enforces a per-namespace required-recipient set. Without the webhook it is still a controller warning. |
+| T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Partial (review aid + count check).** `spec.recipients` lists the fingerprints on the object (a one-line diff in review), and the optional [validating webhook](../architecture/admission-webhook.md) rejects a `GitSecret` whose `spec.recipients` *count* disagrees with the blob, plus enforces a per-namespace required-recipient set. It is **not** cryptographic authentication of the set: `--list-packets` exposes encryption-subkey IDs, not primary fingerprints, so a substitution that keeps the count constant (seal to `[controller, attacker]`, list `[controller, human]`) passes both the webhook and a casual diff read. Real per-fingerprint verification is #40 (see invariant #9). |
 | T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Handled.** A colliding `Secret` this `GitSecret` does not own is left untouched and a `TargetConflict` Ready=False condition is set, unless the operator opts in with `spec.target.adopt`. Tests `TestReconcile_DoesNotClobberUnownedSecret` / `_AdoptsUnownedSecretWhenOptedIn`. |
 | T13 | Plaintext committed to Git (CLI path) | C | **Handled.** `verify` + the `pre-push` hook fail closed; `SECRETIZE_SKIP_HOOKS` is opt-in per-invocation, never tied to ambient `CI`. |
 | T14 | Recipient specified as a short key ID / email, resolving to the wrong key | C | **Handled.** `gpgutil.ValidFingerprint` requires a full 40/64-hex fingerprint everywhere recipients are accepted. |
@@ -110,8 +110,11 @@ regression regardless of the feature it enables.
    master key and cannot enumerate or open objects sealed to other identities.
 8. **`git-secret-seal` never writes plaintext to disk** beyond what the caller
    passed in.
-9. **Recipient changes are reviewable** — visible in the Git diff of the object,
-   not buried in an opaque re-encrypted blob. *(Depends on #40.)*
+9. **Recipient changes are reviewable** — the declared set (`spec.recipients`) is
+   visible in the Git diff of the object, not buried in an opaque re-encrypted
+   blob. This is a review aid, not proof: the declared set is self-asserted and
+   only *count*-checked against the blob (T11). Cryptographic per-fingerprint
+   verification is *(#40)*.
 10. **The apply path, not any authoring tool, is the authorization boundary** for
     what reaches the cluster.
 
