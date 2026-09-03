@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 
-	"github.com/OpScaleHub/git-secret/crypto"
 	"github.com/OpScaleHub/git-secret/internal/config"
 	"github.com/OpScaleHub/git-secret/internal/gitutil"
 )
@@ -27,7 +26,7 @@ func (c *Context) Verify() ([]string, error) {
 // VerifyAtRevision is Verify, generalized to any revision. It loads
 // .repo-enc.yml as committed *at rev* (not off disk), so a dirty or
 // stale working-tree config can't change what gets enforced, and it
-// authenticates every matched blob with crypto.Open — not the old
+// authenticates every matched blob with c.openFile / crypto.Open — not the old
 // magic-prefix-only IsEnvelope check, which accepted any four bytes
 // "RENC" followed by garbage (corrupted ciphertext, or literally
 // handwritten fake plaintext) as proof of encryption. Authenticating
@@ -62,7 +61,7 @@ func (c *Context) VerifyAtRevision(rev string) ([]string, error) {
 			}
 			return problems, err
 		}
-		if _, err := crypto.Open(data, key, []byte(p)); err != nil {
+		if _, err := c.openFile(data, key, p); err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", p, err))
 		}
 	}

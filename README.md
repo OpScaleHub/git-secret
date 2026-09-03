@@ -173,9 +173,16 @@ exclude:
   - "secrets/public/**"
 key_backend: file          # file | env | gpg
 key_source: .repo-enc/key  # path (file/gpg backends) or env var name (env backend)
+repo_id: 4f3c...           # random, written by `init`; do not edit
 gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
   - AAAABBBBCCCCDDDD1111222233334444AAAABBBB
 ```
+
+`repo_id` is a random per-repo identifier `init` generates and commits. Whole-file
+encryption folds it into the authenticated data, so a ciphertext blob sealed here
+fails to decrypt if copied into another repository — even one that shares the key.
+Repos created before this existed have no `repo_id` and keep working unchanged;
+**don't change or remove it** once set, or existing encrypted files stop verifying.
 
 `patterns`/`exclude` are glob paths relative to the repo root (a leading `/` is accepted and normalized away — `/secrets/**` and `secrets/**` are the same pattern); `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent — set `REPO_ENC_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and `patterns`/`gpg_recipients`/`k8s_secret_paths` entries there are unioned with the repo's, since those can only *expand* what's protected. `exclude` and `k8s_plaintext_keys` are the opposite — both can only *shrink* protection — so they're taken from the repo config alone; a global config can never silently carve a hole out of a repo's committed policy.
 

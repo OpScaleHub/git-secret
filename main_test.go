@@ -333,7 +333,9 @@ func TestPullConflictsWithUnlockedFileThenRecovers(t *testing.T) {
 	secretPath := filepath.Join(repoA, "secrets", "db.yaml")
 	os.MkdirAll(filepath.Dir(secretPath), 0o755)
 	os.WriteFile(secretPath, []byte("password: hunter2\n"), 0o644)
-	runGit(t, repoA, "add", "secrets/db.yaml")
+	// .repo-enc.yml must be committed so the clone shares the same config
+	// -- including repo_id, which whole-file encryption binds into the AAD.
+	runGit(t, repoA, "add", ".repo-enc.yml", ".gitignore", "secrets/db.yaml")
 	runGitTriggeringHooks(t, repoA, "commit", "-q", "-m", "add secret")
 
 	keyBytes, err := os.ReadFile(filepath.Join(repoA, ".repo-enc", "key"))
