@@ -84,8 +84,19 @@ func (XChaCha20Poly1305) Decrypt(ciphertext, key, aad []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// AESGCM is a secondary, stdlib-only cipher offered for environments that
-// avoid non-stdlib crypto. Uses a random 12-byte nonce.
+// AESGCM is a secondary, stdlib-only cipher. It is registered so envelopes
+// that record it still decrypt, but it is NOT the Default and nothing in
+// this repo selects it for new encryptions -- Default (XChaCha20-Poly1305)
+// is always used.
+//
+// If a config-driven cipher choice is ever added, note the constraint that
+// keeps AES-GCM off the default path: it uses a random 96-bit nonce, which
+// is only collision-safe for well under ~2^32 seals per key (birthday
+// bound). Whole-file encryption re-seals every matched file on every
+// commit under one long-lived key, so a large history could erode past
+// that; XChaCha20-Poly1305's 192-bit nonce (the Default) does not have
+// this ceiling. A repo choosing AES-GCM would need periodic `rotate-keys`
+// or a documented seal-count limit. See docs/security/threat-model.md.
 type AESGCM struct{}
 
 func (AESGCM) Name() string { return "aes256gcm" }

@@ -2,7 +2,7 @@
 # plain Kubernetes Secrets. See internal/controller for the reconcile
 # logic and the README's "GitSecret CRD" section for deployment.
 
-FROM golang:1.25-bookworm AS build
+FROM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -21,7 +21,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
 # -- so this can't be a from-scratch/distroless-static image. Unlike
 # git-secret-server, this controller never clones a repository, so
 # neither git nor an SSH client is needed here at all.
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
         ca-certificates \

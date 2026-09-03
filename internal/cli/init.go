@@ -61,12 +61,17 @@ func Init(opts InitOptions) (*InitResult, error) {
 	if opts.KeyBackend == "" || opts.KeyBackend == "file" {
 		cfgPath, err = config.WriteDefault(root, patterns)
 	} else {
+		repoID, idErr := config.NewRepoID()
+		if idErr != nil {
+			return nil, fmt.Errorf("init: %w", idErr)
+		}
 		cfgPath, err = config.WriteConfig(root, &config.Config{
 			Version:       config.CurrentVersion,
 			Patterns:      patterns,
 			KeyBackend:    opts.KeyBackend,
 			KeySource:     config.DefaultKeySourceFor(opts.KeyBackend),
 			GPGRecipients: opts.GPGRecipients,
+			RepoID:        repoID,
 		})
 	}
 	if err != nil {

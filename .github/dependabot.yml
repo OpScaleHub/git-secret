@@ -1,0 +1,38 @@
+version: 2
+updates:
+  # Keep the SHA-pinned GitHub Actions current -- Dependabot bumps the pin
+  # and rewrites the trailing "# vX.Y.Z" comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # The Kubernetes client/controller-runtime stack is kept in its own
+      # group: a bump there typically raises the go.mod `go` directive and
+      # carries controller-runtime API changes, so it needs a deliberate PR
+      # (bump CI's setup-go go-version, re-verify internal/controller +
+      # internal/webhook) rather than riding along with routine updates.
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+      go-deps:
+        patterns: ["*"]
+        exclude-patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+
+  # Base-image digests in the Dockerfiles.
+  - package-ecosystem: docker
+    directories:
+      - /
+    schedule:
+      interval: weekly

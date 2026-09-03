@@ -51,7 +51,7 @@ func (c *Context) HookPreCommit() error {
 		if crypto.IsEnvelope(data) {
 			continue
 		}
-		env, err := crypto.Seal(crypto.Default, data, key, []byte(p))
+		env, err := c.sealFile(crypto.Default, data, key, p)
 		if err != nil {
 			return fmt.Errorf("pre-commit: encrypt %s: %w", p, err)
 		}

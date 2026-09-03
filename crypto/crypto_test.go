@@ -107,6 +107,73 @@ func TestEnvelopeSwitchingDefaultStillDecryptsOldFiles(t *testing.T) {
 	}
 }
 
+func TestEnvelopeV2RoundTripAndVersion(t *testing.T) {
+	for _, c := range []Cipher{XChaCha20Poly1305{}, AESGCM{}} {
+		key := testKey(t, c.KeySize())
+		aad := []byte("repo-abc\x1fsecrets/db.yaml")
+
+		env, err := SealV2(c, []byte("top secret"), key, aad)
+		if err != nil {
+			t.Fatalf("%s SealV2: %v", c.Name(), err)
+		}
+		if v, err := Version(env); err != nil || v != 2 {
+			t.Fatalf("%s: Version = %d, %v; want 2", c.Name(), v, err)
+		}
+		got, err := Open(env, key, aad)
+		if err != nil || string(got) != "top secret" {
+			t.Fatalf("%s Open(v2): got %q err %v", c.Name(), got, err)
+		}
+		// A different AAD (different repo id) must not authenticate.
+		if _, err := Open(env, key, []byte("repo-XXX\x1fsecrets/db.yaml")); err == nil {
+			t.Fatalf("%s: v2 envelope opened under a different AAD", c.Name())
+		}
+	}
+}
+
+func TestEnvelopeV2AuthenticatesHeader(t *testing.T) {
+	key := testKey(t, XChaCha20Poly1305{}.KeySize())
+	aad := []byte("repo-abc\x1fx")
+	env, err := SealV2(XChaCha20Poly1305{}, []byte("payload"), key, aad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Flip a byte inside the header (the cipher-name length). v1 would
+	// surface this only as a downstream parse/opaque failure; v2 rejects
+	// it as an authentication failure.
+	tampered := append([]byte(nil), env...)
+	tampered[len(magic)+2] ^= 0x01
+	if _, err := Open(tampered, key, aad); err == nil {
+		t.Fatal("v2 envelope opened after its header was tampered")
+	}
+
+	// Version downgrade 2 -> 1: parseEnvelope now treats it as v1 (AAD =
+	// caller aad only), but the ciphertext was sealed with header||aad, so
+	// authentication fails.
+	downgraded := append([]byte(nil), env...)
+	downgraded[len(magic)] = envelopeV1
+	if _, err := Open(downgraded, key, aad); err == nil {
+		t.Fatal("v2 envelope opened after being downgraded to v1 in the header")
+	}
+}
+
+func TestEnvelopeV1UnaffectedByV2(t *testing.T) {
+	// A v1 blob sealed before this change (path-only AAD, header outside
+	// the AEAD) must still open with the identical call.
+	key := testKey(t, XChaCha20Poly1305{}.KeySize())
+	aad := []byte("secrets/db.yaml")
+	env, err := Seal(XChaCha20Poly1305{}, []byte("legacy payload"), key, aad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := Version(env); v != 1 {
+		t.Fatalf("Seal wrote version %d, want 1", v)
+	}
+	got, err := Open(env, key, aad)
+	if err != nil || string(got) != "legacy payload" {
+		t.Fatalf("v1 Open: got %q err %v", got, err)
+	}
+}
+
 func TestIsEnvelopeRejectsPlaintext(t *testing.T) {
 	if IsEnvelope([]byte("just a normal file\n")) {
 		t.Fatalf("IsEnvelope should be false for plaintext")

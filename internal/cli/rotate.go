@@ -93,7 +93,7 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 		}
 		plaintext := data
 		if crypto.IsEnvelope(data) {
-			plaintext, err = crypto.Open(data, oldKey, []byte(p))
+			plaintext, err = c.openFile(data, oldKey, p)
 			if err != nil {
 				return nil, fmt.Errorf("rotate-keys: decrypt %s with current key: %w", p, err)
 			}
@@ -182,7 +182,7 @@ func (c *Context) RotateKeys() (*RotateResult, error) {
 
 	sealed := make(map[string][]byte, len(plans))
 	for _, pl := range plans {
-		env, err := crypto.Seal(crypto.Default, pl.plaintext, newKey, []byte(pl.path))
+		env, err := c.sealFile(crypto.Default, pl.plaintext, newKey, pl.path)
 		if err != nil {
 			cleanupStagingKey(c, stagingRef)
 			return result, fmt.Errorf("rotate-keys: encrypt %s under new key: %w", pl.path, err)

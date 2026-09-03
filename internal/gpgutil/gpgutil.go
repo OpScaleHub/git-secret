@@ -146,6 +146,14 @@ func Decrypt(ciphertext []byte) ([]byte, error) {
 // blob stays text-diffable, consistent with this codebase's existing
 // preference for text-safe encodings over raw binary.
 func Encrypt(plaintext []byte, recipients []string) ([]byte, error) {
+	return EncryptContext(context.Background(), plaintext, recipients)
+}
+
+// EncryptContext is Encrypt with a cancellation/deadline context -- the
+// gpg process is killed if ctx is done first. Used by callers that face
+// untrusted input on a request path (git-secret-seal ui) and must bound
+// how long a single seal can run.
+func EncryptContext(ctx context.Context, plaintext []byte, recipients []string) ([]byte, error) {
 	if len(recipients) == 0 {
 		return nil, fmt.Errorf("gpgutil: encrypt: no recipients given")
 	}
@@ -153,7 +161,7 @@ func Encrypt(plaintext []byte, recipients []string) ([]byte, error) {
 	for _, r := range recipients {
 		args = append(args, "--recipient", r)
 	}
-	out, err := run(plaintext, args...)
+	out, err := runCtx(ctx, plaintext, args...)
 	if err != nil {
 		return nil, fmt.Errorf("gpgutil: encrypt: %w", err)
 	}

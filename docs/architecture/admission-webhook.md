@@ -35,6 +35,17 @@ controller injecting the CA, during which — with `failurePolicy: Fail` —
 `GitSecret` writes are rejected. That is the safe direction, and it clears within
 seconds of the controller becoming ready.
 
+**Requires `replicaCount: 1`.** The serving cert is per-pod and the
+`ValidatingWebhookConfiguration.caBundle` holds exactly one CA — the elected
+leader injects its own. Run more than one replica and the apiserver load-balances
+admission calls across pods whose certs the published CA does not vouch for, so
+`failurePolicy: Fail` rejects a fraction of `GitSecret` writes. The CA injector is
+leader-gated (`internal/webhook.caBundleInjector`) so a mis-scaled deployment is
+not also a write-storm on the cluster-scoped config, and the chart refuses
+`webhook.enabled` with `replicaCount > 1` outright. Multi-replica webhook HA needs
+a shared cert (cert-manager); reconcile HA via leader election is unaffected and
+does not need the webhook. See [#77](https://github.com/OpScaleHub/git-secret/issues/77).
+
 ## Enabling it
 
 Helm:
@@ -71,9 +82,12 @@ End-to-end against a real apiserver with the `v0.8.0` controller image and the
 
 No reconcile hot-loop — an early observation of one was traced to *two*
 controllers (a cluster-wide one plus the isolated test one) both writing the same
-object's status; a single controller settles to `Ready` in one reconcile. The
-live status fields (`recipientCount`, `recipients`, `sourceRevision`) were
-re-checked on a clean single-controller deploy and populate correctly (#65).
+object's status. A single controller settles to `Ready` and then stops: as of
+[#77](https://github.com/OpScaleHub/git-secret/issues/77) the reconciler only
+writes status when a field other than `lastSyncTime` actually changes, so its own
+status write no longer re-enqueues it. The live status fields (`recipientCount`,
+`recipients`, `sourceRevision`) were re-checked on a clean single-controller
+deploy and populate correctly (#65).
 
 ## Not covered
 

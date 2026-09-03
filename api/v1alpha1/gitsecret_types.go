@@ -92,8 +92,12 @@ type GitSecretStatus struct {
 	// +optional
 	SyncedKeys int `json:"syncedKeys,omitempty"`
 
-	// LastSyncTime is when the target Secret was last successfully
-	// written to match this object.
+	// LastSyncTime is when the controller last wrote something for this
+	// object -- created or corrected the target Secret, or moved a status
+	// field. It is not refreshed on a steady-state reconcile where nothing
+	// changed (the controller deliberately skips that write so it does not
+	// re-trigger itself), so it marks the last actual change, not the last
+	// time the object was looked at.
 	// +optional
 	LastSyncTime *metav1.Time `json:"lastSyncTime,omitempty"`
 

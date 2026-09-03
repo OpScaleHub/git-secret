@@ -13,6 +13,15 @@ fullnameOverride: ""
 
 replicaCount: 1
 
+# By default the controller watches GitSecrets in every namespace and is
+# granted cluster-wide read+write on Secrets to do it (a GitSecret in any
+# namespace materialises a Secret in that same namespace). To confine it,
+# list the namespaces here: the chart then generates a namespaced
+# Role/RoleBinding per entry instead of the cluster-wide Secret grant, and
+# passes --watch-namespaces so the informer cache matches. Leave empty for
+# cluster-wide.
+watchNamespaces: []
+
 # Required. This controller's own dedicated GPG identity -- the
 # recipient every GitSecret it should be able to decrypt must be sealed
 # to. Generate with `gpg --batch --passphrase '' --quick-generate-key`,
@@ -36,12 +45,19 @@ healthProbe:
 
 # Validating admission webhook for GitSecret objects. When enabled, the
 # controller rejects a GitSecret whose spec.recipients disagrees with its
-# encryptedKey, and enforces any per-namespace required-recipient set (the
+# encryptedKey (a count check -- see threat-model T11), and enforces any
+# per-namespace required-recipient set (the
 # git-secret.opscalehub.io/required-recipients Namespace annotation). The
-# controller generates its own self-signed serving cert at startup and
-# injects the CA into the ValidatingWebhookConfiguration -- no cert-manager
-# needed. Leave failurePolicy at Fail: the whole point is to block
-# non-conforming objects, and admission is not the decrypt path.
+# controller generates its own self-signed serving cert at startup and the
+# elected leader injects the CA into the ValidatingWebhookConfiguration --
+# no cert-manager needed. Leave failurePolicy at Fail: the whole point is
+# to block non-conforming objects, and admission is not the decrypt path.
+#
+# Requires replicaCount: 1. The serving cert is per-pod and the
+# ValidatingWebhookConfiguration.caBundle holds one CA, so a multi-replica
+# webhook needs a shared cert (cert-manager) that this chart does not wire
+# up yet -- the chart refuses `webhook.enabled` with replicaCount > 1.
+# Reconcile itself is unaffected and recovers on restart.
 webhook:
   enabled: false
   port: 9443
@@ -78,6 +94,19 @@ sealUi:
   port: 8080
   keyringConfigMap: ""
   defaultNamespace: ""
+  # Cap on concurrent /api/seal requests -- each forks gpg. Excess
+  # requests get HTTP 429. The in-cluster deployment has no auth of its
+  # own (it is reached by port-forward), so this bounds a burst from any
+  # pod that can route to the Service.
+  maxInflight: 4
+  networkPolicy:
+    # Locks egress to DNS only (the UI needs no egress at serving time).
+    enabled: true
+    # Optional ingress restriction. Empty keeps the Service reachable by
+    # `kubectl port-forward` and the kubelet readiness probe (whose
+    # sources a NetworkPolicy cannot select). Set a list of
+    # NetworkPolicyPeer objects if you front the UI another way.
+    allowFrom: []
 
 resources:
   requests:

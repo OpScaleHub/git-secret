@@ -18,8 +18,8 @@ jobs:
       # merge's diff).
       code: ${{ steps.filter.outputs.code == 'true' || github.event_name == 'push' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
           filters: |
@@ -30,7 +30,8 @@ jobs:
               - 'charts/**'
               - 'config/**'
               - 'Dockerfile*'
-              - '.github/workflows/ci.yml'
+              - '.github/workflows/**'
+              - '.github/dependabot.yml'
 
   test:
     name: Build, vet, test
@@ -43,10 +44,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.25'
 
@@ -61,8 +62,47 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
+      # Linux: the GPG-dependent suites must actually execute (not silently
+      # t.Skip -- see internal/gpgutil TestGPGSuiteFloor), and we run the
+      # race detector here. macOS/Windows skip the GPG suites by design.
+      - name: Test (Linux — race + GPG required)
+        if: runner.os == 'Linux'
+        env:
+          REQUIRE_GPG_TESTS: '1'
+        run: go test ./... -race -v
+
+      - name: Test (macOS / Windows)
+        if: runner.os != 'Linux'
         run: go test ./... -v
+
+  security-scan:
+    name: Vulnerability & config scan (advisory)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.25'
+
+      - name: govulncheck
+        continue-on-error: true # advisory for now
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+
+      - name: Trivy (filesystem — vuln, misconfig, secret)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        continue-on-error: true # advisory for now
+        with:
+          scan-type: fs
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          exit-code: '1'
 
   chart:
     name: Lint & render Helm chart
@@ -71,13 +111,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
       - name: helm lint
         run: |
+          # git-secret-server is deprecated (superseded by the GitSecret CRD +
+          # git-secret-controller); still linted so it keeps building for
+          # existing ESO users, not because it is a recommended path.
           helm lint ./charts/git-secret-server
           helm lint ./charts/git-secret-controller
 

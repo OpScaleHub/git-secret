@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>git-secret — plaintext on disk, ciphertext in history</title>
 <meta name="description" content="git-secret transparently encrypts pattern-matched files in a git repository via installed hooks — modern AEAD crypto, no GPG required, one cross-platform binary. Ships GitSecret: a native Kubernetes CRD and controller with ciphertext inline in the object and no repo clone at all. No third-party secret store." />
-<meta name="keywords" content="git-secret, secrets management, git encryption, GitOps secrets, Kubernetes secrets, ArgoCD, kubectl plugin, GPG, AEAD encryption, Custom Resource Definition, Kubernetes controller, sealed-secrets" />
+<meta name="keywords" content="git-secret, secrets management, git encryption, GitOps secrets, Kubernetes secrets, ArgoCD, kubectl plugin, GPG, AEAD encryption, Custom Resource Definition, Kubernetes controller" />
 <meta name="robots" content="index, follow" />
 <meta name="author" content="OpScaleHub" />
 <meta name="theme-color" content="#10151A" />
@@ -486,7 +486,7 @@
         </div>
         <div class="step">
           <span class="step-no">3</span>
-          <div><h3>pre-push</h3><p>Runs the same check as <code>verify</code> against <code>HEAD</code> and blocks the push if a bypassed <code>pre-commit</code> ever let plaintext through.</p></div>
+          <div><h3>pre-push</h3><p>Runs <code>verify</code> over the whole range you're about to push — not just <code>HEAD</code> — and blocks it if a bypassed <code>pre-commit</code> ever let plaintext through.</p></div>
         </div>
       </div>
     </div>
@@ -546,7 +546,7 @@ git commit -m "add db credentials"
       <div class="exit-codes">
         <span><b>0</b> ok</span><span><b>1</b> error</span><span><b>2</b> key unavailable</span><span><b>3</b> verify found plaintext in history</span>
       </div>
-      <p class="lede" style="margin-top:var(--sp-3)">Set <code>SECRETIZE_SKIP_HOOKS=1</code> (or run under <code>CI=1</code>) to make every installed hook exit 0 immediately.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Set <code>SECRETIZE_SKIP_HOOKS=1</code> explicitly, per invocation, to make every installed hook exit 0 immediately. This is deliberately <em>not</em> tied to the ambient <code>CI</code> variable &mdash; every CI provider, IDE, and automation wrapper sets <code>CI=1</code> by convention, so honoring it implicitly would silently disable both encryption and push-protection in exactly the environments most likely to push on someone's behalf.</p>
       <p class="lede" style="margin-top:var(--sp-3)">Editing an unlocked file? Run <code>lock</code> before <code>git add</code> — recent git versions refuse a plain <code>git add</code> on a <code>skip-worktree</code>'d path outright. <code>lock</code> re-encrypts straight from the working tree and clears the flag, so <code>git add</code>/<code>git commit</code> work normally right after.</p>
       <p class="lede" style="margin-top:var(--sp-3)">If a teammate changes a file you currently have unlocked, <code>git pull</code> will refuse with git's standard "local changes would be overwritten" error. Recovery (if you were only viewing, not editing): <code>git secret lock</code>, then <code>SECRETIZE_SKIP_HOOKS=1 git checkout -- &lt;path&gt;</code> to discard your view without the <code>post-checkout</code> hook immediately re-decrypting it, then <code>git pull</code>. See the <a href="https://github.com/OpScaleHub/git-secret#unlock-and-git-status" target="_blank" rel="noopener">README</a> for the full explanation.</p>
     </div>
@@ -643,7 +643,7 @@ gpg_recipients:
       <div class="section-head">
         <p class="eyebrow">Beyond the CLI</p>
         <h2>GitSecret: a native CRD, ciphertext inline, no clone at all</h2>
-        <p class="lede"><code>GitSecret</code> is a custom resource with its own controller — modeled on Bitnami <code>sealed-secrets</code>' shape, built on this project's existing multi-recipient GPG cryptography rather than one controller keypair. Ciphertext lives inline in the object, delivered by whatever already applies your manifests — ArgoCD, <code>kubectl apply</code> — with no repo clone, no SSH transport, and no network hop anywhere in the decrypt path.</p>
+        <p class="lede"><code>GitSecret</code> is a custom resource with its own controller. Ciphertext lives inline in the object — no external store, no repo clone in the cluster, no SSH transport, no network hop anywhere in the decrypt path — delivered by whatever already applies your manifests (ArgoCD, <code>kubectl apply</code>) and decrypted in-cluster by a controller holding one of the GPG keys it's wrapped to.</p>
         <p class="lede">The point isn't "GPG instead of a single keypair" — it's <strong>recovery independence</strong>: losing the cluster, the controller, or any one key doesn't make the secrets unrecoverable, as long as the encrypted repo and one authorized recipient key survive. See the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/threat-model.md" target="_blank" rel="noopener">threat model</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/disaster-recovery.md" target="_blank" rel="noopener">disaster-recovery runbooks</a>.</p>
       </div>
 
@@ -669,7 +669,7 @@ gpg_recipients:
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">MULTI-KEY</span>
-          <div><h3>Not one controller keypair</h3><p>The content key wraps to as many GPG recipients as you want — the controller's own identity, and independently, any number of humans or backups. <code>--rewrap</code> re-encrypts only that wrapped key when a recipient is added or removed; every value's ciphertext is untouched, and a newly-added recipient decrypts independently, with no involvement from the key that did the rewrapping.</p></div>
+          <div><h3>Wrapped to every recipient you choose</h3><p>The content key wraps to as many GPG recipients as you want — the controller's own identity, and independently, any number of humans or offline backups. <code>--rewrap</code> re-encrypts only that wrapped key when a recipient is added or removed; every value's ciphertext is untouched, and a newly-added recipient decrypts independently, with no involvement from the key that did the rewrapping.</p></div>
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">BOUND</span>

@@ -35,7 +35,7 @@ func (c *Context) EncryptPaths(paths []string) (touched []string, err error) {
 		if err != nil {
 			return touched, fmt.Errorf("stat %s: %w", p, err)
 		}
-		env, err := crypto.Seal(crypto.Default, data, key, []byte(p))
+		env, err := c.sealFile(crypto.Default, data, key, p)
 		if err != nil {
 			return touched, fmt.Errorf("encrypt %s: %w", p, err)
 		}
@@ -73,7 +73,7 @@ func (c *Context) DecryptPaths(paths []string) (touched []string, err error) {
 		if !crypto.IsEnvelope(data) {
 			continue
 		}
-		plain, err := crypto.Open(data, key, []byte(p))
+		plain, err := c.openFile(data, key, p)
 		if err != nil {
 			return touched, fmt.Errorf("decrypt %s: %w", p, err)
 		}
