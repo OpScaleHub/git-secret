@@ -8,6 +8,7 @@
 package sealer
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -46,6 +47,12 @@ func aad(namespace, name, key string) []byte {
 // keybackend.GPGBackend's existing "config trusts pinned fingerprints
 // only" rule).
 func Seal(namespace, name string, data map[string]string, recipients []string) (v1alpha1.GitSecretSpec, error) {
+	return SealContext(context.Background(), namespace, name, data, recipients)
+}
+
+// SealContext is Seal with a context bounding the gpg wrap step -- for
+// callers on a request path facing untrusted input (git-secret-seal ui).
+func SealContext(ctx context.Context, namespace, name string, data map[string]string, recipients []string) (v1alpha1.GitSecretSpec, error) {
 	if len(recipients) == 0 {
 		return v1alpha1.GitSecretSpec{}, fmt.Errorf("sealer: no recipients given")
 	}
@@ -60,7 +67,7 @@ func Seal(namespace, name string, data map[string]string, recipients []string) (
 		return v1alpha1.GitSecretSpec{}, fmt.Errorf("sealer: generate content key: %w", err)
 	}
 
-	wrappedKey, err := gpgutil.Encrypt(key, recipients)
+	wrappedKey, err := gpgutil.EncryptContext(ctx, key, recipients)
 	if err != nil {
 		return v1alpha1.GitSecretSpec{}, fmt.Errorf("sealer: wrap content key: %w", err)
 	}

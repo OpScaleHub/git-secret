@@ -36,13 +36,22 @@ never contacts a cluster, and never persists anything. The sealing runs in
 this process (same trust as running 'git-secret-seal' directly), so run it
 locally, or in-cluster reached only by 'kubectl port-forward'.
 
-  --addr FILE      address to bind (default 127.0.0.1:8765; use :8080 in a pod)
-  --keyring SRC    keyring file or http(s):// URL to pre-fill recipients from;
-                   entries may carry an armored publicKey, imported into an
-                   ephemeral keyring so sealing works without the operator's
-                   own gpg keyring
-  --namespace NS   pre-fill the namespace field
+  --addr FILE          address to bind (default 127.0.0.1:8765; use :8080 in a pod)
+  --keyring SRC        keyring file or http(s):// URL to pre-fill recipients from;
+                       entries may carry an armored publicKey, imported into an
+                       ephemeral keyring so sealing works without the operator's
+                       own gpg keyring
+  --namespace NS       pre-fill the namespace field
+  --max-inflight N     cap concurrent /api/seal requests (each forks gpg);
+                       excess requests get 429 (default 4)
 `
+
+// maxSealRecipients bounds how many recipients one /api/seal request may
+// name, matching the GitSecret CRD's spec.recipients MaxItems.
+const maxSealRecipients = 64
+
+// sealTimeout bounds a single gpg wrap on the request path.
+const sealTimeout = 30 * time.Second
 
 func runUI(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("git-secret-seal ui", flag.ContinueOnError)
@@ -50,6 +59,7 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	addr := fs.String("addr", "127.0.0.1:8765", "address to bind")
 	keyringSrc := fs.String("keyring", "", "keyring file or URL to pre-fill recipients from")
 	namespace := fs.String("namespace", "", "pre-fill the namespace field")
+	maxInflight := fs.Int("max-inflight", 4, "cap concurrent /api/seal requests")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprint(stderr, uiHelp)
 		return exitUsage
@@ -92,7 +102,7 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 		sort.Slice(recips, func(i, j int) bool { return recips[i].Fingerprint < recips[j].Fingerprint })
 	}
 
-	srv := &uiServer{recipients: recips, namespace: *namespace}
+	srv := newUIServer(recips, *namespace, *maxInflight)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", srv.handleIndex)
 	mux.HandleFunc("/api/config", srv.handleConfig)
@@ -130,6 +140,20 @@ type keyringEntry struct {
 type uiServer struct {
 	recipients []keyringEntry
 	namespace  string
+	// sealSlots is a counting semaphore: each /api/seal forks gpg, so a
+	// burst of unauthenticated requests (the in-cluster deployment has no
+	// auth of its own) could otherwise spawn unbounded processes. A full
+	// channel means "at capacity" -> 429. Nil disables the cap.
+	sealSlots chan struct{}
+}
+
+// newUIServer builds a uiServer with a concurrency cap of maxInflight
+// (clamped to >= 1) on /api/seal.
+func newUIServer(recips []keyringEntry, namespace string, maxInflight int) *uiServer {
+	if maxInflight < 1 {
+		maxInflight = 1
+	}
+	return &uiServer{recipients: recips, namespace: namespace, sealSlots: make(chan struct{}, maxInflight)}
 }
 
 func (s *uiServer) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -204,8 +228,25 @@ func (s *uiServer) handleSeal(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "at least one recipient is required"})
 		return
 	}
+	if len(fps) > maxSealRecipients {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("too many recipients (%d, limit %d)", len(fps), maxSealRecipients)})
+		return
+	}
 
-	spec, err := sealer.Seal(req.Namespace, req.Name, req.Data, fps)
+	// Bound concurrency (each seal forks gpg) and per-request runtime.
+	if s.sealSlots != nil {
+		select {
+		case s.sealSlots <- struct{}{}:
+			defer func() { <-s.sealSlots }()
+		default:
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "server busy, retry shortly"})
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), sealTimeout)
+	defer cancel()
+
+	spec, err := sealer.SealContext(ctx, req.Namespace, req.Name, req.Data, fps)
 	if err != nil {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return

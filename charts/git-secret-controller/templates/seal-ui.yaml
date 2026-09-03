@@ -31,6 +31,7 @@ spec:
           args:
             - ui
             - --addr=:{{ .Values.sealUi.port }}
+            - --max-inflight={{ .Values.sealUi.maxInflight }}
             {{- if .Values.sealUi.keyringConfigMap }}
             - --keyring=/keyring/keyring.yaml
             {{- end }}
@@ -81,4 +82,46 @@ spec:
       port: 80
       targetPort: http
       protocol: TCP
+{{- if .Values.sealUi.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "git-secret-controller.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: seal-ui
+  policyTypes:
+    - Egress
+    {{- if .Values.sealUi.networkPolicy.allowFrom }}
+    - Ingress
+    {{- end }}
+  # The seal-UI needs no egress at serving time -- it never calls the
+  # Kubernetes API and its keyring is a mounted ConfigMap. Allow DNS only.
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+  {{- with .Values.sealUi.networkPolicy.allowFrom }}
+  # Ingress restriction is opt-in: leaving allowFrom empty keeps the
+  # Service reachable by `kubectl port-forward` and the kubelet probe
+  # (whose source a NetworkPolicy cannot easily select). Set it when you
+  # front the UI some other way.
+  ingress:
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.sealUi.port }}
+  {{- end }}
+{{- end }}
 {{- end }}

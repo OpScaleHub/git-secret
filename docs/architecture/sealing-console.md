@@ -49,6 +49,16 @@ not acceptable for a given secret, run the UI locally instead, or use the CLI.
 Doing the GPG work in the browser (WASM OpenPGP) would remove even that transit;
 it is a possible future hardening, not built.
 
+**In-cluster reachability.** The UI has no auth of its own, so `kubectl
+port-forward` is not the only path to it — any pod that can route to the
+ClusterIP `Service` can `POST /api/seal`. The blast radius is bounded (public-key
+only, nothing decrypted, nothing persisted, the caller cannot apply the manifest
+they get back), so this is availability, not confidentiality: the chart caps
+concurrent `/api/seal` at `sealUi.maxInflight` (excess → HTTP 429) and each seal
+runs under a 30s deadline, and ships a `NetworkPolicy` that locks egress to DNS.
+Restrict ingress too with `sealUi.networkPolicy.allowFrom` if you do not want
+every pod in the cluster able to reach it.
+
 ## The keyring
 
 `keyringConfigMap` names a `ConfigMap` with a `keyring.yaml` key in the
@@ -77,5 +87,7 @@ blocks with `gpg --armor --export <fpr>` (or, for the controller's own key,
 ## What it does not do
 
 No decryption. No `kubectl apply`. No cluster API access. No storage. No auth of
-its own — the port-forward (and, if you add one, your cluster's auth proxy) is
-the boundary. It is an authoring convenience, not a control point.
+its own — the port-forward (and, if you add one, your cluster's auth proxy or an
+ingress `NetworkPolicy`) is the boundary. It is an authoring convenience, not a
+control point: what reaches the cluster is still gated by whoever applies the
+manifest.

@@ -94,6 +94,19 @@ sealUi:
   port: 8080
   keyringConfigMap: ""
   defaultNamespace: ""
+  # Cap on concurrent /api/seal requests -- each forks gpg. Excess
+  # requests get HTTP 429. The in-cluster deployment has no auth of its
+  # own (it is reached by port-forward), so this bounds a burst from any
+  # pod that can route to the Service.
+  maxInflight: 4
+  networkPolicy:
+    # Locks egress to DNS only (the UI needs no egress at serving time).
+    enabled: true
+    # Optional ingress restriction. Empty keeps the Service reachable by
+    # `kubectl port-forward` and the kubelet readiness probe (whose
+    # sources a NetworkPolicy cannot select). Set a list of
+    # NetworkPolicyPeer objects if you front the UI another way.
+    allowFrom: []
 
 resources:
   requests:
