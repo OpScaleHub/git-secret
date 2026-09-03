@@ -260,6 +260,76 @@ func TestReconcile_RevertsDriftOnOwnedSecret(t *testing.T) {
 	}
 }
 
+// TestReconcile_SteadyStateStopsWritingStatus pins #77 item 1: once a
+// GitSecret is synced, reconciling it again with nothing changed must not
+// write status. An unconditional Status().Update returns through the
+// controller's own GitSecret watch and re-enqueues the object, so a
+// per-reconcile timestamp bump reconciles forever. The proxy for "did it
+// write" is the object's resourceVersion.
+func TestReconcile_SteadyStateStopsWritingStatus(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	spec, err := sealer.Seal("downtime", "downtime-secrets", map[string]string{"K": "v"}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	gs := &gitsecretv1alpha1.GitSecret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime"},
+		Spec:       spec,
+	}
+	scheme := newScheme(t)
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(gs).
+		WithStatusSubresource(&gitsecretv1alpha1.GitSecret{}).
+		Build()
+
+	r := &GitSecretReconciler{Client: fakeClient}
+	req := ctrl.Request{NamespacedName: namespacedName("downtime", "downtime-secrets")}
+
+	// First reconcile: establishes the target Secret + status.
+	if _, err := r.Reconcile(context.Background(), req); err != nil {
+		t.Fatalf("initial Reconcile: %v", err)
+	}
+	var afterFirst gitsecretv1alpha1.GitSecret
+	if err := fakeClient.Get(context.Background(), req.NamespacedName, &afterFirst); err != nil {
+		t.Fatal(err)
+	}
+	rvAfterFirst := afterFirst.ResourceVersion
+	if afterFirst.Status.SyncedKeys != 1 {
+		t.Fatalf("first reconcile did not sync: status = %+v", afterFirst.Status)
+	}
+
+	// Several more reconciles with nothing changed -- the situation a
+	// self-triggered re-enqueue would create.
+	for i := 0; i < 5; i++ {
+		if _, err := r.Reconcile(context.Background(), req); err != nil {
+			t.Fatalf("steady-state Reconcile %d: %v", i, err)
+		}
+	}
+
+	var afterSteady gitsecretv1alpha1.GitSecret
+	if err := fakeClient.Get(context.Background(), req.NamespacedName, &afterSteady); err != nil {
+		t.Fatal(err)
+	}
+	if afterSteady.ResourceVersion != rvAfterFirst {
+		t.Errorf("steady-state reconcile wrote the object (resourceVersion %s -> %s); the status write re-triggers the reconcile loop",
+			rvAfterFirst, afterSteady.ResourceVersion)
+	}
+	// It must still report Ready -- quiet, not broken.
+	ready := false
+	for _, c := range afterSteady.Status.Conditions {
+		if c.Type == conditionReady && c.Status == metav1.ConditionTrue {
+			ready = true
+		}
+	}
+	if !ready {
+		t.Errorf("object lost its Ready condition after steady-state reconciles: %+v", afterSteady.Status.Conditions)
+	}
+}
+
 // TestReconcile_DoesNotClobberUnownedSecret: a Secret with the target name
 // already exists and is managed by something else (no owner reference back
 // to this GitSecret). Reconcile must leave it completely untouched and

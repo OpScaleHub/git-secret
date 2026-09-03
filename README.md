@@ -406,6 +406,12 @@ Multi-recipient GPG protects against *loss* of a key. Recovering from a *comprom
 key additionally requires rotating the secret values themselves — see the disaster
 recovery guide.
 
+## Compatibility & upgrades
+
+[UPGRADING.md](UPGRADING.md) is the compatibility contract: versioning, the
+`v1alpha1` "additive only" API policy, and the upgrade/downgrade procedure for
+the `GitSecret` CRD + controller.
+
 ## Publishing & GitHub Pages
 
 The project website is published at: [https://git-secret.opscale.ir](https://git-secret.opscale.ir)

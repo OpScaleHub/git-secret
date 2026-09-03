@@ -125,6 +125,57 @@ func TestUI_IndexServesPage(t *testing.T) {
 	}
 }
 
+// TestUI_SealConcurrencyCap pins #77 item 7: /api/seal forks gpg, so
+// concurrent requests are bounded and the overflow gets 429 rather than
+// spawning unbounded processes.
+func TestUI_SealConcurrencyCap(t *testing.T) {
+	srv := newUIServer(nil, "", 1)
+	// Occupy the single slot, as an in-flight seal would.
+	srv.sealSlots <- struct{}{}
+
+	fpr := strings.Repeat("A", 40)
+	body, _ := json.Marshal(sealRequest{
+		Namespace:  "n",
+		Name:       "x",
+		Recipients: []keyringEntry{{Fingerprint: fpr}},
+		Data:       map[string]string{"K": "v"},
+	})
+	rec := httptest.NewRecorder()
+	srv.handleSeal(rec, httptest.NewRequest(http.MethodPost, "/api/seal", bytes.NewReader(body)))
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("at-capacity seal = %d, want 429 (%s)", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "busy") {
+		t.Fatalf("429 body = %q", rec.Body.String())
+	}
+
+	// Free the slot; a request now gets past the semaphore (and fails
+	// later, on gpg, because "AAA..." isn't a real key -- that's fine,
+	// we're only checking it's no longer 429).
+	<-srv.sealSlots
+	rec = httptest.NewRecorder()
+	srv.handleSeal(rec, httptest.NewRequest(http.MethodPost, "/api/seal", bytes.NewReader(body)))
+	if rec.Code == http.StatusTooManyRequests {
+		t.Fatalf("seal still 429 after slot freed")
+	}
+}
+
+// TestUI_SealRejectsTooManyRecipients pins the recipient cap added for #77
+// item 7 (matches the CRD's spec.recipients MaxItems).
+func TestUI_SealRejectsTooManyRecipients(t *testing.T) {
+	srv := newUIServer(nil, "", 4)
+	recips := make([]keyringEntry, maxSealRecipients+1)
+	for i := range recips {
+		recips[i] = keyringEntry{Fingerprint: strings.Repeat("A", 40)}
+	}
+	body, _ := json.Marshal(sealRequest{Namespace: "n", Name: "x", Recipients: recips, Data: map[string]string{"K": "v"}})
+	rec := httptest.NewRecorder()
+	srv.handleSeal(rec, httptest.NewRequest(http.MethodPost, "/api/seal", bytes.NewReader(body)))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "too many recipients") {
+		t.Fatalf("too many recipients: %d %s", rec.Code, rec.Body)
+	}
+}
+
 func TestUI_SealRejectsOversizedInput(t *testing.T) {
 	home := shortTempDir(t)
 	fpr := genTestKey(t, home)

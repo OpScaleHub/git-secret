@@ -48,6 +48,15 @@ No repo clone, no SSH, no outbound network call on the decrypt path — the
 ciphertext arrives as part of the object via the same apply path as every other
 manifest.
 
+**On failure the target Secret is left as it was.** If a reconcile cannot unseal
+the object — wrong key, expired recipient, a rewrap that dropped the controller —
+the controller sets `Ready=False` / `UnsealFailed` and stops; it does **not**
+delete or blank the Secret it last wrote. That is deliberate (a transient GPG
+problem must not take a running workload's secret away), and it is not an access
+leak: who can read the plaintext Secret is Kubernetes RBAC on that namespace, not
+the GitSecret's recipient list. To actually remove the Secret, delete the
+`GitSecret` — garbage collection takes the owned Secret with it.
+
 ## Envelope: two layers
 
 ```

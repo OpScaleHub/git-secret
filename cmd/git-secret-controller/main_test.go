@@ -15,6 +15,33 @@ import (
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 )
 
+func TestParseWatchNamespaces(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", nil},
+		{"   ", nil},
+		{",", nil},
+		{"prod", []string{"prod"}},
+		{"prod,staging", []string{"prod", "staging"}},
+		{" prod , , staging ,", []string{"prod", "staging"}},
+	}
+	for _, c := range cases {
+		got := parseWatchNamespaces(c.in)
+		if len(got) != len(c.want) {
+			t.Errorf("parseWatchNamespaces(%q) = %v, want %v", c.in, got, c.want)
+			continue
+		}
+		for i := range got {
+			if got[i] != c.want[i] {
+				t.Errorf("parseWatchNamespaces(%q) = %v, want %v", c.in, got, c.want)
+				break
+			}
+		}
+	}
+}
+
 // TestPrintPublicKey exercises the --print-public-key path, which imports
 // the configured private key and prints only its fingerprint + armored
 // PUBLIC key, without ever contacting a cluster.

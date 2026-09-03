@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Controller hardening (Beta → GA, #77)
+
+- **Reconcile no longer self-triggers.** The reconciler wrote `status.lastSyncTime`
+  on every pass; that write returned through its own watch and re-enqueued the
+  object, so a steady-state `GitSecret` reconciled forever. Status is now written
+  only when a field other than `lastSyncTime` changes.
+- **Webhook now requires `replicaCount: 1`.** The serving cert is per-pod and the
+  `ValidatingWebhookConfiguration.caBundle` holds one CA; the chart refuses
+  `webhook.enabled` with more than one replica, and the CA injector is
+  leader-gated. Reconcile HA via leader election is unchanged.
+- **Tighter controller RBAC.** Dropped unused verbs (`secrets: delete`,
+  `gitsecrets: update/patch`); scoped `validatingwebhookconfigurations`
+  `update/patch` to the controller's own config by name. New `watchNamespaces`
+  value confines the cache and Secret RBAC to a fixed namespace list
+  (`--watch-namespaces`).
+- New [UPGRADING.md](UPGRADING.md): the `v1alpha1` "additive only" compatibility
+  policy.
+
 ### Deprecations
 
 - **`git-secret-server` (the ESO webhook bridge) is now explicitly deprecated.**
