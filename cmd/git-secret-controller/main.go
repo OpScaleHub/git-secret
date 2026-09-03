@@ -22,6 +22,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
@@ -54,6 +55,7 @@ func run(args []string, environ []string) int {
 	metricsAddr := fs.String("metrics-bind-address", ":8443", "address the metrics endpoint binds to (env METRICS_BIND_ADDRESS)")
 	healthAddr := fs.String("health-probe-bind-address", ":8081", "address the liveness/readiness probe endpoint binds to (env HEALTH_PROBE_BIND_ADDRESS)")
 	leaderElect := fs.Bool("leader-elect", false, "enable leader election so only one replica reconciles at a time (env LEADER_ELECT)")
+	watchNamespaces := fs.String("watch-namespaces", "", "comma-separated namespaces to confine the cache and reconciler to (env WATCH_NAMESPACES); empty watches all namespaces")
 	gpgPrivateKeyFile := fs.String("gpg-private-key-file", "", "path to this controller's armored GPG private key, imported at startup (env GPG_PRIVATE_KEY_FILE)")
 	printPublicKey := fs.Bool("print-public-key", false, "import the key, print its fingerprint and armored PUBLIC key to stdout, and exit (for handing to whoever seals GitSecrets to this controller)")
 	enableWebhook := fs.Bool("enable-webhook", false, "serve the GitSecret validating admission webhook (env ENABLE_WEBHOOK)")
@@ -160,6 +162,15 @@ func run(args []string, environ []string) int {
 		HealthProbeBindAddress: *healthAddr,
 		LeaderElection:         *leaderElect,
 		LeaderElectionID:       "git-secret-controller.git-secret.opscalehub.io",
+	}
+
+	if nsList := parseWatchNamespaces(firstNonEmpty(*watchNamespaces, env["WATCH_NAMESPACES"])); len(nsList) > 0 {
+		defaults := make(map[string]cache.Config, len(nsList))
+		for _, ns := range nsList {
+			defaults[ns] = cache.Config{}
+		}
+		mgrOpts.Cache = cache.Options{DefaultNamespaces: defaults}
+		setupLog.Info("cache confined to namespaces", "namespaces", nsList)
 	}
 
 	var webhookCerts *gswebhook.Certs
@@ -307,4 +318,17 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// parseWatchNamespaces splits a comma-separated namespace list, trimming
+// spaces and dropping empties. An empty or all-blank input returns nil,
+// which the caller treats as "watch every namespace".
+func parseWatchNamespaces(csv string) []string {
+	var out []string
+	for _, n := range strings.Split(csv, ",") {
+		if n = strings.TrimSpace(n); n != "" {
+			out = append(out, n)
+		}
+	}
+	return out
 }

@@ -13,6 +13,15 @@ fullnameOverride: ""
 
 replicaCount: 1
 
+# By default the controller watches GitSecrets in every namespace and is
+# granted cluster-wide read+write on Secrets to do it (a GitSecret in any
+# namespace materialises a Secret in that same namespace). To confine it,
+# list the namespaces here: the chart then generates a namespaced
+# Role/RoleBinding per entry instead of the cluster-wide Secret grant, and
+# passes --watch-namespaces so the informer cache matches. Leave empty for
+# cluster-wide.
+watchNamespaces: []
+
 # Required. This controller's own dedicated GPG identity -- the
 # recipient every GitSecret it should be able to decrypt must be sealed
 # to. Generate with `gpg --batch --passphrase '' --quick-generate-key`,
