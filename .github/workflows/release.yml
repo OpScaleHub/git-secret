@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*' # Trigger on version tags like v1.0.0, v0.1.0
 
+# Default-deny: every job below re-declares exactly the scopes it needs, so
+# a job added later starts with nothing rather than inheriting the repo/org
+# default token scope.
+permissions: {}
+
 jobs:
   # Client-side tools only: git-secret, kubectl-secret, git-secret-seal --
   # things a human or a CI job runs directly on their own machine, so a
@@ -20,6 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # Needed to create releases
+      id-token: write # keyless signing / provenance attestations
+      attestations: write # actions/attest-build-provenance
 
     strategy:
       matrix:
@@ -31,10 +38,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.25' # must match the `go` directive in go.mod
 
@@ -86,8 +93,21 @@ jobs:
           sha256sum "${{ env.KUBECTL_ASSET_PATH }}" > "${{ env.KUBECTL_ASSET_PATH }}.sha256"
           sha256sum "${{ env.SEAL_ASSET_PATH }}" > "${{ env.SEAL_ASSET_PATH }}.sha256"
 
+      # SLSA build provenance: a signed statement (GitHub's Fulcio-backed
+      # OIDC identity) that these exact bytes were produced by this workflow
+      # at this commit. Verify with `gh attestation verify <file> --repo
+      # OpScaleHub/git-secret`. Unlike the .sha256 sidecars, this cannot be
+      # forged by whoever can edit the release assets.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            ${{ env.ASSET_PATH }}
+            ${{ env.KUBECTL_ASSET_PATH }}
+            ${{ env.SEAL_ASSET_PATH }}
+
       - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
@@ -113,6 +133,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     strategy:
       matrix:
@@ -120,10 +142,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version: '1.25'
 
@@ -151,8 +173,15 @@ jobs:
           sha256sum "${{ env.SERVER_ASSET_PATH }}" > "${{ env.SERVER_ASSET_PATH }}.sha256"
           sha256sum "${{ env.CONTROLLER_ASSET_PATH }}" > "${{ env.CONTROLLER_ASSET_PATH }}.sha256"
 
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            ${{ env.SERVER_ASSET_PATH }}
+            ${{ env.CONTROLLER_ASSET_PATH }}
+
       - name: Upload Release Asset
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
@@ -160,6 +189,25 @@ jobs:
             ${{ env.SERVER_ASSET_PATH }}.sha256
             ${{ env.CONTROLLER_ASSET_PATH }}
             ${{ env.CONTROLLER_ASSET_PATH }}.sha256
+
+  # One SPDX SBOM of the module graph, attached to the release. The
+  # container images carry their own (finer-grained) SBOM attestation from
+  # the build-push step below. sbom-action auto-attaches to the release on
+  # a tag push.
+  sbom:
+    name: Generate release SBOM
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # attach the SBOM asset to the release
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+
+      - name: Generate + attach SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          path: .
+          artifact-name: git-secret-sbom.spdx.json
 
   # git-secret-server is a DEPRECATED component (superseded by the GitSecret
   # CRD + git-secret-controller). Its image and chart are still published so
@@ -170,10 +218,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # Needed to push to GHCR
+      packages: write # push to GHCR
+      id-token: write # keyless cosign signing (OIDC)
+      attestations: write # provenance/SBOM attestations
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Validate tag
         env:
@@ -197,36 +247,54 @@ jobs:
         run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           push: true
           platforms: linux/amd64,linux/arm64
+          # SLSA provenance + SBOM attestations attached to the image in
+          # the registry (OCI referrers). Verify provenance with
+          # `cosign verify-attestation --type slsaprovenance ...`.
+          provenance: mode=max
+          sbom: true
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/git-secret-server:${{ github.ref_name }}
             ghcr.io/${{ env.OWNER_LC }}/git-secret-server:latest
 
+      - name: Sign image (keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${OWNER_LC}/git-secret-server@${DIGEST}"
+
   docker-release-controller:
     name: Build & push git-secret-controller image
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # Needed to push to GHCR
+      packages: write # push to GHCR
+      id-token: write # keyless cosign signing (OIDC)
+      attestations: write # provenance/SBOM attestations
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Validate tag
         env:
@@ -241,27 +309,40 @@ jobs:
         run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: Dockerfile.controller
           push: true
           platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/git-secret-controller:${{ github.ref_name }}
             ghcr.io/${{ env.OWNER_LC }}/git-secret-controller:latest
+
+      - name: Sign image (keyless)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes \
+            "ghcr.io/${OWNER_LC}/git-secret-controller@${DIGEST}"
 
   chart-release:
     name: Package & push Helm chart
@@ -271,7 +352,7 @@ jobs:
       packages: write # Needed to push to GHCR (OCI)
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Validate tag
         env:
@@ -289,7 +370,7 @@ jobs:
         run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -317,7 +398,7 @@ jobs:
       packages: write # Needed to push to GHCR (OCI)
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
 
       - name: Validate tag
         env:
@@ -332,7 +413,7 @@ jobs:
         run: echo "OWNER_LC=$(printf '%s' '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
 
       - name: Log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u ${{ github.actor }} --password-stdin

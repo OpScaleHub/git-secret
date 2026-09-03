@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Keep the SHA-pinned GitHub Actions current -- Dependabot bumps the pin
+  # and rewrites the trailing "# vX.Y.Z" comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      go-deps:
+        patterns: ["*"]
+
+  # Base-image digests in the Dockerfiles.
+  - package-ecosystem: docker
+    directories:
+      - /
+    schedule:
+      interval: weekly

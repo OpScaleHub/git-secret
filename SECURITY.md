@@ -42,3 +42,38 @@ The latest tagged release. `git-secret-server` receives security fixes only; the
 We aim to acknowledge a report within a few working days and to agree a
 coordinated disclosure timeline from there. Reporters are credited in the advisory
 unless they ask not to be.
+
+## Verifying a release
+
+Every tagged release carries cryptographic provenance in addition to the
+`.sha256` sidecars (which prove integrity, not authenticity).
+
+**Binaries** — SLSA build provenance, signed with GitHub's OIDC identity:
+
+```
+gh attestation verify ./git-secret-linux-amd64 --repo OpScaleHub/git-secret
+```
+
+**Container images** — signed with keyless [cosign](https://docs.sigstore.dev/),
+plus provenance + SBOM attestations:
+
+```
+cosign verify \
+  --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/opscalehub/git-secret-controller:<tag>
+
+cosign verify-attestation --type slsaprovenance \
+  --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/opscalehub/git-secret-controller:<tag>
+```
+
+**SBOM** — an SPDX SBOM of the module graph (`git-secret-sbom.spdx.json`) is
+attached to each GitHub release; the images carry their own finer-grained SBOM
+attestation (`cosign download sbom ...` / `--type spdxjson`).
+
+All CI/release workflows pin every third-party action to a commit SHA
+(`.github/dependabot.yml` keeps the pins current) and run with a default-deny
+token (`permissions: {}` at the workflow root, each job re-declaring only what it
+needs).

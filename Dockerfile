@@ -3,7 +3,7 @@
 # internal/decryptserver for the request/response contract and the
 # README's "git-secret-server" section for deployment.
 
-FROM golang:1.25-bookworm AS build
+FROM golang:1.25-bookworm@sha256:3b4a11519ad929d1e1d261a12cff056f0c85b735253d7d861346b9c6f8b36437 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -17,7 +17,7 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
 # internal/gitutil.CloneContext and internal/gpgutil) — so this can't
 # be a from-scratch/distroless-static image the way a pure-Go binary
 # normally could be.
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         gnupg \
