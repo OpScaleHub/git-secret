@@ -222,6 +222,49 @@ func TestKubectlSecretEncryptValueThenView(t *testing.T) {
 	}
 }
 
+func TestKubectlSecretEncryptValueFromFile(t *testing.T) {
+	gitSecretBin := buildGitSecret(t)
+	kubectlSecretBin := buildKubectlSecret(t)
+	repo := initGitRepo(t)
+
+	if _, _, code := runBin(t, gitSecretBin, repo, "init", "secrets/**"); code != 0 {
+		t.Fatalf("git-secret init failed")
+	}
+	addK8sSecretPath(t, repo, "deploy/app-secret.yaml")
+	writeRepoFile(t, repo, "deploy/app-secret.yaml", "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app\nstringData: {}\n")
+
+	valueFile := filepath.Join(t.TempDir(), "value.txt")
+	if err := os.WriteFile(valueFile, []byte("s3cr3t-value\n"), 0o600); err != nil {
+		t.Fatalf("write value file: %v", err)
+	}
+
+	out, stderr, code := runBin(t, kubectlSecretBin, repo, "encrypt-value", "-f", "deploy/app-secret.yaml", "-k", "OIDC_CLIENT_SECRET", "--value-file", valueFile)
+	if code != 0 {
+		t.Fatalf("encrypt-value --value-file: code=%d stderr=%q", code, stderr)
+	}
+	blob := strings.TrimSpace(out)
+	if !strings.HasPrefix(blob, "repo-enc:v1:") {
+		t.Fatalf("encrypt-value --value-file output = %q, want repo-enc:v1: prefix", blob)
+	}
+
+	manifest := "apiVersion: v1\nkind: Secret\nmetadata:\n  name: app\nstringData:\n  OIDC_CLIENT_SECRET: \"" + blob + "\"\n"
+	writeRepoFile(t, repo, "deploy/app-secret.yaml", manifest)
+
+	out, stderr, code = runBin(t, kubectlSecretBin, repo, "view", "-f", "deploy/app-secret.yaml")
+	if code != 0 {
+		t.Fatalf("view: code=%d stderr=%q", code, stderr)
+	}
+	if !strings.Contains(out, "s3cr3t-value") {
+		t.Fatalf("view output missing decrypted value: %q", out)
+	}
+
+	// --allow-argv and --value-file together are rejected.
+	_, stderr, code = runBin(t, kubectlSecretBin, repo, "encrypt-value", "-f", "deploy/app-secret.yaml", "-k", "OIDC_CLIENT_SECRET", "--allow-argv", "--value-file", valueFile, "whatever")
+	if code == 0 || !strings.Contains(stderr, "mutually exclusive") {
+		t.Fatalf("--allow-argv + --value-file: code=%d stderr=%q, want mutually-exclusive error", code, stderr)
+	}
+}
+
 func TestKubectlSecretApplyPipesDecryptedYAMLToKubectl(t *testing.T) {
 	gitSecretBin := buildGitSecret(t)
 	kubectlSecretBin := buildKubectlSecret(t)

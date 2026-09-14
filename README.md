@@ -265,7 +265,7 @@ several real ciphertext ones is still caught.
 | `apply -f FILE [-n NAMESPACE]` | Decrypt matched `stringData` values in memory and `kubectl apply` the result. Never writes plaintext to disk. Warns if the object carries an `argocd.argoproj.io/instance` label (see ArgoCD footgun below). |
 | `create -f FILE [-n NAMESPACE]` | Same, but `kubectl create`. |
 | `view -f FILE` | Print the fully-decrypted manifest to stdout. Never writes it to disk. |
-| `encrypt-value -f FILE -k KEY` (value on stdin) | Emit a `repo-enc:v1:...` blob bound to that file, key, and the manifest's object identity, to paste into `stringData` by hand. `--allow-argv <value>` uses a bare CLI argument instead — leaves the value in shell history/process listings, so prefer stdin. |
+| `encrypt-value -f FILE -k KEY` (value on stdin) | Emit a `repo-enc:v1:...` blob bound to that file, key, and the manifest's object identity, to paste into `stringData` by hand. `--value-file PATH` reads the plaintext from a file instead of stdin. `--allow-argv <value>` uses a bare CLI argument instead — leaves the value in shell history/process listings, so prefer stdin or `--value-file`. |
 
 A value is ciphertext if it starts with `repo-enc:v1:`; anything else is left
 untouched, so plaintext and ciphertext values coexist freely in the same
@@ -385,6 +385,13 @@ A container image and Helm chart ship on every tagged release
 (`charts/git-secret-controller`). For local work, build the binaries with
 `go build ./cmd/git-secret-controller` and `go build ./cmd/git-secret-seal`.
 
+## Guides
+
+- [Quickstart: GitSecret + Kubernetes](docs/getting-started/quickstart.md) —
+  end-to-end walkthrough, verified against a live cluster.
+- [Troubleshooting](docs/guides/troubleshooting.md) — common failure modes,
+  real error strings, and how to fix them.
+
 ## Security
 
 - [Threat model](docs/security/threat-model.md) — assets, trust boundaries,
@@ -418,6 +425,14 @@ recovery guide.
 [UPGRADING.md](UPGRADING.md) is the compatibility contract: versioning, the
 `v1alpha1` "additive only" API policy, and the upgrade/downgrade procedure for
 the `GitSecret` CRD + controller.
+
+## Contributing & governance
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — dev setup, test commands, PR
+  guidelines.
+- [GOVERNANCE.md](GOVERNANCE.md) — decision-making process and maintainer
+  roles.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) — CNCF Code of Conduct v2.0.
 
 ## Publishing & GitHub Pages
 
