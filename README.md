@@ -51,7 +51,7 @@ the architecture got here.
 
 ## Requirements
 
-- **Go** 1.25 or newer (for building from source)
+- **Go** 1.26 or newer (for building from source)
 - **Git** (for hooks, config discovery, and blob storage)
 
 ## Installation
