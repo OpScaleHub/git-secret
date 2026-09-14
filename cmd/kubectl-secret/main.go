@@ -236,13 +236,16 @@ func cmdView(args []string) int {
 // process (ps/proc) for the life of this command — exactly the class of
 // leak apply/view/create otherwise avoid by never writing plaintext to
 // disk. --allow-argv keeps the old positional-argument form for quick
-// interactive use, with a loud warning.
+// interactive use, with a loud warning. --value-file reads the plaintext
+// from a file instead, for callers that already have it materialized on
+// disk (e.g. a secrets-manager export) and want to avoid an extra pipe.
 func cmdEncryptValue(args []string) int {
 	fs := flag.NewFlagSet("encrypt-value", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	file := fs.String("f", "", "path to the Secret manifest (required)")
 	key := fs.String("k", "", "stringData key this value will be stored under (required)")
 	allowArgv := fs.Bool("allow-argv", false, "read the plaintext from a bare CLI argument instead of stdin (leaves it in shell history/process listings -- prefer piping via stdin)")
+	valueFile := fs.String("value-file", "", "read the plaintext from this file instead of stdin")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return exitError
@@ -251,9 +254,14 @@ func cmdEncryptValue(args []string) int {
 		fmt.Fprintln(os.Stderr, "Error: usage: echo -n VALUE | kubectl secret encrypt-value -f FILE -k KEY")
 		return exitError
 	}
+	if *allowArgv && *valueFile != "" {
+		fmt.Fprintln(os.Stderr, "Error: --allow-argv and --value-file are mutually exclusive")
+		return exitError
+	}
 
 	var plaintext string
-	if *allowArgv {
+	switch {
+	case *allowArgv:
 		plaintextArgs := fs.Args()
 		if len(plaintextArgs) != 1 {
 			fmt.Fprintln(os.Stderr, "Error: --allow-argv requires exactly one plaintext argument")
@@ -261,7 +269,18 @@ func cmdEncryptValue(args []string) int {
 		}
 		fmt.Fprintln(os.Stderr, "Warning: --allow-argv leaves the plaintext value in shell history and visible to other local processes for the life of this command.")
 		plaintext = plaintextArgs[0]
-	} else {
+	case *valueFile != "":
+		if len(fs.Args()) != 0 {
+			fmt.Fprintln(os.Stderr, "Error: --value-file does not take a plaintext argument")
+			return exitError
+		}
+		data, err := os.ReadFile(*valueFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: read plaintext from --value-file: %v\n", err)
+			return exitError
+		}
+		plaintext = strings.TrimSuffix(string(data), "\n")
+	default:
 		if len(fs.Args()) != 0 {
 			fmt.Fprintln(os.Stderr, "Error: plaintext is read from stdin by default -- pass --allow-argv to use a bare CLI argument instead")
 			return exitError
