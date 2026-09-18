@@ -381,8 +381,17 @@ once imported). Install the CRD from
 `config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml` before running
 the controller.
 
-A container image and Helm chart ship on every tagged release
-(`charts/git-secret-controller`). For local work, build the binaries with
+A signed container image and Helm chart ship on every tagged release. Create
+the controller's GPG key `Secret` (see the
+[chart README](charts/git-secret-controller/README.md#before-installing)), then:
+
+```bash
+helm install git-secret-controller \
+  oci://ghcr.io/opscalehub/charts/git-secret-controller \
+  --set gpgPrivateKey.existingSecret=git-secret-controller-gpg
+```
+
+For local work, build the binaries with
 `go build ./cmd/git-secret-controller` and `go build ./cmd/git-secret-seal`.
 
 ## Guides

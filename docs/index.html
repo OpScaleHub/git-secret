@@ -384,6 +384,7 @@
       <a class="hide-narrow" href="#commands">Commands</a>
       <a class="hide-narrow" href="#k8s">Kubernetes</a>
       <a class="hide-narrow" href="#crd">CRD</a>
+      <a class="hide-narrow" href="#install">Install</a>
       <a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a>
       <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle color theme">
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8"/></svg>
@@ -694,7 +695,7 @@ gpg_recipients:
       </div>
 
       <p class="lede" style="margin-top:var(--sp-3)">Prefer a form to the flags? <code>git-secret-seal ui</code> serves a local, public-key-only web page for producing these manifests — it never decrypts, never touches the cluster, never persists.</p>
-      <p class="lede" style="margin-top:var(--sp-3)">A container image and Helm chart (<code>charts/git-secret-controller</code>) ship on every tagged release. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, the sealing UI, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">A signed container image and a Helm chart ship on every tagged release — <a class="footnote-link" href="#install-k8s">install with one <code>helm install</code></a>. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, the sealing UI, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
     </div>
   </section>
 
@@ -722,10 +723,64 @@ go build -o git-secret .
 sudo mv git-secret /usr/local/bin/</pre>
           </div>
           <ul class="req-list">
-            <li>Go 1.25+, git</li>
+            <li>Go 1.26+, git</li>
             <li>Windows: build with <code>-o git-secret.exe</code> explicitly</li>
           </ul>
         </div>
+      </div>
+      <div id="install-k8s" style="margin-top:var(--sp-5)">
+        <h3>Deploy to Kubernetes</h3>
+        <p class="lede">The <code>GitSecret</code> controller ships as a Helm chart on GHCR (OCI), versioned to each release. It installs the CRD and the controller together.</p>
+        <div class="stack">
+          <div class="panel">
+            <span class="panel-label">1 · Give the controller its own GPG identity</span>
+            <pre><span class="comment"># dedicated key, never a human's; only the private half goes in-cluster</span>
+gpg --batch --passphrase '' --quick-generate-key \
+  "git-secret-controller &lt;controller@yourcluster&gt;" default default never
+gpg --list-secret-keys --with-colons   <span class="comment"># note the fingerprint</span>
+gpg --export-secret-keys --armor &lt;fingerprint&gt; &gt; private.asc
+kubectl create secret generic git-secret-controller-gpg \
+  --from-file=private.asc=./private.asc
+rm private.asc</pre>
+          </div>
+          <div class="panel">
+            <span class="panel-label">2 · Install the chart</span>
+            <pre>helm install git-secret-controller \
+  oci://ghcr.io/opscalehub/charts/git-secret-controller \
+  --set gpgPrivateKey.existingSecret=git-secret-controller-gpg</pre>
+          </div>
+          <div class="panel">
+            <span class="panel-label">3 · Seal and apply</span>
+            <pre>git-secret-seal --namespace myapp --name my-secrets \
+  --recipient &lt;controller-fpr&gt; --recipient &lt;your-fpr&gt; \
+  --from-literal API_KEY=... &gt; gitsecret.yaml
+kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let ArgoCD apply it</span></pre>
+          </div>
+        </div>
+        <ul class="req-list">
+          <li>The chart never accepts key material in <code>values.yaml</code> — only a reference to the <code>Secret</code> you created.</li>
+          <li>Cluster-scoped by default; see the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/charts/git-secret-controller/README.md" target="_blank" rel="noopener">chart README</a> for RBAC and upgrades (Helm doesn't upgrade CRDs for you).</li>
+          <li>Migrating from External Secrets Operator? <code>git-secret-server</code> is deprecated and security-fix-only; new deployments should use the CRD.</li>
+        </ul>
+      </div>
+
+      <div id="verify" style="margin-top:var(--sp-5)">
+        <h3>Verify what you download</h3>
+        <p class="lede">Every release is built in CI with signed provenance and an SBOM — check before you run it.</p>
+        <div class="stack">
+          <div class="panel">
+            <span class="panel-label">Binary (SLSA provenance)</span>
+            <pre>gh attestation verify ./git-secret-linux-amd64 --repo OpScaleHub/git-secret</pre>
+          </div>
+          <div class="panel">
+            <span class="panel-label">Container image (keyless cosign)</span>
+            <pre>cosign verify \
+  --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  ghcr.io/opscalehub/git-secret-controller:&lt;tag&gt;</pre>
+          </div>
+        </div>
+        <p class="lede" style="margin-top:var(--sp-3)">Details, SBOM, and how to report a vulnerability: <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</p>
       </div>
     </div>
   </section>
@@ -735,7 +790,7 @@ sudo mv git-secret /usr/local/bin/</pre>
 <footer class="site">
   <div class="container footer-row">
     <span><span class="footer-mark">§</span> git-secret — MIT License</span>
-    <span><a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/OpScaleHub/git-secret/tree/main/examples/basic" target="_blank" rel="noopener">Examples</a> · <a href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">Releases</a></span>
+    <span><a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/OpScaleHub/git-secret/tree/main/examples/basic" target="_blank" rel="noopener">Examples</a> · <a href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">Releases</a> · <a href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">Docs</a> · <a href="https://github.com/OpScaleHub/git-secret/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a></span>
   </div>
 </footer>
 
