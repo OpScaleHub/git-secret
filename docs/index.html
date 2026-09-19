@@ -382,8 +382,7 @@
       <a class="hide-narrow" href="#how">How it works</a>
       <a href="#quickstart">Quick start</a>
       <a class="hide-narrow" href="#commands">Commands</a>
-      <a class="hide-narrow" href="#k8s">Kubernetes</a>
-      <a class="hide-narrow" href="#crd">CRD</a>
+      <a class="hide-narrow" href="#crd">Kubernetes</a>
       <a class="hide-narrow" href="#install">Install</a>
       <a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a>
       <button class="theme-toggle" id="themeToggle" type="button" aria-label="Toggle color theme">
@@ -411,8 +410,10 @@
         <p class="eyebrow">Transparent repository encryption</p>
         <h1>Plaintext on disk.<br><span class="accent">Ciphertext in history.</span></h1>
         <p class="lede">git-secret installs four git hooks that quietly encrypt what you commit and decrypt what you check out — modern authenticated encryption, no server, nothing to remember to run. GPG is entirely optional, for teams who'd rather wrap the key to existing identities than pass around a raw one.</p>
+        <p class="lede">On Kubernetes? The same crypto core ships as a <code>GitSecret</code> CRD and controller — ciphertext inline in the object, decrypted in-cluster, no repo clone.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#quickstart">Read the quick start</a>
+          <a class="btn btn-ghost" href="#install-k8s">Deploy to Kubernetes</a>
           <a class="btn btn-ghost" href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">View on GitHub</a>
         </div>
       </div>
@@ -592,57 +593,10 @@ gpg_recipients:
     </div>
   </section>
 
-  <section id="k8s">
-    <div class="container">
-      <div class="section-head">
-        <p class="eyebrow">A practical use case, not a second product</p>
-        <h2>The same core, one Kubernetes <code>Secret</code></h2>
-        <p class="lede">A real <code>Secret</code> manifest is rarely one credential — it's a dozen unrelated ones (an OIDC client secret, payment gateway keys, a webhook signing key...) in one <code>stringData</code> map. Whole-file encryption means rotating any single one means decrypting all of them, and every re-encryption rewrites the whole file, so the diff never tells you which key actually changed. <code>kubectl-secret</code> is a companion <code>kubectl</code> plugin, built on this project's exact same crypto core and key backends, that encrypts one value at a time instead.</p>
-      </div>
-
-      <div class="receipt" aria-label="kubectl-secret example session">
-        <div class="receipt-head"><span>deploy/app-secret.yaml</span><span>session</span></div>
-        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">kubectl secret encrypt-value -f deploy/app-secret.yaml -k OIDC_CLIENT_SECRET "..."</span></span>
-<span class="ln" style="animation-delay:.35s"><span class="cipher">repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K...</span></span>
-<span class="ln" style="animation-delay:.65s"><span class="prompt">$ </span><span class="cmd">cat deploy/app-secret.yaml</span></span>
-<span class="ln" style="animation-delay:.95s"><span class="out">stringData:</span></span>
-<span class="ln" style="animation-delay:1.15s">  <span class="out">OIDC_CLIENT_SECRET: </span><span class="cipher">"repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K..."</span></span>
-<span class="ln" style="animation-delay:1.35s">  <span class="out">WEBHOOK_SIGNING_KEY: </span><span class="cipher">"repo-enc:v1:8f3Nk2QpL9xVrTcMh7bYs2..."</span></span>
-<span class="ln" style="animation-delay:1.55s">  <span class="out">DEBUG: </span><span class="plain">"true"</span></span>
-<span class="ln" style="animation-delay:1.85s"><span class="prompt">$ </span><span class="cmd">kubectl secret apply -f deploy/app-secret.yaml</span></span>
-<span class="ln" style="animation-delay:2.15s"><span class="out">secret/app-credentials configured</span></span></pre>
-      </div>
-
-      <div class="ledger" style="margin-top:var(--sp-4)">
-        <div class="ledger-entry">
-          <span class="ledger-code">PER-KEY</span>
-          <div><h3>Not per-file</h3><p>Only the keys you actually encrypt change ciphertext — a plaintext <code>DEBUG</code> value sits right next to an encrypted <code>OIDC_CLIENT_SECRET</code> in the same map.</p></div>
-        </div>
-        <div class="ledger-entry">
-          <span class="ledger-code">BOUND</span>
-          <div><h3>To the object, not just the file</h3><p>Ciphertext is bound to the manifest's <code>apiVersion</code>/<code>kind</code>/<code>metadata.name</code>/namespace as well as the file and key — moving valid ciphertext onto a different object, or retargeting it to another namespace with <code>-n</code>, fails to decrypt instead of silently authenticating onto the wrong <code>Secret</code>.</p></div>
-        </div>
-        <div class="ledger-entry">
-          <span class="ledger-code">IN MEMORY</span>
-          <div><h3><code>apply</code>/<code>create</code> pipe straight to kubectl</h3><p>Decryption happens in this process only; the plaintext manifest goes to <code>kubectl</code> over stdin, never touching disk.</p></div>
-        </div>
-        <div class="ledger-entry">
-          <span class="ledger-code">ROTATE</span>
-          <div><h3><code>rotate-keys</code> covers it too</h3><p>Per-value manifests are re-encrypted right alongside whole files — key rotation isn't partial just because you're using this.</p></div>
-        </div>
-        <div class="ledger-entry">
-          <span class="ledger-code">GITOPS</span>
-          <div><h3>For a GitOps cluster, see <a href="#crd">GitSecret</a></h3><p>Applying a per-value-encrypted manifest straight through a GitOps controller needs a trusted decrypt step in that path — <code>GitSecret</code> below is that step, natively: a controller, no sidecar, no manifest-generation hook to wire up by hand.</p></div>
-        </div>
-      </div>
-
-      <p class="lede" style="margin-top:var(--sp-3)">Opt a manifest in with <code>k8s_secret_paths</code> in <code>.repo-enc.yml</code> — see the <a href="https://github.com/OpScaleHub/git-secret#kubectl-secret" target="_blank" rel="noopener">README</a> for the full verb reference.</p>
-    </div>
-  </section>
   <section id="crd">
     <div class="container">
       <div class="section-head">
-        <p class="eyebrow">Beyond the CLI</p>
+        <p class="eyebrow">Kubernetes</p>
         <h2>GitSecret: a native CRD, ciphertext inline, no clone at all</h2>
         <p class="lede"><code>GitSecret</code> is a custom resource with its own controller. Ciphertext lives inline in the object — no external store, no repo clone in the cluster, no SSH transport, no network hop anywhere in the decrypt path — delivered by whatever already applies your manifests (ArgoCD, <code>kubectl apply</code>) and decrypted in-cluster by a controller holding one of the GPG keys it's wrapped to.</p>
         <p class="lede">The point isn't "GPG instead of a single keypair" — it's <strong>recovery independence</strong>: losing the cluster, the controller, or any one key doesn't make the secrets unrecoverable, as long as the encrypted repo and one authorized recipient key survive. See the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/threat-model.md" target="_blank" rel="noopener">threat model</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/disaster-recovery.md" target="_blank" rel="noopener">disaster-recovery runbooks</a>.</p>
@@ -694,11 +648,58 @@ gpg_recipients:
         </div>
       </div>
 
-      <p class="lede" style="margin-top:var(--sp-3)">Prefer a form to the flags? <code>git-secret-seal ui</code> serves a local, public-key-only web page for producing these manifests — it never decrypts, never touches the cluster, never persists.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Prefer per-value encryption of a plain <code>Secret</code> manifest? See the <a class="footnote-link" href="#k8s">kubectl-secret plugin</a>. Prefer a form to the flags? <code>git-secret-seal ui</code> serves a local, public-key-only web page for producing these manifests — it never decrypts, never touches the cluster, never persists.</p>
       <p class="lede" style="margin-top:var(--sp-3)">A signed container image and a Helm chart ship on every tagged release — <a class="footnote-link" href="#install-k8s">install with one <code>helm install</code></a>. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, the sealing UI, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
     </div>
   </section>
 
+  <section id="k8s">
+    <div class="container">
+      <div class="section-head">
+        <p class="eyebrow">Companion tool</p>
+        <h2>kubectl-secret: per-value encryption for one <code>Secret</code></h2>
+        <p class="lede">A real <code>Secret</code> manifest is rarely one credential — it's a dozen unrelated ones (an OIDC client secret, payment gateway keys, a webhook signing key...) in one <code>stringData</code> map. Whole-file encryption means rotating any single one means decrypting all of them, and every re-encryption rewrites the whole file, so the diff never tells you which key actually changed. <code>kubectl-secret</code> is a companion <code>kubectl</code> plugin, built on this project's exact same crypto core and key backends, that encrypts one value at a time instead.</p>
+      </div>
+
+      <div class="receipt" aria-label="kubectl-secret example session">
+        <div class="receipt-head"><span>deploy/app-secret.yaml</span><span>session</span></div>
+        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">kubectl secret encrypt-value -f deploy/app-secret.yaml -k OIDC_CLIENT_SECRET "..."</span></span>
+<span class="ln" style="animation-delay:.35s"><span class="cipher">repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K...</span></span>
+<span class="ln" style="animation-delay:.65s"><span class="prompt">$ </span><span class="cmd">cat deploy/app-secret.yaml</span></span>
+<span class="ln" style="animation-delay:.95s"><span class="out">stringData:</span></span>
+<span class="ln" style="animation-delay:1.15s">  <span class="out">OIDC_CLIENT_SECRET: </span><span class="cipher">"repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K..."</span></span>
+<span class="ln" style="animation-delay:1.35s">  <span class="out">WEBHOOK_SIGNING_KEY: </span><span class="cipher">"repo-enc:v1:8f3Nk2QpL9xVrTcMh7bYs2..."</span></span>
+<span class="ln" style="animation-delay:1.55s">  <span class="out">DEBUG: </span><span class="plain">"true"</span></span>
+<span class="ln" style="animation-delay:1.85s"><span class="prompt">$ </span><span class="cmd">kubectl secret apply -f deploy/app-secret.yaml</span></span>
+<span class="ln" style="animation-delay:2.15s"><span class="out">secret/app-credentials configured</span></span></pre>
+      </div>
+
+      <div class="ledger" style="margin-top:var(--sp-4)">
+        <div class="ledger-entry">
+          <span class="ledger-code">PER-KEY</span>
+          <div><h3>Not per-file</h3><p>Only the keys you actually encrypt change ciphertext — a plaintext <code>DEBUG</code> value sits right next to an encrypted <code>OIDC_CLIENT_SECRET</code> in the same map.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">BOUND</span>
+          <div><h3>To the object, not just the file</h3><p>Ciphertext is bound to the manifest's <code>apiVersion</code>/<code>kind</code>/<code>metadata.name</code>/namespace as well as the file and key — moving valid ciphertext onto a different object, or retargeting it to another namespace with <code>-n</code>, fails to decrypt instead of silently authenticating onto the wrong <code>Secret</code>.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">IN MEMORY</span>
+          <div><h3><code>apply</code>/<code>create</code> pipe straight to kubectl</h3><p>Decryption happens in this process only; the plaintext manifest goes to <code>kubectl</code> over stdin, never touching disk.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">ROTATE</span>
+          <div><h3><code>rotate-keys</code> covers it too</h3><p>Per-value manifests are re-encrypted right alongside whole files — key rotation isn't partial just because you're using this.</p></div>
+        </div>
+        <div class="ledger-entry">
+          <span class="ledger-code">GITOPS</span>
+          <div><h3>For a GitOps cluster, see <a href="#crd">GitSecret</a></h3><p>Applying a per-value-encrypted manifest straight through a GitOps controller needs a trusted decrypt step in that path — <code>GitSecret</code> above is that step, natively: a controller, no sidecar, no manifest-generation hook to wire up by hand.</p></div>
+        </div>
+      </div>
+
+      <p class="lede" style="margin-top:var(--sp-3)">Get the plugin from <a class="footnote-link" href="#install-binaries">Install</a> (built from source; no release binary yet). Opt a manifest in with <code>k8s_secret_paths</code> in <code>.repo-enc.yml</code> — see the <a href="https://github.com/OpScaleHub/git-secret#kubectl-secret" target="_blank" rel="noopener">README</a> for the full verb reference.</p>
+    </div>
+  </section>
   <section id="install">
     <div class="container">
       <div class="section-head">
@@ -706,12 +707,15 @@ gpg_recipients:
         <h2>Install</h2>
       </div>
       <div class="install-grid">
-        <div>
-          <h3>Prebuilt binary</h3>
-          <p class="lede"><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">GitHub Releases</a> — linux, macOS, and Windows, amd64 and arm64.</p>
+        <div id="install-binaries">
+          <h3>Prebuilt binaries</h3>
+          <p class="lede"><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">GitHub Releases</a> — linux and macOS on amd64 and arm64; Windows on amd64 only. Each file has a <code>.sha256</code> beside it.</p>
           <ul class="req-list">
-            <li>Rename to <code>git-secret</code> (<code>git-secret.exe</code> on Windows) and put it on <code>PATH</code></li>
-            <li><code>git secret</code> then works as a native git subcommand</li>
+            <li><code>git-secret-&lt;os&gt;-&lt;arch&gt;</code> — the CLI. Rename to <code>git-secret</code> (<code>git-secret.exe</code> on Windows) and put it on <code>PATH</code>; <code>git secret</code> then works as a native git subcommand</li>
+            <li><code>git-secret-seal-&lt;os&gt;-&lt;arch&gt;</code> — seals values into a <code>GitSecret</code> manifest (used in the Kubernetes steps below)</li>
+            <li><code>git-secret-controller-linux-&lt;arch&gt;</code> and <code>git-secret-server-linux-&lt;arch&gt;</code> — in-cluster binaries, already packaged in the Helm chart and images; you rarely need them directly</li>
+            <li><code>git-secret-sbom.spdx.json</code> — SPDX SBOM</li>
+            <li><code>kubectl-secret</code> has no release binary yet: <code>go build -o kubectl-secret ./cmd/kubectl-secret</code></li>
           </ul>
         </div>
         <div>
@@ -739,7 +743,8 @@ gpg --batch --passphrase '' --quick-generate-key \
   "git-secret-controller &lt;controller@yourcluster&gt;" default default never
 gpg --list-secret-keys --with-colons   <span class="comment"># note the fingerprint</span>
 gpg --export-secret-keys --armor &lt;fingerprint&gt; &gt; private.asc
-kubectl create secret generic git-secret-controller-gpg \
+kubectl create namespace git-secret-system
+kubectl -n git-secret-system create secret generic git-secret-controller-gpg \
   --from-file=private.asc=./private.asc
 rm private.asc</pre>
           </div>
@@ -747,6 +752,7 @@ rm private.asc</pre>
             <span class="panel-label">2 · Install the chart</span>
             <pre>helm install git-secret-controller \
   oci://ghcr.io/opscalehub/charts/git-secret-controller \
+  --version 0.10.0 --namespace git-secret-system \
   --set gpgPrivateKey.existingSecret=git-secret-controller-gpg</pre>
           </div>
           <div class="panel">
@@ -758,6 +764,7 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
           </div>
         </div>
         <ul class="req-list">
+          <li>The key <code>Secret</code> must be in the release namespace; pin <code>--version</code> to the release tag you want.</li>
           <li>The chart never accepts key material in <code>values.yaml</code> — only a reference to the <code>Secret</code> you created.</li>
           <li>Cluster-scoped by default; see the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/charts/git-secret-controller/README.md" target="_blank" rel="noopener">chart README</a> for RBAC and upgrades (Helm doesn't upgrade CRDs for you).</li>
           <li>Migrating from External Secrets Operator? <code>git-secret-server</code> is deprecated and security-fix-only; new deployments should use the CRD.</li>
@@ -781,6 +788,14 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
           </div>
         </div>
         <p class="lede" style="margin-top:var(--sp-3)">Details, SBOM, and how to report a vulnerability: <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</p>
+      </div>
+
+      <div id="guides" style="margin-top:var(--sp-5)">
+        <h3>Guides &amp; security docs</h3>
+        <ul class="req-list">
+          <li><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/getting-started/quickstart.md" target="_blank" rel="noopener">Quickstart: GitSecret + Kubernetes</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/guides/troubleshooting.md" target="_blank" rel="noopener">Troubleshooting</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/UPGRADING.md" target="_blank" rel="noopener">Upgrading</a></li>
+          <li><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/architecture/overview.md" target="_blank" rel="noopener">Architecture</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/threat-model.md" target="_blank" rel="noopener">Threat model</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/disaster-recovery.md" target="_blank" rel="noopener">Disaster recovery</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/recipient-lifecycle.md" target="_blank" rel="noopener">Recipient lifecycle</a></li>
+        </ul>
       </div>
     </div>
   </section>
