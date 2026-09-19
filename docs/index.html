@@ -355,10 +355,11 @@
   /* ---- Install ---- */
   .install-grid{ display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-4); }
   @media (max-width:760px){ .install-grid{ grid-template-columns:1fr; } }
+  .install-grid > div{ min-width:0; }
   .install-grid h3{ font-size:1.05rem; margin-bottom:var(--sp-2); }
   .req-list{ margin-top:var(--sp-3); font-size:0.9rem; color:var(--text-soft); }
-  .req-list li{ display:flex; gap:0.6em; padding-block:0.2em; }
-  .req-list li::before{ content:"—"; color:var(--accent-ink); }
+  .req-list li{ position:relative; padding:0.2em 0 0.2em 1.6em; overflow-wrap:anywhere; }
+  .req-list li::before{ content:"—"; color:var(--accent-ink); position:absolute; left:0; }
 
   /* ---- Footer ---- */
   footer.site{ padding-block:var(--sp-4); }
