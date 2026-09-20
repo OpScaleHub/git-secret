@@ -301,6 +301,8 @@
     display:grid; grid-template-columns:6.5rem 1fr; gap:var(--sp-3);
     padding:var(--sp-3) 0; border-top:1px solid var(--rule);
   }
+  .ledger-entry:last-child:nth-child(odd){ grid-column:1 / -1; }
+  .ledger-entry p code{ overflow-wrap:anywhere; }
   .ledger-entry:nth-child(2n){ border-left:1px solid var(--rule); padding-left:var(--sp-3); }
   @media (max-width:760px){ .ledger-entry:nth-child(2n){ border-left:none; padding-left:0; } }
   .ledger-code{ font-family:var(--font-mono); font-size:0.78rem; letter-spacing:0.06em; color:var(--accent-ink); padding-top:0.15em; }
@@ -753,7 +755,7 @@ rm private.asc</pre>
             <span class="panel-label">2 · Install the chart</span>
             <pre>helm install git-secret-controller \
   oci://ghcr.io/opscalehub/charts/git-secret-controller \
-  --version 0.10.0 --namespace git-secret-system \
+  --version <span data-latest-chart>0.10.0</span> --namespace git-secret-system \
   --set gpgPrivateKey.existingSecret=git-secret-controller-gpg</pre>
           </div>
           <div class="panel">
@@ -824,6 +826,21 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
     root.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
   });
+})();
+</script>
+<script>
+(function(){
+  // Keep the pinned chart version in the install snippet current. The
+  // hard-coded value is the fallback if the API is unreachable or rate-limited.
+  var els = document.querySelectorAll('[data-latest-chart]');
+  if (!els.length || !window.fetch) return;
+  fetch('https://api.github.com/repos/OpScaleHub/git-secret/releases/latest', {headers:{Accept:'application/vnd.github+json'}})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(j){
+      var v = j && /^v\d+\.\d+\.\d+$/.test(j.tag_name) ? j.tag_name.slice(1) : null;
+      if (v) els.forEach(function(e){ e.textContent = v; });
+    })
+    .catch(function(){});
 })();
 </script>
 </body>
