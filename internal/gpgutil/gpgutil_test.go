@@ -283,6 +283,55 @@ func TestCountRecipients(t *testing.T) {
 	}
 }
 
+// TestCountRecipients_NonRecipientKeyring: the admission webhook counts
+// recipients of objects that may not be wrapped to its own key (another
+// cluster's object, a pre-rewrap DR re-apply). The count must come from
+// the packet headers alone -- a keyring holding none of the recipients'
+// secret keys must still count, not fail.
+func TestCountRecipients_NonRecipientKeyring(t *testing.T) {
+	fpr := newTestKeyring(t, "Sealer <sealer@example.com>")
+	msg, err := Encrypt([]byte("x"), []string{fpr})
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	t.Setenv("GNUPGHOME", shortTempDir(t)) // empty: no secret keys at all
+	if n, err := CountRecipients(msg); err != nil || n != 1 {
+		t.Fatalf("CountRecipients from a non-recipient keyring = %d, %v; want 1, nil", n, err)
+	}
+}
+
+// TestCountRecipients_NeverUnwraps: counting must not perform a private-key
+// operation even when the keyring does hold a recipient's secret key. The
+// key here is passphrase-protected and the agent's cache is flushed, so any
+// attempt to unwrap fails under --batch; a successful count proves none was
+// made.
+func TestCountRecipients_NeverUnwraps(t *testing.T) {
+	skipUnlessGPGTestable(t)
+	t.Setenv("GNUPGHOME", shortTempDir(t))
+	gen := exec.Command(Binary, "--batch", "--pinentry-mode", "loopback", "--passphrase", "locked",
+		"--quick-generate-key", "Locked <locked@example.com>", "default", "default", "never")
+	var stderr bytes.Buffer
+	gen.Stderr = &stderr
+	if err := gen.Run(); err != nil {
+		t.Skipf("cannot generate a passphrase-protected key here: %v: %s", err, stderr.String())
+	}
+	keys, err := ListSecretKeys()
+	if err != nil || len(keys) != 1 {
+		t.Fatalf("ListSecretKeys: %v (got %d)", err, len(keys))
+	}
+	msg, err := Encrypt([]byte("x"), []string{keys[0].Fingerprint})
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	// Drop any passphrase the agent cached while generating the key.
+	_ = exec.Command("gpgconf", "--kill", "gpg-agent").Run()
+
+	if n, err := CountRecipients(msg); err != nil || n != 1 {
+		t.Fatalf("CountRecipients with a locked recipient key = %d, %v; want 1, nil (it must not try to unwrap)", n, err)
+	}
+}
+
 func TestExportPublicKey(t *testing.T) {
 	fpr := newTestKeyring(t, "Export <export@example.com>")
 

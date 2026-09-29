@@ -214,8 +214,14 @@ func ExportPublicKey(fpr string) ([]byte, error) {
 // message is encrypted to, counting its pubkey-enc packets. It does not
 // resolve them to fingerprints -- the packet carries a recipient's
 // encryption-subkey ID, not the primary-key fingerprint -- so this is a
-// count check only (see sealer.VerifyRecipients). --list-packets does not
-// decrypt, so no secret key or agent is required.
+// count check only (see sealer.VerifyRecipients).
+//
+// --list-only is load-bearing: plain --list-packets tries to decrypt, so
+// with a recipient's secret key present it unwraps the session key (a
+// private-key operation on the admission path), and without one it exits
+// 2 and the count is lost. With --list-only gpg only walks the packet
+// headers: no secret key, no agent, no decryption, whoever's keyring this
+// is.
 //
 // It runs under a 5s timeout: this parses attacker-controlled input (the
 // GitSecret's encryptedKey) on the admission webhook path, and a crafted
@@ -223,7 +229,7 @@ func ExportPublicKey(fpr string) ([]byte, error) {
 func CountRecipients(armored []byte) (int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := runCtx(ctx, armored, "--batch", "--list-packets")
+	out, err := runCtx(ctx, armored, "--batch", "--list-only", "--list-packets")
 	if err != nil {
 		return 0, fmt.Errorf("gpgutil: list-packets: %w", err)
 	}
