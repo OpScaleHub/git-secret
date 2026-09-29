@@ -7,8 +7,19 @@ under `docs/`, chart READMEs, CLI help text, the Helm chart, the controller,
 webhook, sealing UI and the CLI — reviewed statically **and** exercised live on
 a local `kind` cluster (Kubernetes v1.34) with the image built from HEAD.
 
-This is an audit, not a change set. Nothing here has been fixed yet; the
-proposed backlog is at the end.
+This is an audit, not a change set. The proposed backlog is at the end.
+
+## Maintainer decisions (2026-09-29)
+
+| Question | Decision |
+|---|---|
+| B4 chart naming | **Fix** the doubled names. Handled as part of the rename (the chart becomes `keyfold`). |
+| L1 `git-secret-server` | **Remove.** Its last consumer already runs on the CRD. |
+| M7 competitor framing | **Remove every sealed-secrets / kubeseal reference** in docs, code and help — done in PR #103. |
+| M9 name collision | **Rename.** Proposal: [ADR-0001 — Keyfold](../adr/0001-product-name.md). |
+
+Deployments of this project elsewhere are separate projects and are not
+tracked here; compatibility notes go in `UPGRADING.md` for any user.
 
 ---
 
@@ -113,8 +124,7 @@ chart name" rule. With the release name every doc uses
 (`git-secret-controller`), resources are `git-secret-controller-git-secret-controller-*`.
 `sealing-console.md` (`svc/git-secret-controller-seal-ui`) and `keyring.md`
 (`git-secret-controller-pubkey.<ns>.svc`) give names that do not exist.
-**Compat-sensitive:** fixing the helper renames live resources (k0s-homelab
-runs this chart) — needs an upgrade note, or fix the docs only.
+**Decision:** fix it, as part of the rename (ADR-0001), with an `UPGRADING.md` note.
 
 ### B5 — Selector overlap between controller and seal-UI · **Low–Medium**
 
@@ -357,8 +367,7 @@ docs/
 the same search space. That hurts discoverability and invites confusion with
 the CLI half of this project. Plus three internal legacy names persist in
 formats (`.repo-enc.yml`, `repo-enc:v1:`, `SECRETIZE_SKIP_HOOKS`,
-`REPO_ENC_CONFIG_DIR`). Renaming is expensive; flagged for a decision, not
-proposed as work.
+`REPO_ENC_CONFIG_DIR`). **Decision: rename** — see [ADR-0001](../adr/0001-product-name.md) (Keyfold).
 
 ---
 
@@ -368,12 +377,9 @@ proposed as work.
 
 Untouched since v0.6, yet every release still builds, signs and publishes it:
 4 binaries, a container image, a Helm chart, CI lint, and it is listed on the
-landing page's download list. The only org reference found is a comment in
-`OpScaleLab/think-lab-gitops` mentioning a `git-secret-server-downtime` app.
-Recommendation: confirm DownTime is migrated to the CRD → announce removal in
-the next minor's CHANGELOG/UPGRADING → stop publishing artifacts → delete
-`cmd/git-secret-server`, `internal/decryptserver`, `charts/git-secret-server`
-in the following release.
+landing page's download list. **Decision: remove.** Delete `cmd/git-secret-server`, `internal/decryptserver`,
+`charts/git-secret-server`, their release jobs, CI lint and every doc mention;
+note it in CHANGELOG/UPGRADING. Last published artifacts stay available.
 
 ### L2 — ADRs
 
@@ -397,28 +403,29 @@ in the same PR; don't redo #77/#78/#79.
 |---|---|---|---|---|
 | 1 | Webhook `CountRecipients` must not decrypt (`--list-only`) + non-recipient regression test + doc fix | B1 | S | safe |
 | 2 | Chart: PSS-restricted by default, controller component label, seal-UI requires keyring + isolated GNUPGHOME, secure metrics | B2 B3 B5 B8 | M | selector change ⇒ upgrade note |
-| 3 | Chart naming (fullname dedupe) **or** doc-only fix | B4 | S | **decision** |
-| 4 | `git-secret-seal unseal` (offline read, stdout only) | G1 | M | additive |
-| 5 | `git-secret-seal rekey` + `set KEY` (single-value update) | G2 | M | additive |
-| 6 | Bulk recipient ops (dir/glob) + `--keyring` with pubkeys on rewrap + key/fingerprint binding + human errors | G3 G4 G5 B9 | M | additive |
-| 7 | Small CLI fixes: provenance `-dirty`, `verify` with no HEAD, empty `status`/`target` in output | B6 B7 B10 | S | safe |
-| 8 | `git-secret-server` removal plan | L1 | S→M | **decision**, breaking later |
-| 9 | Concepts + glossary page; terminology sweep across code help, docs, landing | M4 G6 | M | docs |
-| 10 | README restructure, docs IA, stale-ref sweep, generic GitOps wording, competitor policy, ADRs reinstated | M3 M5 M6 M7 M8 L2 | L | docs |
-| 11 | Landing page rewrite — Kubernetes-first, recovery-first; CLI as a secondary section | M1 M2 | L | docs |
-| 12 | `kind` e2e in CI codifying §2; a runnable `examples/kubernetes/` | G7 | M | CI |
+| 3 | Remove `git-secret-server` (code, chart, release jobs, docs) | L1 | M | breaking (announced) |
+| 4 | Rename to Keyfold per ADR-0001, incl. chart fullname fix and `keyfold migrate` | M9 B4 | L | breaking, migration tool |
+| 5 | `unseal` (offline read, stdout only) | G1 | M | additive |
+| 6 | `rekey` + `set KEY` (single-value update) | G2 | M | additive |
+| 7 | Bulk recipient ops (dir/glob) + `--keyring` with pubkeys on rewrap + key/fingerprint binding + human errors | G3 G4 G5 B9 | M | additive |
+| 8 | Small CLI fixes: provenance `-dirty`, `verify` with no HEAD, empty `status`/`target` in output | B6 B7 B10 | S | safe |
+| 9 | Concepts + glossary page; terminology sweep across help, docs, landing | M4 G6 | M | docs |
+| 10 | README restructure, docs IA, stale-ref sweep, generic GitOps wording, ADRs reinstated | M3 M5 M6 M8 L2 | L | docs |
+| 11 | Landing page rewrite — Kubernetes-first, recovery-first; CLI secondary | M1 M2 | L | docs |
+| 12 | `kind` e2e in CI codifying §2; runnable `examples/kubernetes/` | G7 | M | CI |
 | 13 | Final consistency audit + release | all | S | — |
 
-Order: 1 → 2/3 → 4/5/6/7 (parallel) → 8 → 9 → 10 → 11 → 12 → 13.
-Docs (9–11) deliberately come after the CLI gaps (4–6) so the docs describe
-commands that exist.
+Order: 1 → 2 → 3 → 4 (rename) → 5/6/7/8 (parallel, built under the new name) →
+9 → 10 → 11 → 12 → 13. The rename lands before new commands and docs so
+nothing is written twice; docs (9–11) come after the commands so they describe
+commands that exist. M7 is already done (PR #103).
 
 Open Dependabot PRs #99–#102 (actions group, controller-runtime 0.25.1 patch,
 debian + golang base-image digests) are routine and can land before item 1.
 
 ### Proposed product definition (for 9–11)
 
-> **git-secret — recoverable, multi-recipient secrets for Kubernetes, stored
+> **Keyfold — recoverable, multi-recipient secrets for Kubernetes, stored
 > encrypted in Git.** Seal once to every cluster and a recovery key; a
 > controller turns it into a `Secret`. Add a cluster without re-encrypting a
 > single value. Lose a cluster, a controller or a key — recover from the repo
