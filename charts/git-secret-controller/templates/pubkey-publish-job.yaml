@@ -61,6 +61,7 @@ spec:
     metadata:
       labels:
         {{- include "git-secret-controller.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: publish-pubkey
     spec:
       serviceAccountName: {{ $name }}
       restartPolicy: Never

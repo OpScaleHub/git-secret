@@ -34,6 +34,7 @@ import (
 	gitsecretv1alpha1 "github.com/OpScaleHub/git-secret/api/v1alpha1"
 	"github.com/OpScaleHub/git-secret/internal/controller"
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/git-secret/internal/metricsauth"
 	gswebhook "github.com/OpScaleHub/git-secret/internal/webhook"
 )
 
@@ -53,6 +54,7 @@ func main() {
 func run(args []string, environ []string) int {
 	fs := flag.NewFlagSet("git-secret-controller", flag.ContinueOnError)
 	metricsAddr := fs.String("metrics-bind-address", ":8443", "address the metrics endpoint binds to (env METRICS_BIND_ADDRESS)")
+	metricsSecure := fs.Bool("metrics-secure", true, "serve metrics over HTTPS behind Kubernetes authn/authz (TokenReview + SubjectAccessReview); false serves plain, unauthenticated HTTP (env METRICS_SECURE=false)")
 	healthAddr := fs.String("health-probe-bind-address", ":8081", "address the liveness/readiness probe endpoint binds to (env HEALTH_PROBE_BIND_ADDRESS)")
 	leaderElect := fs.Bool("leader-elect", false, "enable leader election so only one replica reconciles at a time (env LEADER_ELECT)")
 	watchNamespaces := fs.String("watch-namespaces", "", "comma-separated namespaces to confine the cache and reconciler to (env WATCH_NAMESPACES); empty watches all namespaces")
@@ -155,10 +157,8 @@ func run(args []string, environ []string) int {
 	pubKeyAddr := firstNonEmpty(*servePubKeyAddr, env["SERVE_PUBKEY_ADDRESS"])
 
 	mgrOpts := ctrl.Options{
-		Scheme: scheme,
-		Metrics: server.Options{
-			BindAddress: *metricsAddr,
-		},
+		Scheme:                 scheme,
+		Metrics:                metricsOptions(*metricsAddr, *metricsSecure && env["METRICS_SECURE"] != "false"),
 		HealthProbeBindAddress: *healthAddr,
 		LeaderElection:         *leaderElect,
 		LeaderElectionID:       "git-secret-controller.git-secret.opscalehub.io",
@@ -298,6 +298,20 @@ func servePubKey(addr, fingerprint string, pub []byte) manager.Runnable {
 		}
 		return nil
 	})
+}
+
+// metricsOptions serves /metrics over HTTPS behind the apiserver's
+// TokenReview + SubjectAccessReview by default, so a scraper needs a token
+// allowed to GET the /metrics non-resource URL; the serving cert is
+// self-signed and generated in memory. secure=false keeps the old plain,
+// unauthenticated HTTP endpoint as an explicit opt-out.
+func metricsOptions(addr string, secure bool) server.Options {
+	opts := server.Options{BindAddress: addr}
+	if secure {
+		opts.SecureServing = true
+		opts.FilterProvider = metricsauth.FilterProvider
+	}
+	return opts
 }
 
 func envMap(environ []string) map[string]string {

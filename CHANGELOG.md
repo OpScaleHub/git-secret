@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Changed — Helm chart (#106; see UPGRADING.md)
+
+- **Installs under Pod Security `restricted`.** Every pod sets
+  `seccompProfile: RuntimeDefault`; previously the controller, seal-UI and
+  publish-pubkey Job were all rejected and the install failed on its
+  post-install hook.
+- **No more doubled names.** `helm install git-secret-controller …` yields
+  `git-secret-controller`, not `git-secret-controller-git-secret-controller`
+  — the Service names the docs already used are now the real ones.
+- **Controller pods are selected by `app.kubernetes.io/component: controller`**,
+  so the controller Deployment and the webhook/pubkey/metrics Services no longer
+  also match the seal-UI and publish-Job pods.
+- **Metrics are authenticated by default**: HTTPS (self-signed) with each
+  scrape's token checked by `TokenReview` + `SubjectAccessReview`; a
+  `<fullname>-metrics-reader` ClusterRole is provided. `metrics.secure: false`
+  keeps plain HTTP. Implemented on client-go directly
+  (`internal/metricsauth`) rather than controller-runtime's filter package,
+  which would add `k8s.io/apiserver` and ~30 MB to the controller binary.
+- **The in-cluster seal UI requires `sealUi.keyringConfigMap`**, and
+  `git-secret-seal ui --isolated-keyring` refuses to start unless every keyring
+  entry carries its `publicKey`. Previously the default configuration failed
+  every seal (`can't create directory …/.gnupg: Read-only file system`).
+- Chart README: the `--rewrap … > gitsecret.yaml` example truncated its own
+  input; the stale "no per-namespace restriction" note is replaced with
+  `watchNamespaces`.
+
 ### Fixed
 
 - **Admission webhook no longer decrypts, and no longer rejects objects it
