@@ -1,6 +1,5 @@
 // Command git-secret-seal produces a GitSecret manifest (api/v1alpha1)
-// from plaintext values, GPG-wrapped to one or more recipients -- the
-// "kubeseal" analog for the GitSecret CRD. See internal/sealer for the
+// from plaintext values, GPG-wrapped to one or more recipients. See internal/sealer for the
 // underlying cryptography and internal/controller for how the ciphertext
 // this emits gets consumed.
 //
@@ -52,9 +51,9 @@ Usage:
                                 Repeatable. At least one recipient is required
                                 (via --recipient or --keyring). Passing every
                                 current human + controller recipient, not just
-                                the controller's own key, is what avoids
-                                sealed-secrets' single-keypair DR weakness --
-                                see docs/security/design-rationale.md.
+                                the controller's own key, is what keeps the
+                                object recoverable if the controller key is
+                                lost -- see docs/security/disaster-recovery.md.
   --keyring FILE                A keyring file (recipients: [{fingerprint,
                                 role}]) whose fingerprints are added to the
                                 recipient set and whose roles are recorded on

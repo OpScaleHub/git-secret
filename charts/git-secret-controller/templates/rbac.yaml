@@ -12,7 +12,7 @@ rules:
   # Cluster-scoped by default: the controller watches GitSecret objects in
   # every namespace, and a GitSecret in any namespace materialises a Secret
   # in that same namespace -- so read+write on Secrets is inherently
-  # cluster-wide here, the same footprint sealed-secrets and ESO carry. Set
+  # cluster-wide here, as for any Secret-materialising controller. Set
   # watchNamespaces in values.yaml to restrict both to a fixed list: the
   # chart then emits a namespaced Role/RoleBinding per entry instead of
   # these two rules.
