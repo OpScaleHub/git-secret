@@ -29,13 +29,13 @@ one Git host.
 
 ### Compared to
 
-| | `git-secret` | Bitnami sealed-secrets | SOPS | Vault |
-|---|---|---|---|---|
-| Ciphertext lives in Git | yes | yes | yes | no (external store) |
-| Survives loss of the cluster/controller key | **yes** (multi-recipient) | no (single keypair) | yes | n/a |
-| Kubernetes-native reconcile | yes (CRD + controller) | yes | via operator | via ESO/agent |
-| Useful with no Kubernetes | yes (CLI) | no | yes | no |
-| External service to operate | no | no | no | yes |
+| | `git-secret` | SOPS | Vault |
+|---|---|---|---|
+| Ciphertext lives in Git | yes | yes | no (external store) |
+| Survives loss of the cluster/controller key | **yes** (multi-recipient) | yes | n/a |
+| Kubernetes-native reconcile | yes (CRD + controller) | via operator | via ESO/agent |
+| Useful with no Kubernetes | yes (CLI) | yes | no |
+| External service to operate | no | no | yes |
 
 See [docs/security/design-rationale.md](docs/security/design-rationale.md) for how
 the architecture got here.
@@ -305,14 +305,13 @@ by hand. `GitSecret` is a native custom resource
 ciphertext lives **inline in the object itself** — no repo clone, no SSH
 transport, no network hop at all in the decrypt path. Delivered by whatever
 already applies manifests to your cluster (ArgoCD, `kubectl apply`, ...), the
-same way any other Kubernetes object gets there. Modeled on Bitnami
-`sealed-secrets`' shape, but built on `git-secret`'s existing multi-recipient
-GPG cryptography instead of a single controller keypair — a lost or rotated
-controller key is a `--rewrap` away from recovery via any other current
+same way any other Kubernetes object gets there. The content key is wrapped to
+every recipient you choose (`git-secret`'s multi-recipient GPG cryptography),
+not to a single controller keypair — a lost or rotated controller key is a `--rewrap` away from recovery via any other current
 recipient, not a permanent loss.
 
 ```bash
-# Seal plaintext into a GitSecret manifest (the kubeseal equivalent):
+# Seal plaintext into a GitSecret manifest:
 git-secret-seal --namespace myapp --name my-secrets \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> \
   --from-literal API_KEY=... --from-literal DB_PASSWORD=... > gitsecret.yaml

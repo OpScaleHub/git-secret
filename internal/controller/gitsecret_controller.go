@@ -153,7 +153,7 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// Owning the target Secret (rather than ESO's adopt-in-place
 		// Merge/Retain pattern) is deliberate here: a GitSecret created
 		// fresh is the sole source of truth for its target, so deleting
-		// it should delete the Secret too, same as sealed-secrets.
+		// it should delete the Secret too.
 		// Taking over a Secret this GitSecret does not already own is
 		// gated on spec.target.adopt and checked above -- by the time
 		// CreateOrUpdate runs here, either the Secret is ours, it does

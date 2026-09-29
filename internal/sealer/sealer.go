@@ -109,9 +109,8 @@ func sortedCopy(in []string) []string {
 // Rewrap re-encrypts spec's content key to newRecipients without touching
 // EncryptedData at all -- adding or removing a recipient (a human, or the
 // controller's own key during a DR/rotation event) never re-encrypts a
-// single value, only this one small blob. This is the specific property
-// that avoids Bitnami sealed-secrets' single-controller-keypair weakness:
-// as long as at least one currently-valid recipient's key is available to
+// single value, only this one small blob. This is what keeps a single
+// controller keypair from ever being the only way in: as long as at least one currently-valid recipient's key is available to
 // call Rewrap with, a lost or rotated controller identity is a re-wrap
 // away from recovery, not a full re-seal of every secret.
 //

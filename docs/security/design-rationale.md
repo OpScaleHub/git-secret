@@ -73,10 +73,10 @@ longer the recommended integration and receives no new feature work.
 
 ### 4. Native `GitSecret` CRD + controller — current
 
-Bitnami `sealed-secrets`' shape — **ciphertext inline in a CRD object, delivered
-by the normal manifest-apply path, decrypted by a controller holding a matching
-private key** — applied to `git-secret`'s existing GPG-backed multi-recipient
-cryptography instead of copying `sealed-secrets`' single-keypair design.
+**Ciphertext inline in a CRD object, delivered by the normal manifest-apply
+path, decrypted by a controller holding a matching private key** — built on
+`git-secret`'s existing GPG-backed multi-recipient cryptography, so no single
+controller keypair is ever the only way in.
 
 - `spec.encryptedKey` is the GPG-wrapped content key (same mechanism as the
   `gpg` file backend). `spec.encryptedData` holds one AEAD envelope per target
@@ -89,14 +89,14 @@ cryptography instead of copying `sealed-secrets`' single-keypair design.
   or offline backup identities. `internal/sealer.Rewrap` re-encrypts *only*
   `encryptedKey`, leaving every `encryptedData` value byte-for-byte untouched. A
   lost controller key is a `--rewrap` away from recovery via any other current
-  recipient — not a permanent loss. This is the specific `sealed-secrets`
-  weakness being designed out.
+  recipient — not a permanent loss. A single controller keypair as the only
+  way to decrypt is the specific failure mode being designed out.
 - `namespace/name/key` is bound into each value's AEAD additional-authenticated-
   data, so an entry copied into a different `GitSecret` (or a renamed one) fails
   authentication rather than decrypting where it was not sealed for.
-- Built on `controller-runtime` (same as ESO, cert-manager, `sealed-secrets`) —
+- Built on `controller-runtime` (same as ESO and cert-manager) —
   the informer/reconcile/leader-election machinery is not worth hand-rolling.
-- `git-secret-seal` is the `kubeseal` equivalent: produces a manifest from
+- `git-secret-seal` is the authoring tool: produces a manifest from
   `--from-literal` / `--from-env-file` / an existing Secret, and rewraps an
   existing one's recipient list with `--rewrap`.
 
