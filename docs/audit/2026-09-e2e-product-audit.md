@@ -332,7 +332,7 @@ comparison page, or none) and apply it everywhere.
 
 ### M8 — Information architecture · Medium
 
-README is 452 lines; the Kubernetes section starts at line 294 — the first
+README is 452 lines; the Kubernetes section starts at line 300 — the first
 two-thirds are CLI and kubectl-plugin detail (`skip-worktree`, pull-conflict
 recovery). There is no single "Concepts"
 page explaining the envelope → recipients → rewrap → rotation model; it is
