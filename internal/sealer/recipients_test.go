@@ -60,6 +60,35 @@ func TestRewrap_ReplacesRecipients(t *testing.T) {
 	}
 }
 
+// TestVerifyRecipients_FromNonRecipientKeyring is the admission-webhook
+// view: a controller whose own key is not among an object's recipients
+// (another cluster's object, a DR re-apply before the rewrap) must still be
+// able to check the count -- admit the consistent object, reject the
+// drifted one -- rather than fail on "No secret key".
+func TestVerifyRecipients_FromNonRecipientKeyring(t *testing.T) {
+	sealerHome := shortTempDir(t)
+	sealerFpr := genTestKey(t, sealerHome)
+	controllerHome := shortTempDir(t)
+	genTestKey(t, controllerHome) // this cluster's key: not a recipient
+
+	t.Setenv("GNUPGHOME", sealerHome)
+	spec, err := Seal("prod", "app", map[string]string{"K": "v"}, []string{sealerFpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+
+	t.Setenv("GNUPGHOME", controllerHome)
+	if err := VerifyRecipients(spec); err != nil {
+		t.Fatalf("VerifyRecipients from a non-recipient keyring: %v", err)
+	}
+	drifted := spec
+	drifted.Recipients = append([]string{}, spec.Recipients...)
+	drifted.Recipients = append(drifted.Recipients, "0000000000000000000000000000000000000000")
+	if err := VerifyRecipients(drifted); err == nil {
+		t.Fatal("VerifyRecipients from a non-recipient keyring missed a count mismatch")
+	}
+}
+
 func TestVerifyRecipients_DetectsDrift(t *testing.T) {
 	home := shortTempDir(t)
 	fpr := genTestKey(t, home)

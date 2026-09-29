@@ -18,7 +18,13 @@ On every `CREATE` / `UPDATE` of a `GitSecret`:
    recovery key into every `GitSecret` in `prod`.
 
 It does **not** decrypt, and it is not on the reconcile path — it only gates
-what gets written to the API.
+what gets written to the API. The recipient count is read from the wrapped
+key's packet headers (`gpg --list-only --list-packets`): no private-key
+operation, no gpg-agent, and it works the same whether or not this
+controller's own key is among the recipients — so an object sealed for another
+cluster, or re-applied during recovery before its rewrap, is admitted on the
+same rules and then reported `UnsealFailed` by the controller rather than
+rejected at admission.
 
 ## Certificates — no cert-manager
 

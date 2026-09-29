@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Admission webhook no longer decrypts, and no longer rejects objects it
+  cannot decrypt (#105).** The recipient-count check ran `gpg --list-packets`,
+  which attempts decryption: with this controller's key among the recipients
+  it unwrapped the content key on every admission request; without it gpg
+  exited 2 and the webhook denied the object with a raw gpg error — breaking
+  multi-cluster objects and recovery re-applies. It now uses
+  `gpg --list-only --list-packets`, which reads only the packet headers.
+
 ## v0.10.0 — 2026-09-03
 
 ### Whole-file encryption binds the repository (#79)
