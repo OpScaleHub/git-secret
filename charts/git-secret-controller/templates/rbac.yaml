@@ -33,6 +33,16 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+{{- if .Values.metrics.secure }}
+  # Secure metrics: each scrape's bearer token is checked with a
+  # TokenReview and its user with a SubjectAccessReview for GET /metrics.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+{{- end }}
 {{- if .Values.webhook.enabled }}
   # The webhook reads a target Namespace's required-recipients annotation,
   # and the elected leader patches its own self-signed CA into this one
@@ -135,4 +145,18 @@ subjects:
   - kind: ServiceAccount
     name: {{ $saName }}
     namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.metrics.secure }}
+---
+# Bind this to whatever scrapes the controller (e.g. Prometheus's
+# ServiceAccount) -- secure metrics answer 401/403 to anyone else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-metrics-reader
+  labels:
+    {{- include "git-secret-controller.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
 {{- end }}

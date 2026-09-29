@@ -29,6 +29,7 @@ var uiPage []byte
 const uiHelp = `git-secret-seal ui - a local web form for producing GitSecret manifests
 
   git-secret-seal ui [--addr 127.0.0.1:8765] [--keyring FILE|URL] [--namespace NS]
+                     [--isolated-keyring]
 
 Serves a single-page form: pick recipients, enter key/value pairs, get a
 GitSecret manifest to copy. It is public-key only -- it never decrypts,
@@ -41,6 +42,12 @@ locally, or in-cluster reached only by 'kubectl port-forward'.
                        entries may carry an armored publicKey, imported into an
                        ephemeral keyring so sealing works without the operator's
                        own gpg keyring
+  --isolated-keyring   never use an existing gpg keyring: seal only to the
+                       keyring's embedded public keys, in a private temporary
+                       GNUPGHOME. Requires --keyring, and every entry must
+                       carry a publicKey. This is how the in-cluster
+                       deployment runs (read-only root filesystem, no
+                       operator keyring).
   --namespace NS       pre-fill the namespace field
   --max-inflight N     cap concurrent /api/seal requests (each forks gpg);
                        excess requests get 429 (default 4)
@@ -60,6 +67,7 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	keyringSrc := fs.String("keyring", "", "keyring file or URL to pre-fill recipients from")
 	namespace := fs.String("namespace", "", "pre-fill the namespace field")
 	maxInflight := fs.Int("max-inflight", 4, "cap concurrent /api/seal requests")
+	isolated := fs.Bool("isolated-keyring", false, "seal only to the keyring's embedded public keys, in a private GNUPGHOME (in-cluster mode)")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprint(stderr, uiHelp)
 		return exitUsage
@@ -67,6 +75,13 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	if !gpgutil.Available() {
 		fmt.Fprintln(stderr, "error: gpg binary not found on PATH")
 		return exitError
+	}
+
+	if *isolated {
+		if err := checkIsolatedKeyring(*keyringSrc); err != nil {
+			fmt.Fprintln(stderr, "error: --isolated-keyring:", err)
+			return exitUsage
+		}
 	}
 
 	var recips []keyringEntry
@@ -80,7 +95,7 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 		// isolated, process-private GNUPGHOME rather than the operator's
 		// own keyring -- this is what makes the in-cluster deployment work
 		// (no operator keyring, read-only root filesystem).
-		if hasPub, _ := keyringHasPublicKeys(*keyringSrc); hasPub {
+		if hasPub, _ := keyringHasPublicKeys(*keyringSrc); hasPub || *isolated {
 			home, err := os.MkdirTemp("", "git-secret-seal-ui-gnupg-")
 			if err != nil {
 				fmt.Fprintln(stderr, "error: create keyring dir:", err)
