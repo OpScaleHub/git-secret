@@ -36,6 +36,14 @@
   only; refuses to print to a terminal without `--show`. A keyring holding none
   of the recipient keys gets an error naming the fingerprints and roles needed.
   New disaster-recovery scenario **H**.
+- **`keyfold set KEY -f FILE`** and **`keyfold rekey -f FILE`** (#110). `set`
+  changes or adds one value (read from stdin or `--value-file`, never argv)
+  without re-entering the others; `rekey` re-encrypts every value under a fresh
+  content key so a content key a removed recipient kept opens nothing current.
+  Both re-wrap to the object's existing `spec.recipients` and keep its target
+  and roles; `set` re-stamps provenance. The recipient-lifecycle and
+  disaster-recovery docs now distinguish **rewrap** (who can unwrap), **rekey**
+  (new content key, same values) and **secret rotation** (new values at source).
 
 ### Removed
 

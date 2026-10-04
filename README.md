@@ -328,6 +328,10 @@ keyfold recipients list -f gitsecret.yaml       # who can decrypt, and their rol
 # Read the values back with any recipient's key -- no cluster needed:
 keyfold unseal -f gitsecret.yaml | jq .
 
+# Change one value without re-entering the others / retire the content key:
+printf %s "$NEW_PASSWORD" | keyfold set DB_PASSWORD -f gitsecret.yaml > gitsecret.new.yaml
+keyfold rekey -f gitsecret.yaml > gitsecret.new.yaml
+
 # ...or set the whole list explicitly:
 keyfold --rewrap gitsecret.yaml \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
