@@ -38,9 +38,9 @@ type InitResult struct {
 	HooksInstalled   []string
 	// BackendDefaultedToFile is true when no --key-backend was given and
 	// the repo was set up on "file". The caller uses it to print a nudge:
-	// "file" is a fine local on-ramp but is structurally incompatible with
-	// keyfold-controller or any automated consumer (its key never
-	// enters git), and switching later means re-sealing everything.
+	// "file" is a fine solo on-ramp, but its raw key never enters git, so
+	// every teammate or CI job needs a hand-delivered copy, and switching
+	// later means re-encrypting everything.
 	BackendDefaultedToFile bool
 }
 

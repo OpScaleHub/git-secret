@@ -1,6 +1,6 @@
 # Threat model
 
-Status: **initial draft** (tracking issue #38). Covers the two shipped shapes:
+Covers the two shipped shapes:
 
 1. **CLI + Git hooks** — `git-keyfold` encrypting files in a repo, `file` / `env` /
    `gpg` key backends.
@@ -24,7 +24,7 @@ must preserve. It is reviewed before any new network-facing surface is added.
 | Content-encryption keys (per file / per `GitSecret`) | Only ever in memory, wrapped at rest in `key.gpg` / `spec.encryptedKey` | **Critical** |
 | Recipient **private** keys (human) | Operator GPG keyrings, offline backups | **Critical** |
 | Recipient **private** key (controller) | One Kubernetes `Secret`, imported into an ephemeral `GNUPGHOME` at startup | **Critical** |
-| Recipient **public** keys | Local keyrings today; a discoverable keyring is proposed (#47) | Public |
+| Recipient **public** keys | Local keyrings, committed [keyring files](../architecture/keyring.md), the controller's `/pubkey` endpoint or published ConfigMap | Public — but whoever can edit a keyring decides who can decrypt what is sealed with it |
 | `GitSecret` objects | etcd, Git (as manifests), every apply path | Confidential |
 | Target `Secret` objects | etcd, mounted into workloads | **Critical** |
 | Controller ServiceAccount token / RBAC | Cluster | High |
@@ -37,7 +37,7 @@ must preserve. It is reviewed before any new network-facing surface is added.
 ## 2. Trust boundaries
 
 ```
- operator workstation ── git push ──▶ Git host ── apply path (ArgoCD/kubectl) ──▶ kube-apiserver
+ operator workstation ── git push ──▶ Git host ── apply path (GitOps/kubectl) ──▶ kube-apiserver
         │                               │                                              │
    local gpg keyring              (ciphertext only)                            keyfold-controller
         │                                                                             │
@@ -49,7 +49,7 @@ must preserve. It is reviewed before any new network-facing surface is added.
 - **Git host is untrusted for confidentiality**, trusted for availability/integrity
   only to the extent commit history is (see threat T10). It only ever holds
   ciphertext.
-- **The apply path (ArgoCD, `kubectl`) is trusted for integrity** — it decides
+- **The apply path (a GitOps tool, `kubectl`) is trusted for integrity** — it decides
   which `GitSecret` objects reach the cluster. It never sees plaintext.
 - **The controller is trusted with its own key only.** It can decrypt exactly the
   `GitSecret`s whose `encryptedKey` is wrapped to its identity, and nothing else.
@@ -57,7 +57,7 @@ must preserve. It is reviewed before any new network-facing surface is added.
   CLI workflow. Compromise there is game over for anything that workstation can
   decrypt (T6).
 - **etcd / the apiserver is trusted.** A cluster admin who can read `Secret`s
-  needs no help from `git-keyfold` (T8) — this project does not defend against a
+  needs no help from Keyfold (T8) — this project does not defend against a
   malicious cluster administrator, and does not claim to.
 
 ---
@@ -75,11 +75,11 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 | T5 | Malicious / oversized `GitSecret` applied | I / L (DoS) | **Handled.** `encryptedData` is capped at 1024 entries (CRD `maxProperties` + `sealer.MaxEntries`) and 1 MiB per encoded value; the resulting `Secret` is separately capped by the apiserver. |
 | T6 | Operator workstation compromised | C | **Out of scope to prevent.** Blast radius = everything that workstation's keyring can decrypt. Mitigation is operational: per-person keys, hardware-backed keys, offline recovery key not on any workstation. |
 | T7 | Plaintext leak via logs / Events / `status` / metrics | C | **Invariant (I3), regression-tested.** `TestUnseal_ErrorDoesNotLeakPlaintext` asserts a tampered-envelope failure never echoes the plaintext into the returned error (which the controller copies into `.status`). |
-| T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-keyfold`. |
+| T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching Keyfold. |
 | T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller — per-cluster / per-env recipient sets ([multi-cluster.md](../architecture/multi-cluster.md)); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
 | T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | **Observable, not yet prevented.** `keyfold` stamps `source-revision` and the controller mirrors it to `status.sourceRevision` (a `Revision` printer column), so a rollback is visible ([provenance.md](../architecture/provenance.md)). Refusing to go below an expected revision is a separate design question. |
 | T10-CLI | Rollback of a whole-file blob in Git (CLI path) | I | **Not prevented, by the same reasoning as T10.** Restoring an earlier ciphertext version of a tracked file authenticates cleanly — the AAD binds the file's *identity* (repo + path), not its *version*, and there is no controller/counter to bind freshness to. `verify` / `pre-push` catch *plaintext* in history, not a stale-but-valid ciphertext. Mitigation is operational: review the diff. **Cross-repository** blob reuse *is* prevented: since a `repo_id` (`.keyfold.yml`, generated by `init`) is folded into the whole-file AAD (a v2 envelope, `crypto/envelope.go`), a blob sealed in one repo fails authentication if dropped into another that merely shares the key. Repos initialised before `repo_id` existed seal v1 (path-only AAD) and are unaffected. |
-| T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Partial (review aid + count check).** `spec.recipients` lists the fingerprints on the object (a one-line diff in review), and the optional [validating webhook](../architecture/admission-webhook.md) rejects a `GitSecret` whose `spec.recipients` *count* disagrees with the blob, plus enforces a per-namespace required-recipient set. It is **not** cryptographic authentication of the set: `--list-packets` exposes encryption-subkey IDs, not primary fingerprints, so a substitution that keeps the count constant (seal to `[controller, attacker]`, list `[controller, human]`) passes both the webhook and a casual diff read. Real per-fingerprint verification is #40 (see invariant #9). |
+| T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Partial (review aid + count check).** `spec.recipients` lists the fingerprints on the object (a one-line diff in review), and the optional [validating webhook](../architecture/admission-webhook.md) rejects a `GitSecret` whose `spec.recipients` *count* disagrees with the blob, plus enforces a per-namespace required-recipient set. It is **not** cryptographic authentication of the set: `--list-packets` exposes encryption-subkey IDs, not primary fingerprints, so a substitution that keeps the count constant (seal to `[controller, attacker]`, list `[controller, human]`) passes both the webhook and a casual diff read. Per-fingerprint verification is not implemented (see invariant #9). |
 | T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Handled.** A colliding `Secret` this `GitSecret` does not own is left untouched and a `TargetConflict` Ready=False condition is set, unless the operator opts in with `spec.target.adopt`. Tests `TestReconcile_DoesNotClobberUnownedSecret` / `_AdoptsUnownedSecretWhenOptedIn`. |
 | T13 | Plaintext committed to Git (CLI path) | C | **Handled.** `verify` + the `pre-push` hook fail closed; `KEYFOLD_SKIP_HOOKS` is opt-in per-invocation, never tied to ambient `CI`. |
 | T14 | Recipient specified as a short key ID / email, resolving to the wrong key | C | **Handled.** `gpgutil.ValidFingerprint` requires a full 40/64-hex fingerprint everywhere recipients are accepted. |
@@ -118,7 +118,7 @@ regression regardless of the feature it enables.
    visible in the Git diff of the object, not buried in an opaque re-encrypted
    blob. This is a review aid, not proof: the declared set is self-asserted and
    only *count*-checked against the blob (T11). Cryptographic per-fingerprint
-   verification is *(#40)*.
+   verification is not implemented.
 10. **The apply path, not any authoring tool, is the authorization boundary** for
     what reaches the cluster.
 
@@ -139,18 +139,15 @@ regression regardless of the feature it enables.
 
 ---
 
-## 6. Open items feeding this model
+## 6. Known open items
 
-Keyring-over-HTTP (#56) · a Helm Job to publish the controller pubkey `ConfigMap`
-(#57) · rollback *protection* (a min-revision `spec` field, T10) · webhook
-matching against a full keyring object rather than the Namespace annotation.
+Not implemented, and accounted for above:
 
-Closed: #38 (this doc) · #39 (DR runbooks + tests) · #40 (`spec.recipients` +
-status mirror + `VerifyRecipients`) · #41 (recipient roles + `keyfold
-recipients` + [lifecycle doc](recipient-lifecycle.md)) · #42 (controller adoption
-guard, input bounds, status-leak regression test) · #43
-([multi-cluster.md](../architecture/multi-cluster.md)) · #47
-([keyring.md](../architecture/keyring.md): `--print-public-key`, `--keyring`) ·
-#55 ([admission-webhook.md](../architecture/admission-webhook.md)) · #56/#57
-(keyring over HTTP, `--serve-pubkey`, pubkey ConfigMap Job) · #58
-([provenance.md](../architecture/provenance.md)).
+- **Rollback protection** — a minimum-revision field the controller refuses to
+  go below (T10, T10-CLI). Rollbacks are observable, not prevented.
+- **Per-fingerprint recipient verification** — the declared list is
+  count-checked, not cryptographically bound (T11, invariant 9).
+- **Admission matching against a full keyring** rather than a Namespace
+  annotation of required fingerprints.
+- **Recipient key expiry warnings** — expiry is tracked out of band
+  ([recipient-lifecycle.md](recipient-lifecycle.md#key-expiry)).

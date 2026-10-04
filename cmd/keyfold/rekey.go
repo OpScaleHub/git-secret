@@ -13,7 +13,7 @@ import (
 
 const rekeyHelp = `keyfold rekey - re-encrypt every value under a fresh content key
 
-  keyfold rekey -f FILE > FILE.new
+  keyfold rekey -f FILE [--keyring SRC] > FILE.new
 
 Unwraps the current content key (you must hold one recipient's private
 key), generates a new one, re-encrypts every value under it, and wraps it
@@ -29,7 +29,7 @@ docs/security/recipient-lifecycle.md.
 
 const setHelp = `keyfold set - change or add one value
 
-  keyfold set KEY -f FILE [--value-file PATH] > FILE.new
+  keyfold set KEY -f FILE [--value-file PATH] [--keyring SRC] > FILE.new
   printf %s "$NEW" | keyfold set KEY -f FILE > FILE.new
 
 Decrypts the object (you must hold one recipient's private key), sets KEY
@@ -43,9 +43,15 @@ func runRekey(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("keyfold rekey", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	file := fs.String("f", "", "GitSecret manifest (- for stdin)")
+	keyringSrc := fs.String("keyring", "", "keyring whose embedded publicKeys are used for wrapping (never imported)")
 	if err := fs.Parse(args); err != nil || *file == "" || fs.NArg() != 0 {
 		fmt.Fprint(stderr, rekeyHelp)
 		return exitUsage
+	}
+	if cleanup, code := keyringForRun(*keyringSrc, stderr); code != exitOK {
+		return code
+	} else {
+		defer cleanup()
 	}
 	gs, data, code := openForReseal(*file, stderr)
 	if code != exitOK {
@@ -65,6 +71,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	file := fs.String("f", "", "GitSecret manifest")
 	valueFile := fs.String("value-file", "", "read the new value from this file instead of stdin")
 	noProvenance := fs.Bool("no-provenance", false, "drop the source-revision/source-repo annotations instead of re-stamping them")
+	keyringSrc := fs.String("keyring", "", "keyring whose embedded publicKeys are used for wrapping (never imported)")
 	if err := fs.Parse(args[1:]); err != nil || *file == "" || *file == "-" || fs.NArg() != 0 {
 		if *file == "-" {
 			fmt.Fprintln(stderr, "error: set reads the new value from stdin, so -f must name a file")
@@ -85,6 +92,11 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 		return exitError
 	}
 
+	if cleanup, code := keyringForRun(*keyringSrc, stderr); code != exitOK {
+		return code
+	} else {
+		defer cleanup()
+	}
 	gs, data, code := openForReseal(*file, stderr)
 	if code != exitOK {
 		return code
@@ -172,5 +184,19 @@ func explainWrapError(err error) error {
 	if !strings.Contains(err.Error(), "No public key") {
 		return err
 	}
-	return fmt.Errorf("%w -- wrapping to the object's recipients needs every one of their public keys in your keyring (gpg --import, or the cluster's published key: see docs/architecture/keyring.md)", err)
+	return fmt.Errorf("%w -- wrapping to the object's recipients needs every one of their public keys: pass --keyring with a keyring file whose entries carry publicKey, or gpg --import them (see docs/architecture/keyring.md)", err)
+}
+
+// keyringForRun makes --keyring's embedded public keys available for this
+// run (see useKeyringPublicKeys); an empty src is a no-op.
+func keyringForRun(src string, stderr io.Writer) (func(), int) {
+	if src == "" {
+		return func() {}, exitOK
+	}
+	cleanup, err := useKeyringPublicKeys(src)
+	if err != nil {
+		fmt.Fprintln(stderr, "error:", err)
+		return nil, exitError
+	}
+	return cleanup, exitOK
 }

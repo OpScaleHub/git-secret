@@ -1,17 +1,23 @@
 keyfold-controller is running as {{ include "keyfold.fullname" . }} in {{ .Release.Namespace }}.
 
-Seal plaintext into a GitSecret manifest and apply it:
+Seal secrets to this controller AND an offline recovery key (and yourself),
+so no single key is ever the only way in -- best from a committed keyring:
 
-  keyfold --namespace <target-ns> --name <name> \
-    --recipient <this-controller's-fingerprint> --recipient <your-own-fingerprint> \
-    --from-literal KEY=value > gitsecret.yaml
+  keyfold seal --namespace <ns> --name <name> --keyring envs/<env>/keyring.yaml \
+    --from-env-file app.env > gitsecret.yaml
+  kubectl apply -f gitsecret.yaml          # or commit it for your GitOps tool
 
-  kubectl apply -f gitsecret.yaml
+This controller's fingerprint and public key:
 
-Check it's healthy:
+  kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "keyfold.fullname" . }} | grep -m1 -o '"fingerprint":"[0-9A-F]*"'
+{{- if .Values.publishPublicKey.enabled }}
+  kubectl -n {{ .Release.Namespace }} get configmap {{ .Values.publishPublicKey.configMapName }} -o jsonpath='{.data.publicKey}'
+{{- end }}
+
+Health (Ready = apiserver reachable and cache synced):
+
   kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "keyfold.fullname" . }} {{ .Values.healthProbe.port }}:{{ .Values.healthProbe.port }}
-  curl http://localhost:{{ .Values.healthProbe.port }}/healthz
+  curl 'http://localhost:{{ .Values.healthProbe.port }}/readyz?verbose'
 
-See the project README's "GitSecret CRD" section for the full reference,
-including --rewrap for adding/removing a recipient without re-encrypting
-any value.
+Docs: https://github.com/OpScaleHub/git-secret/blob/main/docs/getting-started/quickstart.md
+      (concepts, multi-cluster, recovery runbooks under docs/)

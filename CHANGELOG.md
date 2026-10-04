@@ -91,6 +91,20 @@
 
 ### Documentation
 
+- **Restructured** (#114). The README is 122 lines (from 465): what Keyfold is,
+  why, install, a short example and a docs map. Its CLI detail moved to
+  [docs/reference/](docs/reference/) (`keyfold`, `git keyfold`,
+  `kubectl keyfold`); new [Git plugin getting-started](docs/getting-started/git-plugin.md).
+  The [Kubernetes quickstart](docs/getting-started/quickstart.md) is rewritten
+  Helm-first and seals to controller + recovery + you from the first command,
+  ending with an offline `unseal` — run verbatim against a cluster. Decision
+  records are back ([docs/adr/](docs/adr/), 0002–0007); the design history is
+  a short page linking them. Stale statuses, issue numbers and
+  Argo CD–specific wording removed from the user docs. Corrected: the Git
+  plugin's `gpg` backend is not what lets `keyfold-controller` decrypt — the
+  two use independent keys. Chart NOTES teach recovery-key sealing; the
+  controller logs its fingerprint at startup; `rekey`/`set` accept `--keyring`.
+  Found: the repository has no `LICENSE` file (#129).
 - **[docs/concepts.md](docs/concepts.md)** (#113): the model in one page — the
   envelope, the two independent key hierarchies (GitSecret objects vs.
   repository files), who can do what (a new cluster's public key cannot add

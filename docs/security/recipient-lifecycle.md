@@ -19,7 +19,7 @@ an operator can tell at a glance which key is which.
 | Role | What it is | Notes |
 |---|---|---|
 | `human` | An operator who seals / reviews locally | The default when a fingerprint has no entry |
-| `controller` | A `keyfold-controller` identity | One per cluster (see [multi-cluster](../architecture/overview.md)) |
+| `controller` | A `keyfold-controller` identity | One per cluster (see [multi-cluster](../architecture/multi-cluster.md)) |
 | `recovery` | An offline key, held outside any cluster and outside any daily-use keyring | **Every production `GitSecret` should have one.** `keyfold` refuses to remove the last one without `--force` |
 | `deprecated` | A recipient being phased out — still wrapped to, flagged for a later rewrap to drop | |
 
@@ -55,7 +55,7 @@ or a keyserver — see [keyring.md](../architecture/keyring.md)).
 A GPG recipient key can expire. The controller does **not** fail an existing
 object on recipient-key expiry (the data is already there and still decryptable
 by the controller's own key), but surfacing an early warning
-(`RecipientKeyExpiring` condition / metric) is planned. Until then: track expiry
+(a condition or metric) is not implemented. Track expiry
 out of band and `recipients add` a renewed key before the old one lapses.
 
 ## Historical ciphertext — the property to understand
