@@ -503,3 +503,107 @@ func TestReconcile_WrongKeyReportsFailureWithoutCreatingSecret(t *testing.T) {
 		t.Errorf("Ready condition = %+v, want False/UnsealFailed", readyCond)
 	}
 }
+
+// legacyOwnedSecret is a target Secret as the pre-rename controller left it:
+// controlled by a GitSecret of the old API group.
+func legacyOwnedSecret(ns, name, ownerName string) *corev1.Secret {
+	isController := true
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: ns,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: gitsecretv1alpha1.LegacyGroup + "/v1alpha1",
+				Kind:       "GitSecret", Name: ownerName, UID: "uid-of-pre-rename-object",
+				Controller: &isController,
+			}},
+		},
+		Data: map[string][]byte{"OURS": []byte("old-value")},
+	}
+}
+
+// TestReconcile_AdoptsSecretFromLegacyNamesake: migrating to the new API
+// group re-applies the same object under the new group; it must take over
+// the Secret its predecessor created (so deleting the old object later
+// doesn't garbage-collect it) without the operator setting spec.target.adopt.
+func TestReconcile_AdoptsSecretFromLegacyNamesake(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	spec, err := sealer.Seal("downtime", "downtime-secrets", map[string]string{"OURS": "new-value"}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	gs := &gitsecretv1alpha1.GitSecret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime", UID: "uid-of-new-object"},
+		Spec:       spec,
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(newScheme(t)).
+		WithObjects(gs, legacyOwnedSecret("downtime", "downtime-secrets", "downtime-secrets")).
+		WithStatusSubresource(&gitsecretv1alpha1.GitSecret{}).Build()
+
+	r := &GitSecretReconciler{Client: fakeClient}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: namespacedName("downtime", "downtime-secrets")}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+
+	var after corev1.Secret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &after); err != nil {
+		t.Fatal(err)
+	}
+	if len(after.OwnerReferences) != 1 || after.OwnerReferences[0].UID != "uid-of-new-object" ||
+		after.OwnerReferences[0].APIVersion != gitsecretv1alpha1.GroupVersion.String() {
+		t.Fatalf("Secret not handed over to the new-group GitSecret: %#v", after.OwnerReferences)
+	}
+	if after.StringData["OURS"] != "new-value" {
+		t.Errorf("adopted Secret not reconciled to the new object's data: %#v", after.StringData)
+	}
+	var got gitsecretv1alpha1.GitSecret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &got); err != nil {
+		t.Fatal(err)
+	}
+	if c := got.Status.Conditions; len(c) == 0 || c[0].Reason != "Synced" {
+		t.Errorf("status = %#v, want Synced", c)
+	}
+}
+
+// TestReconcile_DoesNotAdoptLegacyOwnerWithDifferentName: the migration
+// shortcut is for the object's own predecessor only. A Secret controlled by
+// a *differently named* pre-rename GitSecret is someone else's -- conflict,
+// untouched.
+func TestReconcile_DoesNotAdoptLegacyOwnerWithDifferentName(t *testing.T) {
+	gnupgHome := shortTempDir(t)
+	fpr := genTestKey(t, gnupgHome)
+	t.Setenv("GNUPGHOME", gnupgHome)
+
+	spec, err := sealer.Seal("downtime", "downtime-secrets", map[string]string{"OURS": "new-value"}, []string{fpr})
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	gs := &gitsecretv1alpha1.GitSecret{
+		ObjectMeta: metav1.ObjectMeta{Name: "downtime-secrets", Namespace: "downtime", UID: "uid-of-new-object"},
+		Spec:       spec,
+	}
+	fakeClient := fake.NewClientBuilder().WithScheme(newScheme(t)).
+		WithObjects(gs, legacyOwnedSecret("downtime", "downtime-secrets", "someone-else")).
+		WithStatusSubresource(&gitsecretv1alpha1.GitSecret{}).Build()
+
+	r := &GitSecretReconciler{Client: fakeClient}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: namespacedName("downtime", "downtime-secrets")}); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	var after corev1.Secret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &after); err != nil {
+		t.Fatal(err)
+	}
+	if len(after.OwnerReferences) != 1 || after.OwnerReferences[0].Name != "someone-else" || string(after.Data["OURS"]) != "old-value" {
+		t.Fatalf("Secret owned by a different pre-rename GitSecret was taken over: %#v / %#v", after.OwnerReferences, after.Data)
+	}
+	var got gitsecretv1alpha1.GitSecret
+	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &got); err != nil {
+		t.Fatal(err)
+	}
+	if c := got.Status.Conditions; len(c) == 0 || c[0].Reason != "TargetConflict" {
+		t.Errorf("status = %#v, want TargetConflict", c)
+	}
+}

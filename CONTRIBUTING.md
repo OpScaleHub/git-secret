@@ -36,7 +36,7 @@ respects that skip guard rather than failing on GPG-less environments (see
 ### Helm chart changes
 
 ```bash
-helm lint ./charts/git-secret-controller
+helm lint ./charts/keyfold
 ```
 
 CI also renders the chart and checks its invariants: every pod meets the
@@ -53,8 +53,8 @@ the chart in the same PR; CI fails if either copy is stale:
 ```bash
 go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0 \
   crd paths=./api/... output:crd:dir=config/crd/bases
-cp config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml \
-  charts/git-secret-controller/crds/gitsecret.yaml
+cp config/crd/bases/keyfold.opscalehub.io_gitsecrets.yaml \
+  charts/keyfold/crds/gitsecret.yaml
 ```
 
 ## Pull requests

@@ -1,5 +1,5 @@
 // Package sealer implements the encrypt/decrypt logic shared by
-// cmd/git-secret-seal (produces a GitSecret manifest) and
+// cmd/keyfold (produces a GitSecret manifest) and
 // internal/controller (reconciles one back into a plain Secret). It is
 // deliberately pure/testable: no Kubernetes API calls, no CRD watching --
 // just GitSecretSpec <-> map[string]string, built entirely on the existing
@@ -51,7 +51,7 @@ func Seal(namespace, name string, data map[string]string, recipients []string) (
 }
 
 // SealContext is Seal with a context bounding the gpg wrap step -- for
-// callers on a request path facing untrusted input (git-secret-seal ui).
+// callers on a request path facing untrusted input (keyfold ui).
 func SealContext(ctx context.Context, namespace, name string, data map[string]string, recipients []string) (v1alpha1.GitSecretSpec, error) {
 	if len(recipients) == 0 {
 		return v1alpha1.GitSecretSpec{}, fmt.Errorf("sealer: no recipients given")
@@ -156,7 +156,7 @@ func Rewrap(spec v1alpha1.GitSecretSpec, newRecipients []string) (v1alpha1.GitSe
 // encryption-subkey IDs, not primary-key fingerprints.
 //
 // Returns nil when spec.Recipients is empty (nothing claimed, nothing to
-// check -- e.g. an object sealed by an older git-secret-seal).
+// check -- e.g. an object sealed by an older keyfold).
 func VerifyRecipients(spec v1alpha1.GitSecretSpec) error {
 	if len(spec.Recipients) == 0 {
 		return nil

@@ -71,7 +71,7 @@ func manifestIdentity(root *yaml.Node) (k8sIdentity, error) {
 	return id, nil
 }
 
-// IsK8sSecretPath reports whether relPath is opted into kubectl-secret's
+// IsK8sSecretPath reports whether relPath is opted into kubectl-keyfold's
 // per-value mode via the repo's k8s_secret_paths config.
 func (c *Context) IsK8sSecretPath(relPath string) bool {
 	for _, p := range c.Config.K8sSecretPaths {
@@ -133,7 +133,7 @@ func (c *Context) EncryptK8sValue(path, key, plaintext string) (string, error) {
 // bytes (print them, or pipe them to kubectl).
 //
 // namespaceOverride is the effective namespace the decrypted manifest
-// will actually be applied under — e.g. `kubectl secret apply -n X` —
+// will actually be applied under — e.g. `kubectl keyfold apply -n X` —
 // or "" to use whatever the manifest itself declares. It's used in place
 // of the manifest's own metadata.namespace when checking each value's
 // AAD: a value sealed for namespace "prod" won't decrypt under an

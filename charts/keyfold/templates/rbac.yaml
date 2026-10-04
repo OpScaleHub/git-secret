@@ -1,0 +1,162 @@
+{{- $fullname := include "keyfold.fullname" . -}}
+{{- $watchNs := .Values.watchNamespaces | default (list) -}}
+{{- $saName := include "keyfold.serviceAccountName" . -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+rules:
+{{- if not $watchNs }}
+  # Cluster-scoped by default: the controller watches GitSecret objects in
+  # every namespace, and a GitSecret in any namespace materialises a Secret
+  # in that same namespace -- so read+write on Secrets is inherently
+  # cluster-wide here, as for any Secret-materialising controller. Set
+  # watchNamespaces in values.yaml to restrict both to a fixed list: the
+  # chart then emits a namespaced Role/RoleBinding per entry instead of
+  # these two rules.
+  - apiGroups: ["keyfold.opscalehub.io"]
+    resources: ["gitsecrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["keyfold.opscalehub.io"]
+    resources: ["gitsecrets/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    # No "delete": the target Secret is removed by garbage collection via
+    # its owner reference, not by the controller. No non-status write on
+    # gitsecrets either: the reconciler only ever writes the status
+    # subresource.
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+{{- end }}
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+{{- if .Values.metrics.secure }}
+  # Secure metrics: each scrape's bearer token is checked with a
+  # TokenReview and its user with a SubjectAccessReview for GET /metrics.
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+{{- end }}
+{{- if .Values.webhook.enabled }}
+  # The webhook reads a target Namespace's required-recipients annotation,
+  # and the elected leader patches its own self-signed CA into this one
+  # ValidatingWebhookConfiguration (scoped by name below).
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    resourceNames: ["{{ $fullname }}"]
+    verbs: ["update", "patch"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $fullname }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+{{- range $ns := $watchNs }}
+---
+# watchNamespaces mode: the controller's Secret + GitSecret access is
+# confined to {{ $ns }} (and the other listed namespaces) instead of the
+# whole cluster. Pair with --watch-namespaces on the Deployment, which
+# scopes the informer cache to match.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "keyfold.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["keyfold.opscalehub.io"]
+    resources: ["gitsecrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["keyfold.opscalehub.io"]
+    resources: ["gitsecrets/status"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "keyfold.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- if .Values.leaderElection.enabled }}
+---
+# Leader election only needs Lease access in the controller's own
+# namespace -- a plain Role/RoleBinding, not cluster-scoped.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $fullname }}-leader-election
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $fullname }}-leader-election
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $fullname }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ $saName }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.metrics.secure }}
+---
+# Bind this to whatever scrapes the controller (e.g. Prometheus's
+# ServiceAccount) -- secure metrics answer 401/403 to anyone else.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $fullname }}-metrics-reader
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+rules:
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+{{- end }}

@@ -12,7 +12,7 @@ import (
 // holds exactly one caBundle -- without leader gating, every replica races
 // to overwrite it with its own, a write-storm on a cluster-scoped object.
 func TestInjectCABundle_IsLeaderElected(t *testing.T) {
-	r := InjectCABundle(nil, "git-secret-controller", []byte("ca"))
+	r := InjectCABundle(nil, "keyfold-controller", []byte("ca"))
 
 	ler, ok := r.(manager.LeaderElectionRunnable)
 	if !ok {

@@ -1,0 +1,13 @@
+version: 1
+patterns:
+  - "secrets/**"
+  - "*.secret.env"
+exclude:
+  - "secrets/public/**"
+key_backend: file
+key_source: .keyfold/key
+# k8s_secret_paths opts specific Kubernetes Secret manifests into
+# kubectl-keyfold's per-value encryption (see README's "kubectl-keyfold"
+# section) instead of whole-file encryption. Independent of 'patterns'.
+# k8s_secret_paths:
+#   - "deploy/api-secrets.yaml"

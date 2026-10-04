@@ -5,7 +5,7 @@
 // docs/security/threat-model.md for the security model.
 //
 // +kubebuilder:object:generate=true
-// +groupName=git-secret.opscalehub.io
+// +groupName=keyfold.opscalehub.io
 package v1alpha1
 
 import (
@@ -15,7 +15,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "git-secret.opscalehub.io", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "keyfold.opscalehub.io", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

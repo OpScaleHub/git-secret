@@ -140,7 +140,7 @@ func TestInitWithGPGBackend(t *testing.T) {
 
 	// Unlike the file backend, the wrapped key must NOT be gitignored.
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if bytes.Contains(gitignore, []byte(".repo-enc/key.gpg")) {
+	if bytes.Contains(gitignore, []byte(".keyfold/key.gpg")) {
 		t.Fatalf(".gitignore should not cover the gpg-wrapped key file: %q", gitignore)
 	}
 
@@ -271,10 +271,10 @@ func TestAddUserRewrapsWithoutReencrypting(t *testing.T) {
 
 // TestAddUserDoesNotGrantAccessWhenConfigSaveFails pins the fix for
 // issue #12: adduser used to rewrite the committed key.gpg (granting the
-// new recipient access) before saving .repo-enc.yml, so a failed config
+// new recipient access) before saving .keyfold.yml, so a failed config
 // save still left a real, silent access grant. Config save is forced to
 // fail deterministically (independent of permission bits or running as
-// root) by replacing .repo-enc.yml with a directory.
+// root) by replacing .keyfold.yml with a directory.
 func TestAddUserDoesNotGrantAccessWhenConfigSaveFails(t *testing.T) {
 	a := newGPGIdentity(t, "A <a@example.com>")
 	root := newTestRepo(t)
@@ -296,7 +296,7 @@ func TestAddUserDoesNotGrantAccessWhenConfigSaveFails(t *testing.T) {
 	b := newGPGIdentity(t, "B <b@example.com>")
 	withGNUPGHome(t, a.home) // AddUser needs A's access to re-wrap
 
-	cfgPath := filepath.Join(root, ".repo-enc.yml")
+	cfgPath := filepath.Join(root, ".keyfold.yml")
 	if err := os.Remove(cfgPath); err != nil {
 		t.Fatalf("remove config: %v", err)
 	}
@@ -318,7 +318,7 @@ func TestAddUserDoesNotGrantAccessWhenConfigSaveFails(t *testing.T) {
 }
 
 // TestRemoveUserDoesNotUpdateConfigWhenRotationFails pins the fix for
-// issue #10: removeuser used to save .repo-enc.yml with the recipient
+// issue #10: removeuser used to save .keyfold.yml with the recipient
 // already removed before rotation ran, so a failed rotation left a
 // misleading "removed" config while the old key -- still valid for that
 // recipient -- was untouched. Rotation is forced to fail deterministically
@@ -351,7 +351,7 @@ func TestRemoveUserDoesNotUpdateConfigWhenRotationFails(t *testing.T) {
 		t.Fatalf("expected RemoveUser to fail when rotation fails")
 	}
 
-	data, err := os.ReadFile(filepath.Join(root, ".repo-enc.yml"))
+	data, err := os.ReadFile(filepath.Join(root, ".keyfold.yml"))
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}

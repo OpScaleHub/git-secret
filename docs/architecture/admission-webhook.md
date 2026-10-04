@@ -1,6 +1,6 @@
 # Validating admission webhook
 
-Optional. When enabled, `git-secret-controller` also serves a validating
+Optional. When enabled, `keyfold-controller` also serves a validating
 admission webhook for `GitSecret` objects, turning two things that were
 conventions into enforced policy (#55, threat-model T11 / invariant #9).
 
@@ -13,7 +13,7 @@ On every `CREATE` / `UPDATE` of a `GitSecret`:
    wrapped blob actually has (`sealer.VerifyRecipients`). Without the webhook this
    is only a controller log warning; with it, a mismatch is rejected at admission.
 2. **Per-namespace required recipients.** If the object's Namespace carries
-   `git-secret.opscalehub.io/required-recipients: "<fpr>,<fpr>"`, every listed
+   `keyfold.opscalehub.io/required-recipients: "<fpr>,<fpr>"`, every listed
    fingerprint must be present in `spec.recipients` — e.g. to force an offline
    recovery key into every `GitSecret` in `prod`.
 
@@ -70,7 +70,7 @@ webhook `Service`, the `ValidatingWebhookConfiguration`, and RBAC for
 Manually: run the controller with `--enable-webhook --webhook-service <svc>
 --webhook-config-name <name>` and `POD_NAMESPACE` set; create a `Service` on port
 443 → container port 9443 and a `ValidatingWebhookConfiguration` pointing at
-`/validate-git-secret-opscalehub-io-v1alpha1-gitsecret` with an empty `caBundle`.
+`/validate-keyfold-opscalehub-io-v1alpha1-gitsecret` with an empty `caBundle`.
 
 ## Verified live (2026-08-28, k0s v1.36.2)
 
@@ -84,7 +84,7 @@ End-to-end against a real apiserver with the `v0.8.0` controller image and the
 | CA injected into the `ValidatingWebhookConfiguration` at runtime | ✅ `injected caBundle` log line |
 | Valid `GitSecret` (recipients match `encryptedKey`) | ✅ admitted, then decrypted into a `Secret` |
 | `spec.recipients` lists 2 fingerprints, blob wrapped to 1 | ✅ **denied**: `spec.recipients does not match encryptedKey: sealer: spec.recipients lists 2 fingerprint(s) but encryptedKey is wrapped to 1 recipient(s)` |
-| Namespace has `git-secret.opscalehub.io/required-recipients` and the object omits one | ✅ **denied**: `namespace "…" requires recipient(s) missing from spec.recipients: …` |
+| Namespace has `keyfold.opscalehub.io/required-recipients` and the object omits one | ✅ **denied**: `namespace "…" requires recipient(s) missing from spec.recipients: …` |
 
 No reconcile hot-loop — an early observation of one was traced to *two*
 controllers (a cluster-wide one plus the isolated test one) both writing the same

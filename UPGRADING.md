@@ -1,7 +1,7 @@
-# Upgrading git-secret
+# Upgrading Keyfold
 
 This document is the compatibility contract. It covers the `GitSecret` CRD +
-`git-secret-controller`; the CLI / Git-hook side is versioned by the same tags but
+`keyfold-controller`; the CLI / Git-hook side is versioned by the same tags but
 has no cluster state to migrate.
 
 ## Versioning
@@ -22,13 +22,13 @@ single version.
 
 - Changes within `v1alpha1` are **additive only** — new optional `spec` / `status`
   fields, new printer columns, relaxed validation. An object written by an older
-  `git-secret-seal` keeps reconciling unchanged after a controller upgrade.
+  `keyfold` keeps reconciling unchanged after a controller upgrade.
 - An existing field's meaning, type, or default will **not** change under
   `v1alpha1`. A change that would require one is introduced as a new version
   (`v1alpha2` / `v1`) with a conversion path and a migration note here — it will
   not be a silent break of `v1alpha1`.
 - `spec.encryptedData` / `spec.encryptedKey` are opaque ciphertext produced by
-  `git-secret-seal`; their envelope format is versioned independently inside the
+  `keyfold`; their envelope format is versioned independently inside the
   blob (`crypto/envelope.go`) and old envelopes stay decryptable — see the
   "cipher agility" tests in `crypto/`.
 
@@ -41,7 +41,7 @@ served.
 
 1. `helm upgrade` the chart. The CRD ships with the chart under `crds/`; Helm
    installs a CRD but does **not** upgrade one it already owns — apply
-   `charts/git-secret-controller/crds/gitsecret.yaml` (or
+   `charts/keyfold/crds/gitsecret.yaml` (or
    `config/crd/bases/...`) yourself when a release changes it (the CHANGELOG
    says when).
 2. The controller re-imports its GPG key and re-reconciles every `GitSecret` on
@@ -49,61 +49,110 @@ served.
 3. If you changed `webhook.enabled`, note it requires `replicaCount: 1` (see
    [docs/architecture/admission-webhook.md](docs/architecture/admission-webhook.md)).
 
-## Upgrading to the release after v0.10.0 (chart hardening, #106)
+## Upgrading from v0.10.x: the Keyfold release
 
-Four chart changes, one of which needs a manual step for some installs:
+The project is renamed from **git-secret** to **Keyfold**
+([ADR-0001](docs/adr/0001-product-name.md)). This is the one release that
+changes names; every ciphertext stays valid and **nothing is re-sealed**.
 
-- **Resource names.** A release name that already contains the chart name is
-  no longer doubled: `helm install git-secret-controller …` now yields
-  `git-secret-controller` (and `-webhook`, `-pubkey`, `-seal-ui`, `-metrics`)
-  instead of `git-secret-controller-git-secret-controller-*`. Helm replaces
-  the renamed objects on upgrade; nothing to do. Anything *outside* the chart
-  that referenced the old names (a `ServiceMonitor`, a `NetworkPolicy`, a
-  port-forward script, a `ClusterRoleBinding` to the ClusterRole) must be
-  updated.
-- **Controller selector.** The controller's pods now carry
-  `app.kubernetes.io/component: controller`, and its Deployment and Services
-  select on it (so they no longer also match the seal-UI or publish-Job
-  pods). A Deployment's selector is immutable, so **if your release name does
-  not contain `git-secret-controller`** (the Deployment keeps its name), delete
-  it before upgrading:
+### What changes
 
-  ```bash
-  kubectl -n <ns> delete deployment <release>-git-secret-controller
-  helm upgrade <release> … 
-  ```
+| | v0.10.x | now |
+|---|---|---|
+| Sealing CLI | `git-secret-seal` | `keyfold` (`keyfold seal`, `recipients`, `ui`, `migrate`) |
+| Git plugin | `git-secret` → `git secret …` | `git-keyfold` → `git keyfold …` |
+| kubectl plugin | `kubectl-secret` → `kubectl secret …` | `kubectl-keyfold` → `kubectl keyfold …` |
+| Controller image | `ghcr.io/opscalehub/git-secret-controller` | `ghcr.io/opscalehub/keyfold-controller` |
+| Helm chart | `oci://ghcr.io/opscalehub/charts/git-secret-controller` | `oci://ghcr.io/opscalehub/charts/keyfold` |
+| CRD API group | `git-secret.opscalehub.io/v1alpha1` | `keyfold.opscalehub.io/v1alpha1` (kind `GitSecret` unchanged) |
+| Annotations | `git-secret.opscalehub.io/*` | `keyfold.opscalehub.io/*` — old keys still **read** |
+| Repo config | `.repo-enc.yml`, keys under `.repo-enc/` | new repos: `.keyfold.yml`, `.keyfold/`; existing repos keep the old names, untouched |
+| Env vars | `SECRETIZE_SKIP_HOOKS`, `REPO_ENC_CONFIG_DIR` | `KEYFOLD_SKIP_HOOKS`, `KEYFOLD_CONFIG_DIR` — old names still honoured |
+| `git-secret-server` | deprecated | **removed** (v0.10.0 is its last release) |
 
-  The target `Secret`s are untouched; reconciliation pauses until the new pod
-  is ready. With `webhook.enabled` and `failurePolicy: Fail`, `GitSecret`
-  writes are rejected during that gap — schedule it accordingly. The seal-UI
-  Deployment is unaffected (its selector did not change).
-- **Metrics are authenticated by default** (`metrics.secure: true`): HTTPS with
-  a self-signed cert behind `TokenReview`/`SubjectAccessReview`. Bind the new
-  `<fullname>-metrics-reader` ClusterRole to your scraper and switch it to
-  HTTPS, or set `metrics.secure: false` to keep the old plain endpoint.
-- **`sealUi.enabled` requires `sealUi.keyringConfigMap`** whose entries all
-  carry a `publicKey`. Without one the in-cluster UI could never seal (it had no
-  keys and a read-only filesystem); the chart now says so at render time.
+Never changed: the `RENC` envelope, the `repo-enc:v1:` per-value prefix, the
+authenticated-data layouts, the wrapped-key format.
 
-Pods now also set `seccompProfile: RuntimeDefault`, so the chart installs into
-Pod Security `restricted` namespaces.
+### CLI and Git hooks (each repository)
 
-## `git-secret-server` removed (#107)
+Install the new binaries, then run `git keyfold init` once in each repository.
+Installed hooks call the binary by name, so pre-rename hooks (which exec
+`git-secret`) fail — closed, blocking commits and pushes — until `init`
+rewrites them; `init` recognises and replaces them rather than chaining them.
+Your config, key and history are not touched. Renaming `.repo-enc.yml` to
+`.keyfold.yml` is optional (`git mv`); keep `key_source` as it is.
 
-The External Secrets Operator bridge — `git-secret-server`, its image, its Helm
-chart and its release binaries — is removed. v0.10.0 is its last published
-version; those artifacts stay available but receive no further fixes.
+### Cluster: move objects to the new API group
 
-To move a workload off it, seal each secret as a `GitSecret`
-(`git-secret-seal`, multi-recipient, with the controller's fingerprint among the
-recipients), apply it, and delete the corresponding `ExternalSecret` once the
-target `Secret` is owned by the `GitSecret` (set `spec.target.adopt: true` to
-take over a `Secret` the `ExternalSecret` created).
+A new API group is a new CRD, so each `GitSecret` moves once. A GitSecret's
+ciphertext is bound to `namespace/name/key`, never to the group, so moving it
+is a text rewrite — no recipient needs to be present and no value is
+re-sealed. The target `Secret`s stay in place throughout.
+
+1. **Rewrite the manifests** in Git (apiVersion and annotation keys only;
+   comments and ciphertext untouched; idempotent):
+
+   ```bash
+   keyfold migrate -f deploy/ --dry-run   # review
+   keyfold migrate -f deploy/
+   ```
+
+   Namespaces carrying the required-recipients annotation are migrated too.
+2. **Stop the old controller**, leaving its CRD and objects in place:
+   `helm uninstall git-secret-controller -n <ns>` (Helm does not delete CRDs).
+3. **Install the new chart** with the same GPG key Secret:
+
+   ```bash
+   helm install keyfold oci://ghcr.io/opscalehub/charts/keyfold \
+     --namespace <ns> --set gpgPrivateKey.existingSecret=<existing-key-secret>
+   ```
+4. **Apply the migrated manifests** (or let your GitOps tool sync them). For
+   each object, the new controller finds the target `Secret` still controlled
+   by the pre-rename `GitSecret` of the same name, takes it over, and
+   reconciles it — no `spec.target.adopt` needed. Only that exact predecessor
+   (same namespace, same name, kind `GitSecret`, old group) is adopted.
+5. **Remove the old objects and CRD** once `kubectl get gitsecrets.keyfold.opscalehub.io -A`
+   shows them `Ready`:
+
+   ```bash
+   kubectl delete crd gitsecrets.git-secret.opscalehub.io
+   ```
+
+   The `Secret`s no longer reference the old objects, so nothing is
+   garbage-collected.
+
+Between steps 2 and 4 nothing reconciles; existing `Secret`s keep serving
+workloads, and only changes made in that window wait for step 4.
+
+### Chart changes that come with this release
+
+- Resource names are no longer doubled: release `keyfold` yields `keyfold`,
+  `keyfold-webhook`, `keyfold-pubkey`, `keyfold-seal-ui`, `keyfold-metrics`.
+  Update anything outside the chart that referenced old names (a
+  `ServiceMonitor`, `NetworkPolicy`, scripts).
+- Pods meet Pod Security `restricted` (`seccompProfile: RuntimeDefault`).
+- Controller pods are selected by `app.kubernetes.io/component: controller`.
+- **Metrics are authenticated by default** (`metrics.secure: true`): HTTPS
+  (self-signed) behind `TokenReview` + `SubjectAccessReview`. Bind the
+  `keyfold-metrics-reader` ClusterRole to your scraper, or set
+  `metrics.secure: false`.
+- `sealUi.enabled` requires `sealUi.keyringConfigMap`, every entry carrying
+  its `publicKey`.
+- The public-key ConfigMap default is `keyfold-pubkey`
+  (`publishPublicKey.configMapName`).
+
+### `git-secret-server` users
+
+Removed. Seal each secret as a `GitSecret` (`keyfold seal`, multi-recipient,
+with the controller's fingerprint among the recipients), apply it with
+`spec.target.adopt: true` to take over the `Secret` the `ExternalSecret`
+created, then delete the `ExternalSecret`. v0.10.0 artifacts remain
+available but receive no fixes.
 
 ## Downgrade
 
 Additive-only means a downgrade is safe for objects that do not use fields the
 older controller lacks: it ignores unknown `status` fields, and an unknown
-optional `spec` field set by a newer `git-secret-seal` is preserved by the
-apiserver but not acted on. Re-seal with the matching `git-secret-seal` version
+optional `spec` field set by a newer `keyfold` is preserved by the
+apiserver but not acted on. Re-seal with the matching `keyfold` version
 if in doubt.

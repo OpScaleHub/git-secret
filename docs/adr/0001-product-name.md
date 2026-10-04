@@ -1,6 +1,6 @@
 # ADR-0001 — Rename the product to Keyfold
 
-- Status: **Proposed**
+- Status: **Accepted** (2026-10-04, maintainer decision; implemented in #108)
 - Date: 2026-09-29
 - Context: [September 2026 e2e audit](../audit/2026-09-e2e-product-audit.md), finding M9
 
@@ -81,6 +81,13 @@ group, so the conversion is a pure text rewrite.
    the old CRD.
 
 `UPGRADING.md` documents this; a `kind` e2e test covers it.
+
+> **Implementation note (#108).** The shipped migration is simpler than the
+> steps above: instead of orphan-deleting each old object and setting
+> `spec.target.adopt`, the new controller adopts a target `Secret` that is
+> still controlled by the same-named `GitSecret` of the old group. Uninstall
+> the old chart, install the new one, apply the migrated manifests, then
+> delete the old CRD. See UPGRADING.md.
 
 ## Sequencing
 

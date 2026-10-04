@@ -26,7 +26,7 @@ These are not optional. Set them up on day one, not after an incident:
    cluster it runs in (sealed backup, secret manager, offline media).
 3. **The Git repository is mirrored** — the ciphertext is the durable artifact;
    if it only exists on one host, that host is a single point of failure (T-repo).
-4. **`git-secret-seal` and `gpg` are available** to whoever holds a recovery key.
+4. **`keyfold` and `gpg` are available** to whoever holds a recovery key.
 
 ## Scenario table
 
@@ -45,7 +45,7 @@ These are not optional. Set them up on day one, not after an incident:
 ## A — controller destroyed
 
 **Nothing to do.** The `GitSecret` objects are in etcd (and Git); the target
-`Secret`s are owned by them. Redeploy `git-secret-controller` with the same GPG
+`Secret`s are owned by them. Redeploy `keyfold-controller` with the same GPG
 identity (same `GPG_PRIVATE_KEY_FILE` secret) and it reconciles everything back on
 first pass.
 
@@ -55,11 +55,11 @@ them from the `GitSecret`s — no data is only in the `Secret`.
 ## B — whole cluster lost
 
 1. Stand up a new cluster.
-2. Install the CRD (`config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml`).
+2. Install the CRD (`config/crd/bases/keyfold.opscalehub.io_gitsecrets.yaml`).
 3. Restore the controller's GPG identity `Secret` from backup (prereq #2), or —
    if that backup is also gone — generate a new controller identity and follow
    §C to rewrap.
-4. Deploy `git-secret-controller`.
+4. Deploy `keyfold-controller`.
 5. Re-apply the `GitSecret` manifests (ArgoCD pointed at the same repo does this
    for you).
 6. The controller reconciles identical `Secret`s.
@@ -74,13 +74,13 @@ decrypt:
 
 1. Generate a fresh controller identity:
    ```
-   gpg --batch --passphrase '' --quick-generate-key 'git-secret-controller <ops@example.com>' default default never
+   gpg --batch --passphrase '' --quick-generate-key 'keyfold-controller <ops@example.com>' default default never
    gpg --armor --export-secret-keys <new-fpr> > controller-key.asc
    ```
 2. On a machine holding a surviving recipient's private key, and with the new
    controller's **public** key imported, rewrap every affected object:
    ```
-   git-secret-seal --rewrap gitsecret.yaml \
+   keyfold --rewrap gitsecret.yaml \
      --recipient <new-controller-fpr> \
      --recipient <human-fpr> \
      --recipient <recovery-fpr>
@@ -96,10 +96,10 @@ Proven by `TestRecovery_ControllerKeyLost_HumanRewrapsToNewController`.
 Drop their fingerprint from every object they were a recipient of:
 
 ```
-git-secret-seal recipients remove <departing-fpr> -f gitsecret.yaml
+keyfold recipients remove <departing-fpr> -f gitsecret.yaml
 ```
 
-(or, to set the whole list explicitly, `git-secret-seal --rewrap gitsecret.yaml
+(or, to set the whole list explicitly, `keyfold --rewrap gitsecret.yaml
 --recipient <controller-fpr> --recipient <remaining-human-fpr> --recipient
 <recovery-fpr>`).
 
@@ -110,7 +110,7 @@ What this does **not** do: `recipients remove` on the CRD path performs a
 *rewrap* — it re-encrypts `spec.encryptedKey` to the new recipient set but keeps
 the **same content key** and leaves every `spec.encryptedData` value untouched
 (invariant #6). A departing operator whose key ever unwrapped that content key
-(one `git-secret-seal` unseal, or a copy of a historical `encryptedKey` wrapped
+(one `keyfold` unseal, or a copy of a historical `encryptedKey` wrapped
 to them) may have kept it, and it still opens every `encryptedData` value that
 has not since been **changed**. Only changing a value — which forces a full
 re-`Seal` under a fresh content key (§E, step 2) — cryptographically locks them
@@ -122,7 +122,7 @@ departing operator must be denied access to the *current, unchanged* secret
 values, treat it as §E (compromise): rotate the values at their source and
 re-seal.
 
-> The CLI path differs. `git secret removeuser` (the `gpg` file backend) forces a
+> The CLI path differs. `git keyfold removeuser` (the `gpg` file backend) forces a
 > full `rotate-keys` — a fresh content key, every matched file re-encrypted — so
 > CLI recipient removal **is** a cryptographic revocation of access to current
 > data. The CRD `recipients remove` is a rewrap, not a rotation; do not assume
@@ -145,10 +145,10 @@ Response:
 1. **Rotate the secret values themselves** at their source (new DB password, new
    API token, …). This is the only step that actually restores confidentiality
    for data already in history.
-2. Re-seal under a fresh content key (a normal `git-secret-seal` run, not
+2. Re-seal under a fresh content key (a normal `keyfold` run, not
    `--rewrap`), dropping the compromised recipient:
    ```
-   git-secret-seal --namespace prod --name app-secrets \
+   keyfold --namespace prod --name app-secrets \
      --recipient <controller-fpr> --recipient <human-fpr> --recipient <recovery-fpr> \
      --from-literal DB_PASSWORD=<new-value> ... > gitsecret.yaml
    ```

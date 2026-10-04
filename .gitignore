@@ -1,9 +1,13 @@
 # Go build artifacts
-/git-secret
-/git-secret.exe
+/git-keyfold
+/git-keyfold.exe
+/keyfold
+/keyfold-controller
+/kubectl-keyfold
 /bin/
 
-# If `git secret init` is ever run against this repo itself
+# If `git keyfold init` is ever run against this repo itself
+.keyfold/key
 .repo-enc/key
 
 # Editor cruft

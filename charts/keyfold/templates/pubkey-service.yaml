@@ -1,0 +1,16 @@
+{{- if .Values.servePubKey.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "keyfold.fullname" . }}-pubkey
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "keyfold.controllerSelectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: pubkey
+      protocol: TCP
+{{- end }}

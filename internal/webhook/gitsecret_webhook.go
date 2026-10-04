@@ -17,13 +17,13 @@ import (
 )
 
 // WebhookPath is where the ValidatingWebhookConfiguration must point.
-const WebhookPath = "/validate-git-secret-opscalehub-io-v1alpha1-gitsecret"
+const WebhookPath = "/validate-keyfold-opscalehub-io-v1alpha1-gitsecret"
 
 // RequiredRecipientsAnnotation, when set on a Namespace, lists GPG
 // fingerprints (comma-separated) that every GitSecret in that namespace
 // must include in spec.recipients -- e.g. to force an offline recovery key
 // into every production object.
-const RequiredRecipientsAnnotation = "git-secret.opscalehub.io/required-recipients"
+const RequiredRecipientsAnnotation = "keyfold.opscalehub.io/required-recipients"
 
 // verifyRecipients is swappable in tests (the real one shells out to gpg).
 var verifyRecipients = sealer.VerifyRecipients
@@ -106,7 +106,7 @@ func requiredRecipients(ctx context.Context, c client.Client, namespace string) 
 		}
 		return nil, fmt.Errorf("look up namespace %q: %w", namespace, err)
 	}
-	raw := strings.TrimSpace(ns.Annotations[RequiredRecipientsAnnotation])
+	raw := strings.TrimSpace(gitsecretv1alpha1.Annotation(ns.Annotations, RequiredRecipientsAnnotation))
 	if raw == "" {
 		return nil, nil
 	}

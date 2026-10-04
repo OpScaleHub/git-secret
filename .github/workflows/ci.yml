@@ -67,9 +67,9 @@ jobs:
         run: |
           go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0 \
             crd paths=./api/... output:crd:dir=config/crd/bases
-          cp config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml \
-            charts/git-secret-controller/crds/gitsecret.yaml
-          git diff --exit-code -- config/crd charts/git-secret-controller/crds || {
+          cp config/crd/bases/keyfold.opscalehub.io_gitsecrets.yaml \
+            charts/keyfold/crds/gitsecret.yaml
+          git diff --exit-code -- config/crd charts/keyfold/crds || {
             echo "::error::CRD is stale: regenerate with controller-gen v0.19.0 and copy it into the chart (see CONTRIBUTING.md)"; exit 1; }
 
       # Linux: the GPG-dependent suites must actually execute (not silently
@@ -128,11 +128,11 @@ jobs:
 
       - name: helm lint
         run: |
-          helm lint ./charts/git-secret-controller
+          helm lint ./charts/keyfold
 
       - name: helm template (with required values set, to render every template)
         run: |
-          helm template test ./charts/git-secret-controller \
+          helm template test ./charts/keyfold \
             --set gpgPrivateKey.existingSecret=dummy-gpg \
             --include-crds
 
@@ -140,7 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet --break-system-packages pyyaml
-          all=$(helm template git-secret-controller ./charts/git-secret-controller \
+          all=$(helm template keyfold ./charts/keyfold \
             --set gpgPrivateKey.existingSecret=dummy-gpg \
             --set webhook.enabled=true --set servePubKey.enabled=true \
             --set publishPublicKey.enabled=true \
@@ -163,12 +163,12 @@ jobs:
               hits = [n for n, l in labels.items() if all(l.get(k) == v for k, v in sel.items())]
               if len(hits) != 1:
                   fail.append(f"{d['kind']} {d['metadata']['name']} selects {hits}, want exactly one workload")
-          if "git-secret-controller" not in pods:
-              fail.append(f"release 'git-secret-controller' should render a Deployment named 'git-secret-controller', got {sorted(pods)}")
+          if "keyfold" not in pods:
+              fail.append(f"release 'keyfold' should render a Deployment named 'keyfold', got {sorted(pods)}")
           print("\n".join(fail) or f"ok: {len(pods)} workloads, all restricted-compatible, selectors disjoint")
           sys.exit(1 if fail else 0)
           PY
-          if helm template t ./charts/git-secret-controller \
+          if helm template t ./charts/keyfold \
                --set gpgPrivateKey.existingSecret=dummy-gpg --set sealUi.enabled=true >/dev/null 2>&1; then
             echo "sealUi.enabled without sealUi.keyringConfigMap must fail to render"; exit 1
           fi

@@ -10,13 +10,18 @@ import (
 )
 
 // binaryName is the executable hooks shell out to. It must be on PATH,
-// same as the `git secret <cmd>` invocation itself.
-const binaryName = "git-secret"
+// same as the `git keyfold <cmd>` invocation itself.
+const binaryName = "git-keyfold"
 
 // hookMarker identifies a hook file as one we manage, so re-running
 // InstallHooks is idempotent and so a pre-existing, unrelated hook is
 // detected and preserved rather than clobbered.
-const hookMarker = "managed-by: repo-enc"
+const hookMarker = "managed-by: keyfold"
+
+// legacyHookMarker marks hooks written before the Keyfold rename. They exec
+// the old binary name, so re-running init must replace them like our own
+// rather than preserving them as an unrelated "<name>.local" hook to chain.
+const legacyHookMarker = "managed-by: repo-enc"
 
 // SkipEnvVars are environment variables that make every installed hook
 // exit 0 immediately without running. Deliberately just one, project-
@@ -25,7 +30,8 @@ const hookMarker = "managed-by: repo-enc"
 // silently disable both encryption and push-protection in exactly the
 // environments most likely to push on someone's behalf. Skipping hooks
 // always requires this explicit, unambiguous opt-in.
-var SkipEnvVars = []string{"SECRETIZE_SKIP_HOOKS"}
+// SECRETIZE_SKIP_HOOKS is the pre-rename name, still honoured.
+var SkipEnvVars = []string{"KEYFOLD_SKIP_HOOKS", "SECRETIZE_SKIP_HOOKS"}
 
 // InstallHooks writes wrapper scripts for HookNames into the repo's hooks
 // directory (respecting core.hooksPath). Both a POSIX shell script (the
@@ -49,7 +55,7 @@ func InstallHooks(repoRoot string) ([]string, error) {
 	for _, name := range HookNames {
 		path := filepath.Join(dir, name)
 		if existing, err := os.ReadFile(path); err == nil {
-			if !bytes.Contains(existing, []byte(hookMarker)) {
+			if !bytes.Contains(existing, []byte(hookMarker)) && !bytes.Contains(existing, []byte(legacyHookMarker)) {
 				localPath := filepath.Join(dir, name+".local")
 				if err := os.Rename(path, localPath); err != nil {
 					return installed, fmt.Errorf("hook install: preserve existing %s hook: %w", name, err)
@@ -76,7 +82,7 @@ func shHookScript(name string) string {
 	return fmt.Sprintf(`#!/bin/sh
 # %s
 # Regenerate with: %s init  (do not edit by hand — edits are lost on re-install)
-if [ -n "$SECRETIZE_SKIP_HOOKS" ]; then
+if [ -n "$KEYFOLD_SKIP_HOOKS" ] || [ -n "$SECRETIZE_SKIP_HOOKS" ]; then
   exit 0
 fi
 dir="$(dirname "$0")"
@@ -90,7 +96,7 @@ exec %s hook %s "$@"
 func psHookScript(name string) string {
 	return fmt.Sprintf(`# %s
 # Regenerate with: %s init  (do not edit by hand — edits are lost on re-install)
-if ($env:SECRETIZE_SKIP_HOOKS) { exit 0 }
+if ($env:KEYFOLD_SKIP_HOOKS -or $env:SECRETIZE_SKIP_HOOKS) { exit 0 }
 $localHook = Join-Path $PSScriptRoot "%s.local.ps1"
 if (Test-Path $localHook) {
     & $localHook @args

@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -32,7 +33,7 @@ const conditionReady = "Ready"
 // (ciphertext, recipients) already arrived as part of the GitSecret object
 // itself via the normal apply path (a GitOps tool, kubectl, ...), and the only secret this process itself needs is its own
 // GPG private key, imported once at startup (see
-// cmd/git-secret-controller).
+// cmd/keyfold-controller).
 type GitSecretReconciler struct {
 	client.Client
 }
@@ -72,7 +73,7 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// object even while it is failing to reconcile.
 	gs.Status.Recipients = gs.Spec.Recipients
 	gs.Status.RecipientCount = len(gs.Spec.Recipients)
-	gs.Status.SourceRevision = gs.Annotations[gitsecretv1alpha1.SourceRevisionAnnotation]
+	gs.Status.SourceRevision = gitsecretv1alpha1.Annotation(gs.Annotations, gitsecretv1alpha1.SourceRevisionAnnotation)
 	if err := sealer.VerifyRecipients(gs.Spec); err != nil {
 		// Non-fatal: the authoritative recipient set is the blob itself,
 		// which the decrypt path below uses directly. A mismatch just
@@ -109,6 +110,19 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	case getErr == nil:
 		owner := metav1.GetControllerOf(&existing)
 		ownedByThis := owner != nil && owner.Kind == "GitSecret" && owner.Name == gs.Name && owner.UID == gs.UID
+		if !ownedByThis && ownedByLegacyNamesake(owner, gs.Name) {
+			// Migration from the pre-rename API group: the same object,
+			// re-applied under the new group, takes over the Secret its
+			// predecessor created. Drop the old controller reference first
+			// (SetControllerReference refuses a second controller), so the
+			// Secret survives when the old GitSecret is deleted.
+			existing.OwnerReferences = withoutOwner(existing.OwnerReferences, owner.UID)
+			if err := r.Update(ctx, &existing); err != nil {
+				return ctrl.Result{}, fmt.Errorf("release Secret/%s from its pre-rename GitSecret: %w", targetName, err)
+			}
+			logger.Info("adopting target Secret from pre-rename GitSecret", "gitsecret", req.NamespacedName, "secret", targetName, "legacyAPIVersion", owner.APIVersion)
+			ownedByThis = true
+		}
 		if !ownedByThis && !gs.Spec.Target.Adopt {
 			msg := fmt.Sprintf("Secret/%s already exists and is not managed by this GitSecret; set spec.target.adopt to take it over", targetName)
 			logger.Info("target Secret conflict", "gitsecret", req.NamespacedName, "secret", targetName)
@@ -188,6 +202,25 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// ownedByLegacyNamesake reports whether owner is a GitSecret of the
+// pre-rename API group with the given name. Only that exact predecessor --
+// same namespace (owner references are namespace-local), same name, same
+// kind -- is adopted without spec.target.adopt.
+func ownedByLegacyNamesake(owner *metav1.OwnerReference, name string) bool {
+	return owner != nil && owner.Kind == "GitSecret" && owner.Name == name &&
+		strings.HasPrefix(owner.APIVersion, gitsecretv1alpha1.LegacyGroup+"/")
+}
+
+func withoutOwner(refs []metav1.OwnerReference, uid types.UID) []metav1.OwnerReference {
+	out := refs[:0:0]
+	for _, ref := range refs {
+		if ref.UID != uid {
+			out = append(out, ref)
+		}
+	}
+	return out
 }
 
 // persistStatus writes gs.Status only if it differs from orig in a field

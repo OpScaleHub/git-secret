@@ -39,12 +39,12 @@ type InitResult struct {
 	// BackendDefaultedToFile is true when no --key-backend was given and
 	// the repo was set up on "file". The caller uses it to print a nudge:
 	// "file" is a fine local on-ramp but is structurally incompatible with
-	// git-secret-controller or any automated consumer (its key never
+	// keyfold-controller or any automated consumer (its key never
 	// enters git), and switching later means re-sealing everything.
 	BackendDefaultedToFile bool
 }
 
-// Init bootstraps repo-enc in the current repository: writes a config
+// Init bootstraps Keyfold in the current repository: writes a config
 // (idempotent — never overwrites an existing one), ensures a key exists,
 // and installs git hooks.
 func Init(opts InitOptions) (*InitResult, error) {

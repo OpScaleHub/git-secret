@@ -11,9 +11,9 @@ on:
 permissions: {}
 
 jobs:
-  # Client-side tools only: git-secret, kubectl-secret, git-secret-seal --
+  # Client-side tools only: git-keyfold, kubectl-keyfold, keyfold --
   # things a human or a CI job runs directly on their own machine, so a
-  # real cross-platform matrix earns its keep here. git-secret-controller
+  # real cross-platform matrix earns its keep here. keyfold-controller
   # is the opposite case -- a Kubernetes component that only ever runs
   # inside its container image, never as a downloaded native binary on
   # someone's laptop -- see build-and-release-controller below, which
@@ -74,16 +74,16 @@ jobs:
             EXT=".exe"
           fi
 
-          OUTPUT_NAME="git-secret-${GOOS}-${GOARCH}${EXT}"
-          go build -v -o "${OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" .
+          OUTPUT_NAME="git-keyfold-${GOOS}-${GOARCH}${EXT}"
+          go build -v -o "${OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-keyfold
           echo "ASSET_PATH=${OUTPUT_NAME}" >> $GITHUB_ENV
 
-          KUBECTL_OUTPUT_NAME="kubectl-secret-${GOOS}-${GOARCH}${EXT}"
-          go build -v -o "${KUBECTL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/kubectl-secret
+          KUBECTL_OUTPUT_NAME="kubectl-keyfold-${GOOS}-${GOARCH}${EXT}"
+          go build -v -o "${KUBECTL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/kubectl-keyfold
           echo "KUBECTL_ASSET_PATH=${KUBECTL_OUTPUT_NAME}" >> $GITHUB_ENV
 
-          SEAL_OUTPUT_NAME="git-secret-seal-${GOOS}-${GOARCH}${EXT}"
-          go build -v -o "${SEAL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-seal
+          SEAL_OUTPUT_NAME="keyfold-${GOOS}-${GOARCH}${EXT}"
+          go build -v -o "${SEAL_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/keyfold
           echo "SEAL_ASSET_PATH=${SEAL_OUTPUT_NAME}" >> $GITHUB_ENV
 
       - name: Checksum binaries
@@ -120,7 +120,7 @@ jobs:
           # using the tag name as the release name.
           # You can customize release notes, etc. here if needed.
 
-  # git-secret-controller: Linux only, matching the container image's own
+  # keyfold-controller: Linux only, matching the container image's own
   # linux/amd64+arm64 platform set. Its real, supported distribution
   # artifact is the container image + Helm chart below -- this standalone
   # binary exists only as a debugging/local-dev convenience (e.g. running the controller directly against a kind
@@ -158,8 +158,8 @@ jobs:
           fi
 
           GOOS=linux
-          CONTROLLER_OUTPUT_NAME="git-secret-controller-linux-${GOARCH}"
-          go build -v -o "${CONTROLLER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/git-secret-controller
+          CONTROLLER_OUTPUT_NAME="keyfold-controller-linux-${GOARCH}"
+          go build -v -o "${CONTROLLER_OUTPUT_NAME}" -ldflags="-s -w -X main.version=${VERSION}" ./cmd/keyfold-controller
           echo "CONTROLLER_ASSET_PATH=${CONTROLLER_OUTPUT_NAME}" >> $GITHUB_ENV
 
       - name: Checksum binaries
@@ -197,10 +197,10 @@ jobs:
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           path: .
-          artifact-name: git-secret-sbom.spdx.json
+          artifact-name: keyfold-sbom.spdx.json
 
   docker-release-controller:
-    name: Build & push git-secret-controller image
+    name: Build & push keyfold-controller image
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -243,7 +243,7 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: Dockerfile.controller
+          file: Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           provenance: mode=max
@@ -251,18 +251,18 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
-            ghcr.io/${{ env.OWNER_LC }}/git-secret-controller:${{ github.ref_name }}
-            ghcr.io/${{ env.OWNER_LC }}/git-secret-controller:latest
+            ghcr.io/${{ env.OWNER_LC }}/keyfold-controller:${{ github.ref_name }}
+            ghcr.io/${{ env.OWNER_LC }}/keyfold-controller:latest
 
       - name: Sign image (keyless)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           cosign sign --yes \
-            "ghcr.io/${OWNER_LC}/git-secret-controller@${DIGEST}"
+            "ghcr.io/${OWNER_LC}/keyfold-controller@${DIGEST}"
 
   chart-release-controller:
-    name: Package & push git-secret-controller Helm chart
+    name: Package & push keyfold-controller Helm chart
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -294,8 +294,8 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           CHART_VERSION="${VERSION#v}"
-          helm package ./charts/git-secret-controller \
+          helm package ./charts/keyfold \
             --version "$CHART_VERSION" \
             --app-version "$VERSION" \
             --destination /tmp
-          helm push "/tmp/git-secret-controller-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ env.OWNER_LC }}/charts"
+          helm push "/tmp/keyfold-${CHART_VERSION}.tgz" "oci://ghcr.io/${{ env.OWNER_LC }}/charts"

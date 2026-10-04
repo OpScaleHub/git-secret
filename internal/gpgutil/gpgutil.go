@@ -151,7 +151,7 @@ func Encrypt(plaintext []byte, recipients []string) ([]byte, error) {
 
 // EncryptContext is Encrypt with a cancellation/deadline context -- the
 // gpg process is killed if ctx is done first. Used by callers that face
-// untrusted input on a request path (git-secret-seal ui) and must bound
+// untrusted input on a request path (keyfold ui) and must bound
 // how long a single seal can run.
 func EncryptContext(ctx context.Context, plaintext []byte, recipients []string) ([]byte, error) {
 	if len(recipients) == 0 {
@@ -172,7 +172,7 @@ func EncryptContext(ctx context.Context, plaintext []byte, recipients []string) 
 // bundled with it) into the current GNUPGHOME, so this process's own
 // gpg (and gpg-agent) can subsequently decrypt blobs wrapped to it.
 // Intended for a process's one-time startup import (e.g.
-// git-secret-controller importing its own dedicated identity from a
+// keyfold-controller importing its own dedicated identity from a
 // mounted Secret) into an isolated, process-private GNUPGHOME set up
 // by the caller — never the operator's own keyring.
 func ImportSecretKey(armored []byte) error {
