@@ -119,6 +119,9 @@ func importKeyringPubKeys(src string) (int, error) {
 		if strings.TrimSpace(r.PublicKey) == "" {
 			continue
 		}
+		if err := gpgutil.VerifyPublicKeyBlock(r.Fingerprint, []byte(r.PublicKey)); err != nil {
+			return n, fmt.Errorf("keyring %s: %w", src, err)
+		}
 		if err := gpgutil.ImportPublicKey([]byte(r.PublicKey)); err != nil {
 			return n, fmt.Errorf("import public key for %s: %w", r.Fingerprint, err)
 		}
@@ -199,4 +202,46 @@ func upperFP(s string) string {
 		}
 	}
 	return string(b)
+}
+
+// useKeyringPublicKeys makes the armored publicKey blocks in the keyring at
+// src usable for sealing and rewrapping, without importing them into the
+// operator's own keyring: they go into a scratch keybox (each one verified
+// to be exactly the key its entry's fingerprint names) that gpg consults
+// for this process only. The returned cleanup removes it. A keyring with no
+// publicKey entries is a no-op -- recipients' keys must then already be in
+// the local keyring, as before.
+func useKeyringPublicKeys(src string) (func(), error) {
+	raw, err := readKeyringBytes(src)
+	if err != nil {
+		return nil, fmt.Errorf("read keyring %s: %w", src, err)
+	}
+	var kr keyringFile
+	if err := sigsyaml.Unmarshal(raw, &kr); err != nil {
+		return nil, fmt.Errorf("parse keyring %s: %w", src, err)
+	}
+	var scratch *gpgutil.ScratchPublicKeyring
+	for _, r := range kr.Recipients {
+		if strings.TrimSpace(r.PublicKey) == "" {
+			continue
+		}
+		if scratch == nil {
+			if scratch, err = gpgutil.NewScratchPublicKeyring(); err != nil {
+				return nil, err
+			}
+		}
+		if err := scratch.ImportFor(r.Fingerprint, []byte(r.PublicKey)); err != nil {
+			scratch.Close()
+			return nil, fmt.Errorf("keyring %s: %w", src, err)
+		}
+	}
+	if scratch == nil {
+		return func() {}, nil
+	}
+	prev := gpgutil.ExtraPublicKeyrings
+	gpgutil.ExtraPublicKeyrings = append(append([]string(nil), prev...), scratch.Keybox())
+	return func() {
+		gpgutil.ExtraPublicKeyrings = prev
+		scratch.Close()
+	}, nil
 }

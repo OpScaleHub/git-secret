@@ -10,7 +10,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -158,6 +160,9 @@ func EncryptContext(ctx context.Context, plaintext []byte, recipients []string) 
 		return nil, fmt.Errorf("gpgutil: encrypt: no recipients given")
 	}
 	args := []string{"--batch", "--yes", "--trust-model", "always", "--armor", "--encrypt"}
+	for _, kr := range ExtraPublicKeyrings {
+		args = append(args, "--keyring", kr)
+	}
 	for _, r := range recipients {
 		args = append(args, "--recipient", r)
 	}
@@ -208,6 +213,121 @@ func ExportPublicKey(fpr string) ([]byte, error) {
 		return nil, fmt.Errorf("gpgutil: no public key found for %s", fpr)
 	}
 	return out, nil
+}
+
+// ExtraPublicKeyrings are additional keybox files consulted (alongside the
+// current GNUPGHOME's own keyring) for recipient *public* keys when
+// encrypting. Process-wide: a CLI sets it once, before sealing, from public
+// keys it was handed (see NewScratchPublicKeyring) -- so those keys are
+// usable without ever being imported into the operator's own keyring.
+var ExtraPublicKeyrings []string
+
+// ScratchPublicKeyring is a throwaway GPG home holding only public keys,
+// whose keybox can be listed in ExtraPublicKeyrings.
+type ScratchPublicKeyring struct {
+	home string
+}
+
+// NewScratchPublicKeyring creates an empty scratch keyring. Close removes it.
+func NewScratchPublicKeyring() (*ScratchPublicKeyring, error) {
+	home, err := os.MkdirTemp("", "keyfold-pubring-")
+	if err != nil {
+		return nil, fmt.Errorf("gpgutil: create scratch keyring: %w", err)
+	}
+	if err := os.Chmod(home, 0o700); err != nil {
+		os.RemoveAll(home)
+		return nil, err
+	}
+	return &ScratchPublicKeyring{home: home}, nil
+}
+
+// Keybox is the keybox file to pass in ExtraPublicKeyrings.
+func (k *ScratchPublicKeyring) Keybox() string { return filepath.Join(k.home, "pubring.kbx") }
+
+// Close stops the scratch home's agent (if one started) and deletes it.
+func (k *ScratchPublicKeyring) Close() error {
+	_ = exec.Command("gpgconf", "--homedir", k.home, "--kill", "all").Run()
+	return os.RemoveAll(k.home)
+}
+
+// ImportFor imports one armored public key and requires that it is exactly
+// the primary key fpr -- not a different key, and not extra keys riding
+// along in the same block. The check runs in an empty staging home first,
+// so it never depends on (or pollutes) what the scratch keyring already
+// holds: a keyring entry's publicKey is only trusted to be the key its
+// fingerprint names.
+func (k *ScratchPublicKeyring) ImportFor(fpr string, armored []byte) error {
+	if err := VerifyPublicKeyBlock(fpr, armored); err != nil {
+		return err
+	}
+	return k.importRaw(armored)
+}
+
+// VerifyPublicKeyBlock checks, in an empty throwaway home, that armored is
+// exactly the public key fpr and nothing else.
+func VerifyPublicKeyBlock(fpr string, armored []byte) error {
+	if !ValidFingerprint(fpr) {
+		return fmt.Errorf("gpgutil: %q is not a full fingerprint", fpr)
+	}
+	staging, err := NewScratchPublicKeyring()
+	if err != nil {
+		return err
+	}
+	defer staging.Close()
+	if err := staging.importRaw(armored); err != nil {
+		return fmt.Errorf("gpgutil: import public key for %s: %w", fpr, err)
+	}
+	got, err := staging.fingerprints()
+	if err != nil {
+		return err
+	}
+	if len(got) != 1 || !got[strings.ToUpper(fpr)] {
+		names := make([]string, 0, len(got))
+		for f := range got {
+			names = append(names, f)
+		}
+		return fmt.Errorf("gpgutil: the publicKey given for %s contains %v, not exactly that key", fpr, names)
+	}
+	return nil
+}
+
+func (k *ScratchPublicKeyring) importRaw(armored []byte) error {
+	cmd := exec.Command(Binary, "--homedir", k.home, "--batch", "--import")
+	cmd.Stdin = bytes.NewReader(armored)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%v: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func (k *ScratchPublicKeyring) fingerprints() (map[string]bool, error) {
+	out, err := exec.Command(Binary, "--homedir", k.home, "--batch", "--with-colons", "--list-keys").Output()
+	if err != nil {
+		// An empty, never-used home has no keybox yet.
+		if _, statErr := os.Stat(k.Keybox()); os.IsNotExist(statErr) {
+			return map[string]bool{}, nil
+		}
+		return nil, fmt.Errorf("gpgutil: list scratch keyring: %w", err)
+	}
+	fps := map[string]bool{}
+	inPrimary := false
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Split(line, ":")
+		switch f[0] {
+		case "pub":
+			inPrimary = true
+		case "sub":
+			inPrimary = false
+		case "fpr":
+			if inPrimary && len(f) > 9 {
+				fps[strings.ToUpper(f[9])] = true
+				inPrimary = false
+			}
+		}
+	}
+	return fps, nil
 }
 
 // CountRecipients returns how many public-key recipients an armored GPG

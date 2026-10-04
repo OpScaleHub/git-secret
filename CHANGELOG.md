@@ -44,6 +44,16 @@
   and roles; `set` re-stamps provenance. The recipient-lifecycle and
   disaster-recovery docs now distinguish **rewrap** (who can unwrap), **rekey**
   (new content key, same values) and **secret rotation** (new values at source).
+- **Bulk recipient changes** (#111): `keyfold recipients add|remove|list` take
+  repeated `-f` and directories; `--write` rewrites in place, `--dry-run`
+  previews. Every file is computed first — one failure writes nothing — and
+  objects already in the desired state are left alone.
+- **`--keyring` public keys** (#111): on `seal`, `--rewrap` (which previously
+  ignored `--keyring`) and `recipients`, embedded `publicKey`s are used for that
+  run from a scratch keybox, never imported into your keyring. Each must be
+  exactly the key its fingerprint names (also enforced for `keyfold ui`).
+  Rewrap failures now say whether you lack a recipient's private key or a
+  public key.
 
 ### Removed
 
