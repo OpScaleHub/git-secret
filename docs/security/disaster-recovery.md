@@ -113,15 +113,16 @@ the **same content key** and leaves every `spec.encryptedData` value untouched
 (invariant #6). A departing operator whose key ever unwrapped that content key
 (one `keyfold unseal`, or a copy of a historical `encryptedKey` wrapped
 to them) may have kept it, and it still opens every `encryptedData` value that
-has not since been **changed**. Only changing a value — which forces a full
-re-`Seal` under a fresh content key (§E, step 2) — cryptographically locks them
-out. They can likewise still decrypt any version already in Git history that was
-wrapped to them.
+has not since been **changed**. They can likewise still decrypt any version
+already in Git history that was wrapped to them.
 
-For a passive reviewer leaving on good terms this is usually fine. If the
-departing operator must be denied access to the *current, unchanged* secret
-values, treat it as §E (compromise): rotate the values at their source and
-re-seal.
+Follow the removal with **`keyfold rekey -f gitsecret.yaml`**: it re-encrypts
+every value under a fresh content key (values unchanged), so a content key they
+kept opens nothing in the current object. What it cannot undo is a value they
+already *read*, or a historical version in Git. For a passive reviewer leaving
+on good terms, `remove` + `rekey` is the standard offboarding. If they may have
+kept the values themselves, treat it as §E (compromise): rotate the values at
+their source.
 
 > The CLI path differs. `git keyfold removeuser` (the `gpg` file backend) forces a
 > full `rotate-keys` — a fresh content key, every matched file re-encrypted — so
@@ -146,8 +147,11 @@ Response:
 1. **Rotate the secret values themselves** at their source (new DB password, new
    API token, …). This is the only step that actually restores confidentiality
    for data already in history.
-2. Re-seal under a fresh content key (a normal `keyfold` run, not
-   `--rewrap`), dropping the compromised recipient:
+2. Re-seal under a fresh content key, dropping the compromised recipient —
+   either value by value (`keyfold recipients remove <compromised-fpr>`, then
+   `printf %s "$NEW" | keyfold set DB_PASSWORD -f gitsecret.yaml` for each
+   rotated value), or all at once with a normal `keyfold seal` run (not
+   `--rewrap`):
    ```
    keyfold --namespace prod --name app-secrets \
      --recipient <controller-fpr> --recipient <human-fpr> --recipient <recovery-fpr> \

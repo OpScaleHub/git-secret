@@ -38,9 +38,10 @@ in the manifest and `status.recipients` on the live object
 | Change | Command | Re-seal values? | Historical exposure? |
 |---|---|---|---|
 | Add a recipient | `keyfold recipients add <fpr> -f f.yaml [--role R]` | No | — |
-| Remove a recipient (clean) | `keyfold recipients remove <fpr> -f f.yaml` | No | Rewrap only — they keep access to Git history **and to any current value not since changed** (see below) |
+| Remove a recipient (clean) | `keyfold recipients remove <fpr> -f f.yaml`, then `keyfold rekey -f f.yaml` | `rekey`: new ciphertext, same values | `remove` alone: they keep any content key they already unwrapped. `rekey` retires it. Neither reaches Git history or values they already read (see below) |
+| Change one value | `keyfold set KEY -f f.yaml` (new value on stdin) | Yes — fresh content key, other values carried over | — |
 | Rotate the controller identity | `recipients add <new>` then `recipients remove <old>` | No | — |
-| Rotate a **compromised** key | full `keyfold` re-seal + rotate the secret values themselves | **Yes** | Permanent for anything ever committed — see below |
+| Rotate a **compromised** key | rotate each secret at its source, `keyfold set` the new value, `recipients remove` the key | **Yes** | Permanent for anything ever committed — see below |
 | Emergency: rotate everything | re-seal every `GitSecret` to a fresh recipient set | Yes | As above |
 
 `add` / `remove` rewrap the content key to the new set and print the updated
@@ -69,11 +70,13 @@ the time. Consequences:
   and does **not** re-encrypt any `encryptedData` value (invariant #6), so a
   recipient who already obtained that content key can still decrypt every value
   that has not since been **changed**, plus every version already in Git history
-  that was wrapped to them. Changing a value re-seals it under a fresh content
-  key and is the only operation that cryptographically locks them out. For a
-  departing operator who was only ever a passive reviewer this is usually fine;
-  if the current unchanged values must be protected from them, treat it as a
-  compromise (below). (The CLI `git keyfold removeuser` is different — it forces a
+  that was wrapped to them. **`keyfold rekey`** closes the first gap: it
+  re-encrypts every value under a fresh content key, so a kept content key opens
+  nothing in the current object. It cannot help with values they already *read*
+  or with older versions in Git history — only rotating the secret at its source
+  (then `keyfold set`) does. For a departing operator who was only ever a passive
+  reviewer, `remove` + `rekey` is usually enough; if they may have kept the
+  values themselves, treat it as a compromise (below). (The CLI `git keyfold removeuser` is different — it forces a
   full `rotate-keys`, so CLI removal *is* a revocation of access to current
   data.)
 - **A compromised key** must be assumed to have decrypted everything that key was
