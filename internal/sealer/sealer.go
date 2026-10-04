@@ -111,7 +111,7 @@ func sortedCopy(in []string) []string {
 // controller's own key during a DR/rotation event) never re-encrypts a
 // single value, only this one small blob. This is what keeps a single
 // controller keypair from ever being the only way in: as long as at least one currently-valid recipient's key is available to
-// call Rewrap with, a lost or rotated controller identity is a re-wrap
+// call Rewrap with, a lost or rotated controller identity is a rewrap
 // away from recovery, not a full re-seal of every secret.
 //
 // The caller's local GNUPGHOME must hold a secret key that can already

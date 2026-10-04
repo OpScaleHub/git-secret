@@ -541,7 +541,7 @@ git commit -m "add db credentials"
             <tr><td><code>decrypt &lt;path...&gt;</code></td><td>Decrypt specific files in place.</td></tr>
             <tr><td><code>rotate-keys</code></td><td>Generate a new key and re-encrypt every matched file under it.</td></tr>
             <tr><td><code>verify</code></td><td>Check every matched file committed at <code>HEAD</code> is ciphertext.</td></tr>
-            <tr><td><code>adduser [recipient]</code></td><td><code>gpg</code> backend only — grant access cheaply (re-wraps the key, no file re-encryption). Omit the argument to pick interactively.</td></tr>
+            <tr><td><code>adduser [recipient]</code></td><td><code>gpg</code> backend only — grant access cheaply (rewraps the key, no file re-encryption). Omit the argument to pick interactively.</td></tr>
             <tr><td><code>removeuser &lt;recipient&gt;</code></td><td><code>gpg</code> backend only — revoke access and rotate to a new key (the removed recipient already saw the old one).</td></tr>
             <tr><td><code>hook &lt;name&gt;</code></td><td>Internal — invoked by the installed hooks.</td></tr>
             <tr><td><code>version</code></td><td>Show version, commit, and Go runtime info.</td></tr>
@@ -795,7 +795,7 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
       <div id="guides" style="margin-top:var(--sp-5)">
         <h3>Guides &amp; security docs</h3>
         <ul class="req-list">
-          <li><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/getting-started/quickstart.md" target="_blank" rel="noopener">Quickstart: GitSecret + Kubernetes</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/guides/troubleshooting.md" target="_blank" rel="noopener">Troubleshooting</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/UPGRADING.md" target="_blank" rel="noopener">Upgrading</a></li>
+          <li><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/concepts.md" target="_blank" rel="noopener">Concepts</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/getting-started/quickstart.md" target="_blank" rel="noopener">Quickstart: GitSecret + Kubernetes</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/guides/troubleshooting.md" target="_blank" rel="noopener">Troubleshooting</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/UPGRADING.md" target="_blank" rel="noopener">Upgrading</a></li>
           <li><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/architecture/overview.md" target="_blank" rel="noopener">Architecture</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/threat-model.md" target="_blank" rel="noopener">Threat model</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/disaster-recovery.md" target="_blank" rel="noopener">Disaster recovery</a> · <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/recipient-lifecycle.md" target="_blank" rel="noopener">Recipient lifecycle</a></li>
         </ul>
       </div>

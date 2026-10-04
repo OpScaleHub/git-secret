@@ -299,7 +299,7 @@ func TestAddUserDoesNotGrantAccessWhenConfigSaveFails(t *testing.T) {
 	}
 
 	b := newGPGIdentity(t, "B <b@example.com>")
-	withGNUPGHome(t, a.home) // AddUser needs A's access to re-wrap
+	withGNUPGHome(t, a.home) // AddUser needs A's access to rewrap
 
 	cfgPath := filepath.Join(root, ".keyfold.yml")
 	if err := os.Remove(cfgPath); err != nil {

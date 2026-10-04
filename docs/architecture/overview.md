@@ -1,6 +1,8 @@
 # Architecture overview
 
-Diagrams for the `GitSecret` CRD + controller path. Companion to
+Diagrams for the `GitSecret` CRD + controller path. Read
+[concepts.md](../concepts.md) first for the model and terms (CEK = content key).
+Companion to
 [design-rationale.md](../security/design-rationale.md) (why) and
 [threat-model.md](../security/threat-model.md) (what's defended).
 

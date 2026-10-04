@@ -1,5 +1,8 @@
 # Documentation
 
+Start with **[concepts.md](concepts.md)** — the model, who can do what, and what
+each operation (rewrap, rekey, set, secret rotation) changes, plus the glossary.
+
 ## Security
 
 - [threat-model.md](security/threat-model.md) — assets, trust boundaries, threats

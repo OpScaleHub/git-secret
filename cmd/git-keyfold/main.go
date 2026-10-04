@@ -56,7 +56,7 @@ Commands:
   verify               Check that every config-matched file committed at
                        HEAD is actually encrypted (exit 3 if not).
   adduser [recipient]  gpg backend only: grant a GPG recipient access
-                       (cheap -- re-wraps the existing key, no file
+                       (cheap -- rewraps the existing key, no file
                        re-encryption). Omit the argument to pick from
                        your local public keyring interactively.
   removeuser <recipient>

@@ -111,7 +111,7 @@ func openForReseal(file string, stderr io.Writer) (*v1alpha1.GitSecret, map[stri
 		return nil, nil, exitError
 	}
 	if len(gs.Spec.Recipients) == 0 {
-		fmt.Fprintf(stderr, "error: %s lists no spec.recipients, so there is no recipient set to re-wrap to -- re-seal it with 'keyfold seal --recipient ...' instead\n", file)
+		fmt.Fprintf(stderr, "error: %s lists no spec.recipients, so there is no recipient set to rewrap to -- re-seal it with 'keyfold seal --recipient ...' instead\n", file)
 		return nil, nil, exitError
 	}
 	data, err := sealer.Unseal(gs.Namespace, gs.Name, gs.Spec)
