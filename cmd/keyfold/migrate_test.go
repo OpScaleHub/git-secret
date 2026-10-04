@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -78,7 +79,7 @@ func TestMigrate_RewritesOnlyGroupPositions(t *testing.T) {
 	if string(got) != want {
 		t.Fatalf("migrated file differs from expected.\n--- got ---\n%s\n--- want ---\n%s", got, want)
 	}
-	if info, _ := os.Stat(path); info.Mode().Perm() != 0o640 {
+	if info, _ := os.Stat(path); runtime.GOOS != "windows" && info.Mode().Perm() != 0o640 { // no POSIX mode bits on Windows
 		t.Errorf("file mode changed to %v", info.Mode().Perm())
 	}
 	if b, _ := os.ReadFile(other); !bytes.Contains(b, []byte("git-secret.opscalehub.io")) {
