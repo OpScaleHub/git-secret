@@ -41,21 +41,21 @@ func runGit(t *testing.T, dir string, args ...string) string {
 }
 
 // commitInitConfig stages and commits the config/gitignore files Init
-// wrote. Verify/HookPrePush load .repo-enc.yml from the revision being
+// wrote. Verify/HookPrePush load .keyfold.yml from the revision being
 // checked, not from disk, so they have nothing to enforce until the
 // config itself is committed — real usage always commits it immediately
 // after `init`, and test fixtures need to mirror that.
 //
 // --no-verify: this package tests HookPreCommit et al. directly as Go
 // functions (see commitViaHook in skipworktree_test.go), not through the
-// real installed hook script -- that script `exec`s the `git-secret`
+// real installed hook script -- that script `exec`s the `git-keyfold`
 // binary by name on PATH, which nothing in this package builds/installs
 // (unlike main_test.go's black-box tests, which do). Neither
-// .repo-enc.yml nor .gitignore is pattern-matched content anyway, so
+// .keyfold.yml nor .gitignore is pattern-matched content anyway, so
 // there's nothing for the real hook to do here even if it did run.
 func commitInitConfig(t *testing.T, root string) {
 	t.Helper()
-	runGit(t, root, "add", ".repo-enc.yml", ".gitignore")
+	runGit(t, root, "add", ".keyfold.yml", ".gitignore")
 	runGit(t, root, "commit", "-q", "--no-verify", "-m", "repo-enc: init")
 }
 
@@ -86,11 +86,11 @@ func TestInitCreatesConfigKeyAndHooks(t *testing.T) {
 	if _, err := os.Stat(result.ConfigPath); err != nil {
 		t.Errorf("config file missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(root, ".repo-enc", "key")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, ".keyfold", "key")); err != nil {
 		t.Errorf("key file missing: %v", err)
 	}
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".gitignore"))
-	if !strings.Contains(string(gitignore), ".repo-enc/key") {
+	if !strings.Contains(string(gitignore), ".keyfold/key") {
 		t.Errorf(".gitignore does not cover the key file: %q", gitignore)
 	}
 
@@ -116,7 +116,7 @@ func TestInitCreatesConfigKeyAndHooks(t *testing.T) {
 	}
 
 	// Re-running Init must be idempotent: same config path, key untouched.
-	keyBefore, _ := os.ReadFile(filepath.Join(root, ".repo-enc", "key"))
+	keyBefore, _ := os.ReadFile(filepath.Join(root, ".keyfold", "key"))
 	result2, err := Init(InitOptions{Patterns: []string{"ignored-on-second-run/**"}})
 	if err != nil {
 		t.Fatalf("second Init: %v", err)
@@ -124,7 +124,7 @@ func TestInitCreatesConfigKeyAndHooks(t *testing.T) {
 	if result2.GeneratedKey {
 		t.Errorf("second Init should not regenerate an existing key")
 	}
-	keyAfter, _ := os.ReadFile(filepath.Join(root, ".repo-enc", "key"))
+	keyAfter, _ := os.ReadFile(filepath.Join(root, ".keyfold", "key"))
 	if string(keyBefore) != string(keyAfter) {
 		t.Errorf("key changed across idempotent Init calls")
 	}
@@ -338,7 +338,7 @@ func TestVerifyFlagsCommittedRawFileBackendKey(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	runGit(t, root, "add", "-f", ".repo-enc/key")
+	runGit(t, root, "add", "-f", ".keyfold/key")
 	runGit(t, root, "commit", "-q", "--no-verify", "-m", "oops, committed the raw key")
 
 	problems, err := ctx.Verify()
@@ -347,7 +347,7 @@ func TestVerifyFlagsCommittedRawFileBackendKey(t *testing.T) {
 	}
 	found := false
 	for _, p := range problems {
-		if strings.Contains(p, ".repo-enc/key") {
+		if strings.Contains(p, ".keyfold/key") {
 			found = true
 		}
 	}
@@ -392,7 +392,7 @@ func TestEncryptPathsRejectsPathEscapingRepoRoot(t *testing.T) {
 // or an absolute path) must not make `init` create a key there.
 func TestInitRejectsKeySourceEscapingRepoRoot(t *testing.T) {
 	root := newTestRepo(t)
-	writeRepoFile(t, root, ".repo-enc.yml", "version: 1\npatterns:\n  - \"secrets/**\"\nkey_backend: file\nkey_source: ../outside-key\n")
+	writeRepoFile(t, root, ".keyfold.yml", "version: 1\npatterns:\n  - \"secrets/**\"\nkey_backend: file\nkey_source: ../outside-key\n")
 
 	if _, err := Init(InitOptions{}); err == nil {
 		t.Fatalf("expected Init to reject a key_source escaping the repo root")
@@ -412,7 +412,7 @@ func TestLockRefusesMatchedSymlink(t *testing.T) {
 		t.Fatalf("Init: %v", err)
 	}
 
-	outside := filepath.Join(filepath.Dir(root), "git-secret-outside-secret")
+	outside := filepath.Join(filepath.Dir(root), "keyfold-outside-secret")
 	if err := os.WriteFile(outside, []byte("outside-password=hunter2\n"), 0o644); err != nil {
 		t.Fatalf("write outside file: %v", err)
 	}
@@ -506,8 +506,8 @@ func TestRotateKeysGitignoresStagingKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read .gitignore: %v", err)
 	}
-	if !strings.Contains(string(gitignore), ".repo-enc/key.new") {
-		t.Fatalf(".gitignore = %q, want it to cover the staging key .repo-enc/key.new", gitignore)
+	if !strings.Contains(string(gitignore), ".keyfold/key.new") {
+		t.Fatalf(".gitignore = %q, want it to cover the staging key .keyfold/key.new", gitignore)
 	}
 }
 
@@ -581,7 +581,7 @@ func TestDecryptAfterGitOperationSkipsWithoutFailingWhenKeyMissing(t *testing.T)
 	}
 
 	// Simulate the key being unavailable (e.g. a fresh clone with no key yet).
-	if err := os.Remove(filepath.Join(root, ".repo-enc", "key")); err != nil {
+	if err := os.Remove(filepath.Join(root, ".keyfold", "key")); err != nil {
 		t.Fatalf("remove key: %v", err)
 	}
 
@@ -591,5 +591,84 @@ func TestDecryptAfterGitOperationSkipsWithoutFailingWhenKeyMissing(t *testing.T)
 	data, _ := os.ReadFile(filepath.Join(root, "secrets/db.yaml"))
 	if strings.Contains(string(data), "hunter2") {
 		t.Fatalf("file should remain encrypted without a key")
+	}
+}
+
+// TestInstallHooks_ReplacesPreRenameHooks: hooks written before the
+// Keyfold rename exec the old binary name. Re-running init must overwrite
+// them like its own -- not preserve them as "<name>.local" and chain a
+// script that can no longer run.
+func TestInstallHooks_ReplacesPreRenameHooks(t *testing.T) {
+	root := newTestRepo(t)
+	hooksDir, err := gitutil.HooksDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old := "#!/bin/sh\n# " + legacyHookMarker + "\nexec git-secret hook pre-commit \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(hooksDir, "pre-commit"), []byte(old), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := InstallHooks(root); err != nil {
+		t.Fatalf("InstallHooks: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(hooksDir, "pre-commit.local")); !os.IsNotExist(err) {
+		t.Fatal("pre-rename hook was preserved as pre-commit.local and would be chained")
+	}
+	data, _ := os.ReadFile(filepath.Join(hooksDir, "pre-commit"))
+	if !strings.Contains(string(data), hookMarker) || !strings.Contains(string(data), "exec "+binaryName+" hook pre-commit") {
+		t.Fatalf("pre-commit not rewritten for the new binary:\n%s", data)
+	}
+	if !strings.Contains(string(data), "KEYFOLD_SKIP_HOOKS") || !strings.Contains(string(data), "SECRETIZE_SKIP_HOOKS") {
+		t.Errorf("hook does not honour both skip variables:\n%s", data)
+	}
+}
+
+// TestLegacyLayoutRepoKeepsWorking: a repository set up before the rename
+// (.repo-enc.yml, key under .repo-enc/, no key_source written) must keep
+// encrypting on commit and verifying at a pinned revision, untouched.
+func TestLegacyLayoutRepoKeepsWorking(t *testing.T) {
+	root := newTestRepo(t)
+	if _, err := Init(InitOptions{Patterns: []string{"secrets/**"}}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	// Turn the fresh repo into the pre-rename layout.
+	if err := os.Rename(filepath.Join(root, ".keyfold"), filepath.Join(root, ".repo-enc")); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := os.ReadFile(filepath.Join(root, ".keyfold.yml"))
+	var kept []string
+	for _, line := range strings.Split(string(cfg), "\n") {
+		if !strings.HasPrefix(line, "key_source:") { // rely on the legacy default
+			kept = append(kept, line)
+		}
+	}
+	writeRepoFile(t, root, ".repo-enc.yml", strings.Join(kept, "\n"))
+	os.Remove(filepath.Join(root, ".keyfold.yml"))
+	writeRepoFile(t, root, ".gitignore", ".repo-enc/key\n")
+	runGit(t, root, "add", ".repo-enc.yml", ".gitignore")
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "pre-rename layout")
+
+	ctx, err := Load()
+	if err != nil {
+		t.Fatalf("Load legacy repo: %v", err)
+	}
+	if ctx.Config.KeySource != ".repo-enc/key" {
+		t.Fatalf("legacy key_source = %q, want .repo-enc/key", ctx.Config.KeySource)
+	}
+	writeRepoFile(t, root, "secrets/db.yaml", "password: hunter2\n")
+	runGit(t, root, "add", "secrets/db.yaml")
+	if err := ctx.HookPreCommit(); err != nil {
+		t.Fatalf("HookPreCommit: %v", err)
+	}
+	runGit(t, root, "commit", "-q", "--no-verify", "-m", "add secret")
+	if problems, err := ctx.Verify(); err != nil || len(problems) != 0 {
+		t.Fatalf("Verify on legacy repo: %v %v", problems, err)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".keyfold.yml")); !os.IsNotExist(err) {
+		t.Fatal("a .keyfold.yml appeared in a legacy repo")
 	}
 }

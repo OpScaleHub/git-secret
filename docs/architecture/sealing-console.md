@@ -1,40 +1,40 @@
-# Sealing console (`git-secret-seal ui`)
+# Sealing console (`keyfold ui`)
 
 A web form for producing `GitSecret` manifests, for people who would rather not
-drive the `git-secret-seal` CLI — especially non-Linux users. It is **public-key
+drive the `keyfold` CLI — especially non-Linux users. It is **public-key
 only**: it never decrypts, never touches the Kubernetes API, and never persists
 anything. The output is a manifest you review and `kubectl apply` yourself.
 
 ## Run it locally
 
 ```
-git-secret-seal ui                 # http://127.0.0.1:8765
-git-secret-seal ui --keyring envs/prod/keyring.yaml --namespace prod
+keyfold ui                 # http://127.0.0.1:8765
+keyfold ui --keyring envs/prod/keyring.yaml --namespace prod
 ```
 
-Same trust boundary as running `git-secret-seal` directly — the sealing happens
+Same trust boundary as running `keyfold` directly — the sealing happens
 in the process, using the recipient **public** keys in your gpg keyring (or the
 ones carried in `--keyring`). Nothing leaves your machine.
 
 ## Run it in-cluster
 
-Helm (`charts/git-secret-controller`):
+Helm (`charts/keyfold`):
 
 ```yaml
 sealUi:
   enabled: true
-  keyringConfigMap: git-secret-keyring   # required: recipients + their public keys
+  keyringConfigMap: keyfold-keyring   # required: recipients + their public keys
   defaultNamespace: ""
 ```
 
-This deploys a small `Deployment` + `Service` running `git-secret-seal ui` from
+This deploys a small `Deployment` + `Service` running `keyfold ui` from
 the controller image (the binary is bundled). The pod has
 `automountServiceAccountToken: false` — it genuinely cannot reach the API.
 
 Reach it by port-forward — **no Ingress**:
 
 ```
-kubectl port-forward svc/git-secret-controller-seal-ui 8080:80
+kubectl port-forward svc/keyfold-seal-ui 8080:80
 open http://localhost:8080
 ```
 
@@ -85,7 +85,7 @@ in-cluster sealing works without any operator keyring. In-cluster it runs with
 other keyring to fall back on — so the chart requires `keyringConfigMap` and
 the UI refuses to start if an entry is missing its key. Build the `publicKey`
 blocks with `gpg --armor --export <fpr>` (or, for the controller's own key,
-`git-secret-controller --print-public-key`).
+`keyfold-controller --print-public-key`).
 
 ## What it does not do
 

@@ -38,7 +38,7 @@ func GenerateCerts(service, namespace string) (*Certs, error) {
 	now := time.Now()
 	caTmpl := &x509.Certificate{
 		SerialNumber:          bigSerial(),
-		Subject:               pkix.Name{CommonName: "git-secret-controller-webhook-ca"},
+		Subject:               pkix.Name{CommonName: "keyfold-controller-webhook-ca"},
 		NotBefore:             now.Add(-time.Hour),
 		NotAfter:              now.AddDate(10, 0, 0),
 		IsCA:                  true,
@@ -82,7 +82,7 @@ func GenerateCerts(service, namespace string) (*Certs, error) {
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(leafKey)})
 
-	dir, err := os.MkdirTemp("", "git-secret-webhook-certs-")
+	dir, err := os.MkdirTemp("", "keyfold-webhook-certs-")
 	if err != nil {
 		return nil, fmt.Errorf("webhook: cert dir: %w", err)
 	}

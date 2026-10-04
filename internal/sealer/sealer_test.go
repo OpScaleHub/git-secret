@@ -166,7 +166,7 @@ func TestUnsealWrongObjectFails(t *testing.T) {
 }
 
 // TestRewrap_AddsRecipientWithoutTouchingEncryptedData is the core proof
-// behind git-secret#34's argument for a native CRD over copying sealed-
+// behind #34's argument for a native CRD over copying sealed-
 // secrets' design outright: adding a second recipient must be a small,
 // cheap operation on EncryptedKey alone, and the new recipient must be
 // able to decrypt independently afterward -- without recipient A's key
@@ -186,7 +186,7 @@ func TestRewrap_AddsRecipientWithoutTouchingEncryptedData(t *testing.T) {
 	fprB := genTestKey(t, homeB)
 
 	// Rewrapping to B requires B's PUBLIC key in A's keyring first --
-	// same precondition git-secret's existing `adduser` command already
+	// same precondition Keyfold's existing `adduser` command already
 	// has for whole-repo files (see keybackend.GPGBackend/gpgutil docs):
 	// you can encrypt to someone whose public key you hold, whether or
 	// not you can decrypt anything they've sent you.

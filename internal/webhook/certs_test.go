@@ -9,7 +9,7 @@ import (
 )
 
 func TestGenerateCerts(t *testing.T) {
-	c, err := GenerateCerts("git-secret-controller-webhook", "git-secret")
+	c, err := GenerateCerts("keyfold-controller-webhook", "keyfold-system")
 	if err != nil {
 		t.Fatalf("GenerateCerts: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestGenerateCerts(t *testing.T) {
 	pool := x509.NewCertPool()
 	pool.AddCert(ca)
 	if _, err := leaf.Verify(x509.VerifyOptions{
-		DNSName: "git-secret-controller-webhook.git-secret.svc",
+		DNSName: "keyfold-controller-webhook.keyfold-system.svc",
 		Roots:   pool,
 	}); err != nil {
 		t.Errorf("serving cert does not verify against its CA for the svc DNS name: %v", err)

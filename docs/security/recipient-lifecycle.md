@@ -11,7 +11,7 @@ and [threat-model.md](threat-model.md) T3/T4/T11.
 ## Recipient roles
 
 Roles are a **convention**, recorded in the
-`git-secret.opscalehub.io/recipient-roles` annotation on the `GitSecret`
+`keyfold.opscalehub.io/recipient-roles` annotation on the `GitSecret`
 (`<fingerprint>:<role>`, comma-separated). The controller never reads them — the
 decrypt path only cares what `encryptedKey` is actually wrapped to. They exist so
 an operator can tell at a glance which key is which.
@@ -19,14 +19,14 @@ an operator can tell at a glance which key is which.
 | Role | What it is | Notes |
 |---|---|---|
 | `human` | An operator who seals / reviews locally | The default when a fingerprint has no entry |
-| `controller` | A `git-secret-controller` identity | One per cluster (see [multi-cluster](../architecture/overview.md)) |
-| `recovery` | An offline key, held outside any cluster and outside any daily-use keyring | **Every production `GitSecret` should have one.** `git-secret-seal` refuses to remove the last one without `--force` |
+| `controller` | A `keyfold-controller` identity | One per cluster (see [multi-cluster](../architecture/overview.md)) |
+| `recovery` | An offline key, held outside any cluster and outside any daily-use keyring | **Every production `GitSecret` should have one.** `keyfold` refuses to remove the last one without `--force` |
 | `deprecated` | A recipient being phased out — still wrapped to, flagged for a later rewrap to drop | |
 
 ## "Who can decrypt this object?"
 
 ```
-git-secret-seal recipients list -f gitsecret.yaml
+keyfold recipients list -f gitsecret.yaml
 ```
 
 prints each fingerprint and its role. The set also appears as `spec.recipients`
@@ -37,10 +37,10 @@ in the manifest and `status.recipients` on the live object
 
 | Change | Command | Re-seal values? | Historical exposure? |
 |---|---|---|---|
-| Add a recipient | `git-secret-seal recipients add <fpr> -f f.yaml [--role R]` | No | — |
-| Remove a recipient (clean) | `git-secret-seal recipients remove <fpr> -f f.yaml` | No | Rewrap only — they keep access to Git history **and to any current value not since changed** (see below) |
+| Add a recipient | `keyfold recipients add <fpr> -f f.yaml [--role R]` | No | — |
+| Remove a recipient (clean) | `keyfold recipients remove <fpr> -f f.yaml` | No | Rewrap only — they keep access to Git history **and to any current value not since changed** (see below) |
 | Rotate the controller identity | `recipients add <new>` then `recipients remove <old>` | No | — |
-| Rotate a **compromised** key | full `git-secret-seal` re-seal + rotate the secret values themselves | **Yes** | Permanent for anything ever committed — see below |
+| Rotate a **compromised** key | full `keyfold` re-seal + rotate the secret values themselves | **Yes** | Permanent for anything ever committed — see below |
 | Emergency: rotate everything | re-seal every `GitSecret` to a fresh recipient set | Yes | As above |
 
 `add` / `remove` rewrap the content key to the new set and print the updated
@@ -73,7 +73,7 @@ the time. Consequences:
   key and is the only operation that cryptographically locks them out. For a
   departing operator who was only ever a passive reviewer this is usually fine;
   if the current unchanged values must be protected from them, treat it as a
-  compromise (below). (The CLI `git secret removeuser` is different — it forces a
+  compromise (below). (The CLI `git keyfold removeuser` is different — it forces a
   full `rotate-keys`, so CLI removal *is* a revocation of access to current
   data.)
 - **A compromised key** must be assumed to have decrypted everything that key was

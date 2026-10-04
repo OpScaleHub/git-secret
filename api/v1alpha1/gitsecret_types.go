@@ -46,7 +46,7 @@ type GitSecretSpec struct {
 	EncryptedKey string `json:"encryptedKey"`
 
 	// Recipients lists the full GPG fingerprints EncryptedKey is wrapped
-	// to, sorted. Written by git-secret-seal. It is informational -- the
+	// to, sorted. Written by keyfold. It is informational -- the
 	// authoritative recipient set is whatever EncryptedKey actually
 	// encrypts to -- but it makes "who can decrypt this object" reviewable
 	// in a plain YAML diff (adding a recipient becomes a visible one-line
@@ -104,7 +104,7 @@ type GitSecretStatus struct {
 	// Recipients mirrors spec.recipients as observed at the last reconcile,
 	// so `kubectl get gitsecret -o yaml` shows the current decrypt set
 	// without reading the spec. Empty if the object predates the field or
-	// was sealed by an older git-secret-seal.
+	// was sealed by an older keyfold.
 	// +optional
 	// +listType=set
 	Recipients []string `json:"recipients,omitempty"`
@@ -113,8 +113,8 @@ type GitSecretStatus struct {
 	// +optional
 	RecipientCount int `json:"recipientCount,omitempty"`
 
-	// SourceRevision echoes the git-secret.opscalehub.io/source-revision
-	// annotation (the commit git-secret-seal sealed the plaintext from), so
+	// SourceRevision echoes the keyfold.opscalehub.io/source-revision
+	// annotation (the commit keyfold sealed the plaintext from), so
 	// `kubectl get gitsecret` answers "which commit produced this Secret?".
 	// Empty if the object carries no provenance annotation.
 	// +optional

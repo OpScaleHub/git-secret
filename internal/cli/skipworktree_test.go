@@ -13,7 +13,7 @@ import (
 // commitViaHook stages paths, invokes HookPreCommit directly, then
 // finalizes the commit. These are internal/cli package-level tests, not
 // black-box binary tests (that's main_test.go's job), so the compiled
-// git-secret binary is never built or put on PATH here — the *installed*
+// git-keyfold binary is never built or put on PATH here — the *installed*
 // pre-commit hook script (which execs that binary) can't run. Calling
 // HookPreCommit directly is the established pattern this package already
 // uses (see TestHookPreCommitEncryptsIndexOnlyLeavesWorkingTreePlaintext)
@@ -30,7 +30,7 @@ func commitViaHook(t *testing.T, root, msg string, paths ...string) *Context {
 	}
 	// --no-verify: per the doc comment above, this package calls
 	// HookPreCommit directly precisely because the *installed* hook
-	// script can't run here (it execs the git-secret binary by name on
+	// script can't run here (it execs the git-keyfold binary by name on
 	// PATH, which nothing in this package builds/installs). This used
 	// to work anyway, by accident: the installed hook used to exit
 	// immediately whenever the ambient $CI var was set (issue #21,
@@ -110,7 +110,7 @@ func TestLockClearsSkipWorktree(t *testing.T) {
 // treat the path as if it has no local changes at all. A plain `git add`
 // on a skip-worktree'd file fails loudly with a sparse-checkout-flavored
 // error in recent git versions, even though this repo never touched
-// sparse checkout. `git secret lock` sidesteps this entirely: it
+// sparse checkout. `git keyfold lock` sidesteps this entirely: it
 // re-encrypts straight from the current working-tree content (not
 // through `git add`) and clears skip-worktree itself, so the resulting
 // `git add` — of already-identical ciphertext — works normally. The

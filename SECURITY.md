@@ -10,7 +10,7 @@ Please do **not** open a public issue for a suspected vulnerability.
 
 Include, as far as you can:
 
-- affected component — CLI / Git hooks, `kubectl-secret`, `git-secret-seal`, or
+- affected component — CLI / Git hooks, `kubectl-keyfold`, `keyfold`, or
   the `GitSecret` CRD + controller (incl. the Helm chart);
 - affected version or commit;
 - a minimal reproduction;
@@ -62,15 +62,15 @@ plus provenance + SBOM attestations:
 cosign verify \
   --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/opscalehub/git-secret-controller:<tag>
+  ghcr.io/opscalehub/keyfold-controller:<tag>
 
 cosign verify-attestation --type slsaprovenance \
   --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/opscalehub/git-secret-controller:<tag>
+  ghcr.io/opscalehub/keyfold-controller:<tag>
 ```
 
-**SBOM** — an SPDX SBOM of the module graph (`git-secret-sbom.spdx.json`) is
+**SBOM** — an SPDX SBOM of the module graph (`keyfold-sbom.spdx.json`) is
 attached to each GitHub release; the images carry their own finer-grained SBOM
 attestation (`cosign download sbom ...` / `--type spdxjson`).
 

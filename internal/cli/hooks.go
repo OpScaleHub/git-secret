@@ -25,7 +25,7 @@ var HookNames = []string{"pre-commit", "post-checkout", "post-merge", "pre-push"
 func (c *Context) HookPreCommit() error {
 	key, err := c.Key()
 	if err != nil {
-		return fmt.Errorf("pre-commit: %w (run `repo-enc unlock` or configure a key first)", err)
+		return fmt.Errorf("pre-commit: %w (run `git keyfold unlock` or configure a key first)", err)
 	}
 
 	staged, err := gitutil.StagedFiles(c.RepoRoot)
@@ -73,7 +73,7 @@ func (c *Context) HookPreCommit() error {
 
 	// k8s_secret_paths is a separate, per-value encryption policy: there's
 	// no whole file to transparently swap in ciphertext for (the user
-	// must run `kubectl secret encrypt-value` themselves), so the only
+	// must run `kubectl keyfold encrypt-value` themselves), so the only
 	// thing pre-commit can do here is block a commit that would land a
 	// value that's neither ciphertext nor explicitly allowlisted plaintext.
 	var k8sProblems []string
@@ -118,7 +118,7 @@ func (c *Context) decryptAfterGitOperation() error {
 	}
 	if _, err := c.DecryptPaths(paths); err != nil {
 		if errors.Is(err, keybackend.ErrKeyNotFound) {
-			fmt.Fprintln(os.Stderr, "repo-enc: no key configured yet — files left encrypted (run `repo-enc unlock` once a key is available)")
+			fmt.Fprintln(os.Stderr, "keyfold: no key configured yet — files left encrypted (run `git keyfold unlock` once a key is available)")
 			return nil
 		}
 		return err

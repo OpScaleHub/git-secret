@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>git-secret — plaintext on disk, ciphertext in history</title>
-<meta name="description" content="git-secret transparently encrypts pattern-matched files in a git repository via installed hooks — modern AEAD crypto, no GPG required, one cross-platform binary. Ships GitSecret: a native Kubernetes CRD and controller with ciphertext inline in the object and no repo clone at all. No third-party secret store." />
-<meta name="keywords" content="git-secret, secrets management, git encryption, GitOps secrets, Kubernetes secrets, ArgoCD, kubectl plugin, GPG, AEAD encryption, Custom Resource Definition, Kubernetes controller" />
+<title>Keyfold — plaintext on disk, ciphertext in history</title>
+<meta name="description" content="Keyfold transparently encrypts pattern-matched files in a git repository via installed hooks — modern AEAD crypto, no GPG required, one cross-platform binary. Ships GitSecret: a native Kubernetes CRD and controller with ciphertext inline in the object and no repo clone at all. No third-party secret store." />
+<meta name="keywords" content="Keyfold, secrets management, git encryption, GitOps secrets, Kubernetes secrets, ArgoCD, kubectl plugin, GPG, AEAD encryption, Custom Resource Definition, Kubernetes controller" />
 <meta name="robots" content="index, follow" />
 <meta name="author" content="OpScaleHub" />
 <meta name="theme-color" content="#10151A" />
@@ -14,21 +14,21 @@
 <!-- Open Graph / Facebook, Slack, Discord, LinkedIn -->
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://git-secret.opscale.ir/" />
-<meta property="og:site_name" content="git-secret" />
-<meta property="og:title" content="git-secret — plaintext on disk, ciphertext in history" />
+<meta property="og:site_name" content="Keyfold" />
+<meta property="og:title" content="Keyfold — plaintext on disk, ciphertext in history" />
 <meta property="og:description" content="Transparent git-repo encryption via installed hooks, modern AEAD crypto, one binary. Now with GitSecret: a native Kubernetes CRD and controller, ciphertext inline, no repo clone, no third-party secret store." />
 <meta property="og:image" content="https://git-secret.opscale.ir/assets/og-image.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
-<meta property="og:image:alt" content="git-secret — now with a native Kubernetes CRD" />
+<meta property="og:image:alt" content="Keyfold — now with a native Kubernetes CRD" />
 <meta property="og:locale" content="en_US" />
 
 <!-- Twitter/X Card -->
 <meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="git-secret — plaintext on disk, ciphertext in history" />
+<meta name="twitter:title" content="Keyfold — plaintext on disk, ciphertext in history" />
 <meta name="twitter:description" content="Transparent git-repo encryption via installed hooks, modern AEAD crypto, one binary. Now with GitSecret: a native Kubernetes CRD and controller, ciphertext inline, no repo clone." />
 <meta name="twitter:image" content="https://git-secret.opscale.ir/assets/og-image.png" />
-<meta name="twitter:image:alt" content="git-secret — now with a native Kubernetes CRD" />
+<meta name="twitter:image:alt" content="Keyfold — now with a native Kubernetes CRD" />
 
 <!-- Favicons -->
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%2310151A'/%3E%3Ctext x='32' y='42' font-family='Georgia,serif' font-size='30' fill='%23B8873F' text-anchor='middle'%3E%C2%A7%3C/text%3E%3C/svg%3E" />
@@ -41,7 +41,7 @@
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
-  "name": "git-secret",
+  "name": "Keyfold",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Linux, macOS, Windows",
   "description": "Transparent git-repo encryption via installed hooks, with GitSecret: a native Kubernetes CRD and controller, ciphertext inline in the object, no repo clone, no third-party secret store.",
@@ -379,7 +379,7 @@
 
 <header class="site">
   <div class="container nav-row">
-    <a class="wordmark" href="#top"><span class="mark">§</span>git-secret</a>
+    <a class="wordmark" href="#top"><span class="mark">§</span>Keyfold</a>
     <nav class="links" aria-label="Primary">
       <a class="hide-narrow" href="#features">Features</a>
       <a class="hide-narrow" href="#how">How it works</a>
@@ -412,7 +412,7 @@
       <div class="hero-copy">
         <p class="eyebrow">Transparent repository encryption</p>
         <h1>Plaintext on disk.<br><span class="accent">Ciphertext in history.</span></h1>
-        <p class="lede">git-secret installs four git hooks that quietly encrypt what you commit and decrypt what you check out — modern authenticated encryption, no server, nothing to remember to run. GPG is entirely optional, for teams who'd rather wrap the key to existing identities than pass around a raw one.</p>
+        <p class="lede">Keyfold installs four git hooks that quietly encrypt what you commit and decrypt what you check out — modern authenticated encryption, no server, nothing to remember to run. GPG is entirely optional, for teams who'd rather wrap the key to existing identities than pass around a raw one.</p>
         <p class="lede">On Kubernetes? The same crypto core ships as a <code>GitSecret</code> CRD and controller — ciphertext inline in the object, decrypted in-cluster, no repo clone.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href="#quickstart">Read the quick start</a>
@@ -423,7 +423,7 @@
 
       <div class="receipt" aria-label="Example session">
         <div class="receipt-head"><span>secrets/db.yaml</span><span>session</span></div>
-        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">git secret init</span></span>
+        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">git keyfold init</span></span>
 <span class="ln" style="animation-delay:.35s"><span class="out">Installed hooks: pre-commit, post-checkout, post-merge, pre-push</span></span>
 <span class="ln" style="animation-delay:.65s"><span class="prompt">$ </span><span class="cmd">cat secrets/db.yaml</span></span>
 <span class="ln" style="animation-delay:.95s"><span class="plain">password: hunter2</span></span>
@@ -455,7 +455,7 @@
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">SCOPE</span>
-          <div><h3>Glob patterns, committed</h3><p>A versioned <code>.repo-enc.yml</code> decides what's in scope. Everything outside the pattern is left alone.</p></div>
+          <div><h3>Glob patterns, committed</h3><p>A versioned <code>.keyfold.yml</code> decides what's in scope. Everything outside the pattern is left alone.</p></div>
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">KEYS</span>
@@ -506,10 +506,10 @@
       <div class="stack">
         <div class="panel">
           <span class="panel-label">Bootstrap</span>
-          <pre><span class="comment"># writes .repo-enc.yml, generates a key, installs hooks</span>
-git secret init
-git add .repo-enc.yml .gitignore
-git commit -m "chore: configure repo-enc"</pre>
+          <pre><span class="comment"># writes .keyfold.yml, generates a key, installs hooks</span>
+git keyfold init
+git add .keyfold.yml .gitignore
+git commit -m "chore: configure keyfold"</pre>
         </div>
         <div class="panel">
           <span class="panel-label">Just use git</span>
@@ -533,7 +533,7 @@ git commit -m "add db credentials"
         <table class="commands">
           <thead><tr><th>Command</th><th>Effect</th></tr></thead>
           <tbody>
-            <tr><td><code>init [pattern...]</code></td><td>Bootstrap: write <code>.repo-enc.yml</code> (idempotent), generate a key if missing, install hooks.</td></tr>
+            <tr><td><code>init [pattern...]</code></td><td>Bootstrap: write <code>.keyfold.yml</code> (idempotent), generate a key if missing, install hooks.</td></tr>
             <tr><td><code>status</code></td><td>Show which matched files are plaintext vs encrypted right now.</td></tr>
             <tr><td><code>lock</code></td><td>Encrypt every matched file in place — end of session.</td></tr>
             <tr><td><code>unlock</code></td><td>Decrypt every matched file in place — start of session. Marks files <code>skip-worktree</code> so <code>git status</code> stays quiet while you view them.</td></tr>
@@ -551,9 +551,9 @@ git commit -m "add db credentials"
       <div class="exit-codes">
         <span><b>0</b> ok</span><span><b>1</b> error</span><span><b>2</b> key unavailable</span><span><b>3</b> verify found plaintext in history</span>
       </div>
-      <p class="lede" style="margin-top:var(--sp-3)">Set <code>SECRETIZE_SKIP_HOOKS=1</code> explicitly, per invocation, to make every installed hook exit 0 immediately. This is deliberately <em>not</em> tied to the ambient <code>CI</code> variable &mdash; every CI provider, IDE, and automation wrapper sets <code>CI=1</code> by convention, so honoring it implicitly would silently disable both encryption and push-protection in exactly the environments most likely to push on someone's behalf.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Set <code>KEYFOLD_SKIP_HOOKS=1</code> explicitly, per invocation, to make every installed hook exit 0 immediately. This is deliberately <em>not</em> tied to the ambient <code>CI</code> variable &mdash; every CI provider, IDE, and automation wrapper sets <code>CI=1</code> by convention, so honoring it implicitly would silently disable both encryption and push-protection in exactly the environments most likely to push on someone's behalf.</p>
       <p class="lede" style="margin-top:var(--sp-3)">Editing an unlocked file? Run <code>lock</code> before <code>git add</code> — recent git versions refuse a plain <code>git add</code> on a <code>skip-worktree</code>'d path outright. <code>lock</code> re-encrypts straight from the working tree and clears the flag, so <code>git add</code>/<code>git commit</code> work normally right after.</p>
-      <p class="lede" style="margin-top:var(--sp-3)">If a teammate changes a file you currently have unlocked, <code>git pull</code> will refuse with git's standard "local changes would be overwritten" error. Recovery (if you were only viewing, not editing): <code>git secret lock</code>, then <code>SECRETIZE_SKIP_HOOKS=1 git checkout -- &lt;path&gt;</code> to discard your view without the <code>post-checkout</code> hook immediately re-decrypting it, then <code>git pull</code>. See the <a href="https://github.com/OpScaleHub/git-secret#unlock-and-git-status" target="_blank" rel="noopener">README</a> for the full explanation.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">If a teammate changes a file you currently have unlocked, <code>git pull</code> will refuse with git's standard "local changes would be overwritten" error. Recovery (if you were only viewing, not editing): <code>git keyfold lock</code>, then <code>KEYFOLD_SKIP_HOOKS=1 git checkout -- &lt;path&gt;</code> to discard your view without the <code>post-checkout</code> hook immediately re-decrypting it, then <code>git pull</code>. See the <a href="https://github.com/OpScaleHub/git-secret#unlock-and-git-status" target="_blank" rel="noopener">README</a> for the full explanation.</p>
     </div>
   </section>
 
@@ -561,7 +561,7 @@ git commit -m "add db credentials"
     <div class="container">
       <div class="section-head">
         <p class="eyebrow">Configuration</p>
-        <h2><code>.repo-enc.yml</code></h2>
+        <h2><code>.keyfold.yml</code></h2>
         <p class="lede">Committed at the repo root — this is how a teammate's clone knows what to encrypt.</p>
       </div>
       <div class="two-col">
@@ -574,7 +574,7 @@ patterns:
 exclude:
   - <span class="str">"secrets/public/**"</span>
 key_backend: gpg
-key_source: .repo-enc/key.gpg
+key_source: .keyfold/key.gpg
 gpg_recipients:
   - <span class="str">AAAABBBBCCCCDDDD...</span></pre>
         </div>
@@ -592,7 +592,7 @@ gpg_recipients:
       GPG secret key can unwrap it.</pre>
         </div>
       </div>
-      <p class="lede" style="margin-top:var(--sp-3)"><code>git secret init --key-backend gpg</code> picks a recipient interactively from your local GPG keys (or pass <code>--gpg-recipient &lt;fingerprint&gt;</code> directly). GPG operations need <code>gpg-agent</code>/pinentry, which isn't available in a non-interactive session — prefer <code>file</code>/<code>env</code> for CI.</p>
+      <p class="lede" style="margin-top:var(--sp-3)"><code>git keyfold init --key-backend gpg</code> picks a recipient interactively from your local GPG keys (or pass <code>--gpg-recipient &lt;fingerprint&gt;</code> directly). GPG operations need <code>gpg-agent</code>/pinentry, which isn't available in a non-interactive session — prefer <code>file</code>/<code>env</code> for CI.</p>
     </div>
   </section>
 
@@ -605,19 +605,19 @@ gpg_recipients:
         <p class="lede">The point isn't "GPG instead of a single keypair" — it's <strong>recovery independence</strong>: losing the cluster, the controller, or any one key doesn't make the secrets unrecoverable, as long as the encrypted repo and one authorized recipient key survive. See the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/threat-model.md" target="_blank" rel="noopener">threat model</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/docs/security/disaster-recovery.md" target="_blank" rel="noopener">disaster-recovery runbooks</a>.</p>
       </div>
 
-      <div class="receipt" aria-label="git-secret-seal example session">
-        <div class="receipt-head"><span>session</span><span>git-secret-seal</span></div>
-        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">git-secret-seal --namespace myapp --name my-secrets \</span></span>
+      <div class="receipt" aria-label="keyfold example session">
+        <div class="receipt-head"><span>session</span><span>keyfold</span></div>
+        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">keyfold --namespace myapp --name my-secrets \</span></span>
 <span class="ln" style="animation-delay:.3s">    <span class="cmd">--recipient &lt;controller-fpr&gt; --recipient &lt;your-fpr&gt; \</span></span>
 <span class="ln" style="animation-delay:.55s">    <span class="cmd">--from-literal API_KEY=... &gt; gitsecret.yaml</span></span>
 <span class="ln" style="animation-delay:.85s"><span class="prompt">$ </span><span class="cmd">cat gitsecret.yaml</span></span>
-<span class="ln" style="animation-delay:1.15s"><span class="out">apiVersion: git-secret.opscalehub.io/v1alpha1</span></span>
+<span class="ln" style="animation-delay:1.15s"><span class="out">apiVersion: keyfold.opscalehub.io/v1alpha1</span></span>
 <span class="ln" style="animation-delay:1.35s"><span class="out">kind: GitSecret</span></span>
 <span class="ln" style="animation-delay:1.55s"><span class="out">spec:</span></span>
 <span class="ln" style="animation-delay:1.75s">  <span class="out">encryptedData:</span></span>
 <span class="ln" style="animation-delay:1.95s">    <span class="out">API_KEY: </span><span class="cipher">UkVOQwEReGNoYWNoYTIwcG9seTEzMDVh...</span></span>
 <span class="ln" style="animation-delay:2.25s"><span class="prompt">$ </span><span class="cmd">kubectl apply -f gitsecret.yaml</span></span>
-<span class="ln" style="animation-delay:2.55s"><span class="out">gitsecret.git-secret.opscalehub.io/my-secrets created</span></span></pre>
+<span class="ln" style="animation-delay:2.55s"><span class="out">gitsecret.keyfold.opscalehub.io/my-secrets created</span></span></pre>
       </div>
 
       <div class="ledger" style="margin-top:var(--sp-4)">
@@ -635,7 +635,7 @@ gpg_recipients:
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">VISIBLE</span>
-          <div><h3>You can see who can decrypt</h3><p>The fingerprints sealed to are recorded in <code>spec.recipients</code> and mirrored to <code>status</code> — adding a recipient is a one-line diff in review, not an opaque blob change. Roles (<code>controller</code>, <code>recovery</code>, human) travel with the object; <code>git-secret-seal recipients</code> won't let you drop the last recovery key by accident.</p></div>
+          <div><h3>You can see who can decrypt</h3><p>The fingerprints sealed to are recorded in <code>spec.recipients</code> and mirrored to <code>status</code> — adding a recipient is a one-line diff in review, not an opaque blob change. Roles (<code>controller</code>, <code>recovery</code>, human) travel with the object; <code>keyfold recipients</code> won't let you drop the last recovery key by accident.</p></div>
         </div>
         <div class="ledger-entry">
           <span class="ledger-code">SAFE ADOPT</span>
@@ -651,8 +651,8 @@ gpg_recipients:
         </div>
       </div>
 
-      <p class="lede" style="margin-top:var(--sp-3)">Prefer per-value encryption of a plain <code>Secret</code> manifest? See the <a class="footnote-link" href="#k8s">kubectl-secret plugin</a>. Prefer a form to the flags? <code>git-secret-seal ui</code> serves a local, public-key-only web page for producing these manifests — it never decrypts, never touches the cluster, never persists.</p>
-      <p class="lede" style="margin-top:var(--sp-3)">A signed container image and a Helm chart ship on every tagged release — <a class="footnote-link" href="#install-k8s">install with one <code>helm install</code></a>. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, the sealing UI, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-git-secret-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Prefer per-value encryption of a plain <code>Secret</code> manifest? See the <a class="footnote-link" href="#k8s">kubectl-keyfold plugin</a>. Prefer a form to the flags? <code>keyfold ui</code> serves a local, public-key-only web page for producing these manifests — it never decrypts, never touches the cluster, never persists.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">A signed container image and a Helm chart ship on every tagged release — <a class="footnote-link" href="#install-k8s">install with one <code>helm install</code></a>. Full usage — <code>recipients</code>, <code>--rewrap</code>, <code>--keyring</code>, the sealing UI, disaster recovery — is in the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret#gitsecret-crd-keyfold-controller" target="_blank" rel="noopener">README</a> and <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">docs/</a>.</p>
     </div>
   </section>
 
@@ -660,20 +660,20 @@ gpg_recipients:
     <div class="container">
       <div class="section-head">
         <p class="eyebrow">Companion tool</p>
-        <h2>kubectl-secret: per-value encryption for one <code>Secret</code></h2>
-        <p class="lede">A real <code>Secret</code> manifest is rarely one credential — it's a dozen unrelated ones (an OIDC client secret, payment gateway keys, a webhook signing key...) in one <code>stringData</code> map. Whole-file encryption means rotating any single one means decrypting all of them, and every re-encryption rewrites the whole file, so the diff never tells you which key actually changed. <code>kubectl-secret</code> is a companion <code>kubectl</code> plugin, built on this project's exact same crypto core and key backends, that encrypts one value at a time instead.</p>
+        <h2>kubectl-keyfold: per-value encryption for one <code>Secret</code></h2>
+        <p class="lede">A real <code>Secret</code> manifest is rarely one credential — it's a dozen unrelated ones (an OIDC client secret, payment gateway keys, a webhook signing key...) in one <code>stringData</code> map. Whole-file encryption means rotating any single one means decrypting all of them, and every re-encryption rewrites the whole file, so the diff never tells you which key actually changed. <code>kubectl-keyfold</code> is a companion <code>kubectl</code> plugin, built on this project's exact same crypto core and key backends, that encrypts one value at a time instead.</p>
       </div>
 
-      <div class="receipt" aria-label="kubectl-secret example session">
+      <div class="receipt" aria-label="kubectl-keyfold example session">
         <div class="receipt-head"><span>deploy/app-secret.yaml</span><span>session</span></div>
-        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">kubectl secret encrypt-value -f deploy/app-secret.yaml -k OIDC_CLIENT_SECRET "..."</span></span>
+        <pre><span class="ln" style="animation-delay:.05s"><span class="prompt">$ </span><span class="cmd">kubectl keyfold encrypt-value -f deploy/app-secret.yaml -k OIDC_CLIENT_SECRET "..."</span></span>
 <span class="ln" style="animation-delay:.35s"><span class="cipher">repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K...</span></span>
 <span class="ln" style="animation-delay:.65s"><span class="prompt">$ </span><span class="cmd">cat deploy/app-secret.yaml</span></span>
 <span class="ln" style="animation-delay:.95s"><span class="out">stringData:</span></span>
 <span class="ln" style="animation-delay:1.15s">  <span class="out">OIDC_CLIENT_SECRET: </span><span class="cipher">"repo-enc:v1:UkVOQwEReGNoYWNoYTIwcG9seTEzMDVhrP5K..."</span></span>
 <span class="ln" style="animation-delay:1.35s">  <span class="out">WEBHOOK_SIGNING_KEY: </span><span class="cipher">"repo-enc:v1:8f3Nk2QpL9xVrTcMh7bYs2..."</span></span>
 <span class="ln" style="animation-delay:1.55s">  <span class="out">DEBUG: </span><span class="plain">"true"</span></span>
-<span class="ln" style="animation-delay:1.85s"><span class="prompt">$ </span><span class="cmd">kubectl secret apply -f deploy/app-secret.yaml</span></span>
+<span class="ln" style="animation-delay:1.85s"><span class="prompt">$ </span><span class="cmd">kubectl keyfold apply -f deploy/app-secret.yaml</span></span>
 <span class="ln" style="animation-delay:2.15s"><span class="out">secret/app-credentials configured</span></span></pre>
       </div>
 
@@ -700,7 +700,7 @@ gpg_recipients:
         </div>
       </div>
 
-      <p class="lede" style="margin-top:var(--sp-3)">Get the plugin from <a class="footnote-link" href="#install-binaries">Install</a> (built from source; no release binary yet). Opt a manifest in with <code>k8s_secret_paths</code> in <code>.repo-enc.yml</code> — see the <a href="https://github.com/OpScaleHub/git-secret#kubectl-secret" target="_blank" rel="noopener">README</a> for the full verb reference.</p>
+      <p class="lede" style="margin-top:var(--sp-3)">Get the plugin from <a class="footnote-link" href="#install-binaries">Install</a> (built from source; no release binary yet). Opt a manifest in with <code>k8s_secret_paths</code> in <code>.keyfold.yml</code> — see the <a href="https://github.com/OpScaleHub/git-secret#kubectl-keyfold" target="_blank" rel="noopener">README</a> for the full verb reference.</p>
     </div>
   </section>
   <section id="install">
@@ -714,11 +714,11 @@ gpg_recipients:
           <h3>Prebuilt binaries</h3>
           <p class="lede"><a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">GitHub Releases</a> — linux and macOS on amd64 and arm64; Windows on amd64 only. Each file has a <code>.sha256</code> beside it.</p>
           <ul class="req-list">
-            <li><code>git-secret-&lt;os&gt;-&lt;arch&gt;</code> — the CLI. Rename to <code>git-secret</code> (<code>git-secret.exe</code> on Windows) and put it on <code>PATH</code>; <code>git secret</code> then works as a native git subcommand</li>
-            <li><code>git-secret-seal-&lt;os&gt;-&lt;arch&gt;</code> — seals values into a <code>GitSecret</code> manifest (used in the Kubernetes steps below)</li>
-            <li><code>git-secret-controller-linux-&lt;arch&gt;</code> — the in-cluster controller, already packaged in the Helm chart and image; you rarely need it directly</li>
-            <li><code>git-secret-sbom.spdx.json</code> — SPDX SBOM</li>
-            <li><code>kubectl-secret</code> has no release binary yet: <code>go build -o kubectl-secret ./cmd/kubectl-secret</code></li>
+            <li><code>git-keyfold-&lt;os&gt;-&lt;arch&gt;</code> — the CLI. Rename to <code>git-keyfold</code> (<code>git-keyfold.exe</code> on Windows) and put it on <code>PATH</code>; <code>git secret</code> then works as a native git subcommand</li>
+            <li><code>keyfold-&lt;os&gt;-&lt;arch&gt;</code> — seals values into a <code>GitSecret</code> manifest (used in the Kubernetes steps below)</li>
+            <li><code>keyfold-controller-linux-&lt;arch&gt;</code> — the in-cluster controller, already packaged in the Helm chart and image; you rarely need it directly</li>
+            <li><code>keyfold-sbom.spdx.json</code> — SPDX SBOM</li>
+            <li><code>kubectl-keyfold</code> has no release binary yet: <code>go build -o kubectl-keyfold ./cmd/kubectl-keyfold</code></li>
           </ul>
         </div>
         <div>
@@ -726,12 +726,12 @@ gpg_recipients:
           <div class="panel">
             <pre>git clone https://github.com/OpScaleHub/git-secret.git
 cd git-secret
-go build -o git-secret .
-sudo mv git-secret /usr/local/bin/</pre>
+go build -o git-keyfold ./cmd/git-keyfold
+sudo mv git-keyfold /usr/local/bin/</pre>
           </div>
           <ul class="req-list">
             <li>Go 1.26+, git</li>
-            <li>Windows: build with <code>-o git-secret.exe</code> explicitly</li>
+            <li>Windows: build with <code>-o git-keyfold.exe</code> explicitly</li>
           </ul>
         </div>
       </div>
@@ -743,24 +743,24 @@ sudo mv git-secret /usr/local/bin/</pre>
             <span class="panel-label">1 · Give the controller its own GPG identity</span>
             <pre><span class="comment"># dedicated key, never a human's; only the private half goes in-cluster</span>
 gpg --batch --passphrase '' --quick-generate-key \
-  "git-secret-controller &lt;controller@yourcluster&gt;" default default never
+  "keyfold-controller &lt;controller@yourcluster&gt;" default default never
 gpg --list-secret-keys --with-colons   <span class="comment"># note the fingerprint</span>
 gpg --export-secret-keys --armor &lt;fingerprint&gt; &gt; private.asc
-kubectl create namespace git-secret-system
-kubectl -n git-secret-system create secret generic git-secret-controller-gpg \
+kubectl create namespace keyfold-system
+kubectl -n keyfold-system create secret generic keyfold-gpg \
   --from-file=private.asc=./private.asc
 rm private.asc</pre>
           </div>
           <div class="panel">
             <span class="panel-label">2 · Install the chart</span>
-            <pre>helm install git-secret-controller \
-  oci://ghcr.io/opscalehub/charts/git-secret-controller \
-  --version <span data-latest-chart>0.10.0</span> --namespace git-secret-system \
-  --set gpgPrivateKey.existingSecret=git-secret-controller-gpg</pre>
+            <pre>helm install keyfold \
+  oci://ghcr.io/opscalehub/charts/keyfold \
+  --version <span data-latest-chart>0.10.0</span> --namespace keyfold-system \
+  --set gpgPrivateKey.existingSecret=keyfold-gpg</pre>
           </div>
           <div class="panel">
             <span class="panel-label">3 · Seal and apply</span>
-            <pre>git-secret-seal --namespace myapp --name my-secrets \
+            <pre>keyfold --namespace myapp --name my-secrets \
   --recipient &lt;controller-fpr&gt; --recipient &lt;your-fpr&gt; \
   --from-literal API_KEY=... &gt; gitsecret.yaml
 kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let ArgoCD apply it</span></pre>
@@ -769,7 +769,7 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
         <ul class="req-list">
           <li>The key <code>Secret</code> must be in the release namespace; pin <code>--version</code> to the release tag you want.</li>
           <li>The chart never accepts key material in <code>values.yaml</code> — only a reference to the <code>Secret</code> you created.</li>
-          <li>Cluster-scoped by default; see the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/charts/git-secret-controller/README.md" target="_blank" rel="noopener">chart README</a> for RBAC and upgrades (Helm doesn't upgrade CRDs for you).</li>
+          <li>Cluster-scoped by default; see the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/charts/keyfold/README.md" target="_blank" rel="noopener">chart README</a> for RBAC and upgrades (Helm doesn't upgrade CRDs for you).</li>
         </ul>
       </div>
 
@@ -786,7 +786,7 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
             <pre>cosign verify \
   --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  ghcr.io/opscalehub/git-secret-controller:&lt;tag&gt;</pre>
+  ghcr.io/opscalehub/keyfold-controller:&lt;tag&gt;</pre>
           </div>
         </div>
         <p class="lede" style="margin-top:var(--sp-3)">Details, SBOM, and how to report a vulnerability: <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/SECURITY.md" target="_blank" rel="noopener">SECURITY.md</a>.</p>
@@ -806,7 +806,7 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
 
 <footer class="site">
   <div class="container footer-row">
-    <span><span class="footer-mark">§</span> git-secret — MIT License</span>
+    <span><span class="footer-mark">§</span> Keyfold — MIT License</span>
     <span><a href="https://github.com/OpScaleHub/git-secret" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/OpScaleHub/git-secret/tree/main/examples/basic" target="_blank" rel="noopener">Examples</a> · <a href="https://github.com/OpScaleHub/git-secret/releases" target="_blank" rel="noopener">Releases</a> · <a href="https://github.com/OpScaleHub/git-secret/tree/main/docs" target="_blank" rel="noopener">Docs</a> · <a href="https://github.com/OpScaleHub/git-secret/blob/main/SECURITY.md" target="_blank" rel="noopener">Security</a></span>
   </div>
 </footer>

@@ -1,4 +1,4 @@
-# Git Secret Manager (`git-secret`)
+# Git Secret Manager (`git-keyfold`)
 
 **A recoverable, Git-native cryptographic control plane for Kubernetes secrets.**
 
@@ -29,7 +29,7 @@ one Git host.
 
 ### Compared to
 
-| | `git-secret` | SOPS | Vault |
+| | `git-keyfold` | SOPS | Vault |
 |---|---|---|---|
 | Ciphertext lives in Git | yes | yes | no (external store) |
 | Survives loss of the cluster/controller key | **yes** (multi-recipient) | yes | n/a |
@@ -44,7 +44,7 @@ the architecture got here.
 
 - **Transparent encryption**: git hooks (`pre-commit`, `post-checkout`, `post-merge`, `pre-push`) encrypt/decrypt automatically as you commit, checkout, merge, and push — no manual encrypt/decrypt step in the common case.
 - **Modern AEAD crypto**: XChaCha20-Poly1305 by default (AES-256-GCM available) does the actual file encryption either way — GPG is never in that path, so `file`/`env` need no GPG dependency at all.
-- **Config-driven**: glob `patterns` in a committed `.repo-enc.yml` decide which files are in scope; everything else is left untouched.
+- **Config-driven**: glob `patterns` in a committed `.keyfold.yml` decide which files are in scope; everything else is left untouched.
 - **Pluggable key backends**: `gpg` (wraps the key to one or more existing GPG identities — safe to commit, no out-of-band transfer, and the only backend that works with automated consumers or survives the loss of a single key — **recommended**), `file` (a local, gitignored key file — quick start, local/solo only), or `env` (an environment variable). The `Backend` interface makes adding KMS backends straightforward too.
 - **Safety net**: `verify` and the `pre-push` hook refuse to let plaintext that slipped past `pre-commit` (e.g. via `--no-verify`) reach a remote.
 - **Cross-platform**: pure Go, no runtime dependencies beyond `git` itself (`gpg` is an optional extra, only needed if you choose that backend). Installed hooks ship as both POSIX shell and PowerShell scripts.
@@ -61,18 +61,18 @@ the architecture got here.
 ```bash
 git clone https://github.com/OpScaleHub/git-secret.git
 cd git-secret
-go build -o git-secret .
-sudo mv git-secret /usr/local/bin/
+go build -o git-keyfold ./cmd/git-keyfold
+sudo mv git-keyfold /usr/local/bin/
 ```
 
 On Windows, build with the `.exe` extension explicitly (Go does not add it
 for you) and put the result on `PATH`:
 
 ```powershell
-go build -o git-secret.exe .
+go build -o git-keyfold.exe ./cmd/git-keyfold
 ```
 
-Once `git-secret` is on your `PATH`, `git secret <command>` works as a git subcommand.
+Once `git-keyfold` is on your `PATH`, `git keyfold <command>` works as a git subcommand.
 
 ## Quick start
 
@@ -81,33 +81,33 @@ cd your-repo
 
 # Recommended for any team, and required for Kubernetes/CI: the gpg backend,
 # with every human AND every service that needs access as its own recipient.
-git secret init --key-backend gpg \
+git keyfold init --key-backend gpg \
   --gpg-recipient <your-fingerprint> --gpg-recipient <teammate-fingerprint>
-git add .repo-enc.yml .repo-enc/key.gpg .gitignore
-git commit -m "chore: configure repo-enc"
+git add .keyfold.yml .keyfold/key.gpg .gitignore
+git commit -m "chore: configure keyfold"
 ```
 
 **Which backend?** `gpg` (above) is the only one that works with
-`git-secret-controller` or any automated consumer, and the only one where losing
+`keyfold-controller` or any automated consumer, and the only one where losing
 one key doesn't threaten recoverability — its wrapped key is safe to commit, no
-out-of-band key transfer. The `file` backend (`git secret init` with no
+out-of-band key transfer. The `file` backend (`git keyfold init` with no
 `--key-backend`) is a quick local/solo on-ramp, but its key never enters git, so
 adopting Kubernetes or CI later forces a full re-seal. Start on `gpg` unless you
 are certain automation will never be in scope.
 
 ```bash
-git secret init                 # 'file' backend: quick start, local/solo only
+git keyfold init                 # 'file' backend: quick start, local/solo only
 ```
 
-`.repo-enc.yml` must be committed — it's how a teammate's clone knows which
+`.keyfold.yml` must be committed — it's how a teammate's clone knows which
 patterns to encrypt/decrypt. For the `file` backend the generated key must
 **not** be committed (`init` gitignores it); share it out-of-band. For `gpg`,
-`.repo-enc/key.gpg` **is** committed and no key transfer is needed.
+`.keyfold/key.gpg` **is** committed and no key transfer is needed.
 
-By default `init` seeds `.repo-enc.yml` with the pattern `secrets/**`. Pass your own patterns instead:
+By default `init` seeds `.keyfold.yml` with the pattern `secrets/**`. Pass your own patterns instead:
 
 ```bash
-git secret init "secrets/**" "*.secret.env"
+git keyfold init "secrets/**" "*.secret.env"
 ```
 
 From here, just use git normally:
@@ -127,7 +127,7 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 
 | Command | Effect |
 |---|---|
-| `init [pattern...]` | Bootstrap: write `.repo-enc.yml` (idempotent), generate a key if missing, install hooks. |
+| `init [pattern...]` | Bootstrap: write `.keyfold.yml` (idempotent), generate a key if missing, install hooks. |
 | `status` | Show which config-matched files are plaintext vs encrypted in the working tree right now. |
 | `lock` | Encrypt every config-matched file in place — end of session. |
 | `unlock` | Decrypt every config-matched file in place — start of session. Marks each file `skip-worktree` so `git status` stays quiet while you view them (see below). |
@@ -142,27 +142,29 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 
 Exit codes: `0` ok · `1` generic error · `2` key unavailable · `3` `verify` found plaintext in history.
 
-CI note: set `SECRETIZE_SKIP_HOOKS=1` to make every installed hook exit 0 immediately without running. This is deliberately not tied to the ambient `CI` variable — every CI provider, IDE, and automation wrapper sets `CI=1` by convention, so honoring it implicitly would silently disable both encryption and push-protection in exactly the environments most likely to push on someone's behalf. Opt out explicitly, per invocation.
+CI note: set `KEYFOLD_SKIP_HOOKS=1` to make every installed hook exit 0 immediately without running. This is deliberately not tied to the ambient `CI` variable — every CI provider, IDE, and automation wrapper sets `CI=1` by convention, so honoring it implicitly would silently disable both encryption and push-protection in exactly the environments most likely to push on someone's behalf. Opt out explicitly, per invocation.
 
 ### `unlock` and `git status`
 
 `unlock` marks each decrypted file `skip-worktree`, so `git status`/`git diff` won't flag it as modified just because you're viewing it locally with plaintext on disk while the index holds ciphertext (that divergence is intentional — see "How it works" below). `lock` clears the flag again.
 
-If you edit an unlocked file and want to commit the change, **run `git secret lock` before `git add`** — this isn't just tidiness: recent git versions refuse a plain `git add` on a `skip-worktree`'d path outright (with a confusing sparse-checkout-flavored error, even in repos that never touched sparse-checkout), and `commit -a`/`commit <path>` silently see no change at all, since `skip-worktree` tells git's own diff machinery there's nothing there to look at. `git secret lock` sidesteps this entirely — it reads the current working-tree content directly (not through `git add`), re-encrypts it, and clears the flag itself, so the `git add`/`git commit` that follows behaves normally. The supported edit flow is: `unlock` → edit → `lock` → `git add` → `git commit` (as usual — `pre-commit` sees the content is already encrypted and just commits it).
+If you edit an unlocked file and want to commit the change, **run `git keyfold lock` before `git add`** — this isn't just tidiness: recent git versions refuse a plain `git add` on a `skip-worktree`'d path outright (with a confusing sparse-checkout-flavored error, even in repos that never touched sparse-checkout), and `commit -a`/`commit <path>` silently see no change at all, since `skip-worktree` tells git's own diff machinery there's nothing there to look at. `git keyfold lock` sidesteps this entirely — it reads the current working-tree content directly (not through `git add`), re-encrypts it, and clears the flag itself, so the `git add`/`git commit` that follows behaves normally. The supported edit flow is: `unlock` → edit → `lock` → `git add` → `git commit` (as usual — `pre-commit` sees the content is already encrypted and just commits it).
 
 **`git pull`/`git merge` while a file is unlocked.** A clean pull (nobody touched that file upstream) works fine and refreshes the file normally. But if a teammate changes the *same* file you currently have unlocked, `git pull` will refuse with git's standard `Your local changes to the following files would be overwritten by merge` error — `skip-worktree` suppresses `status`/`diff` reporting, but not git's real uncommitted-change protection during a merge, and there's no pre-pull hook available to handle this automatically. If you hit this on a file you were only viewing (not editing), the safe recovery is:
 
 ```bash
-git secret lock                                    # your local view becomes disposable ciphertext
-SECRETIZE_SKIP_HOOKS=1 git checkout -- <path>      # discard it back to what's committed
+git keyfold lock                                    # your local view becomes disposable ciphertext
+KEYFOLD_SKIP_HOOKS=1 git checkout -- <path>      # discard it back to what's committed
 git pull                                            # now safe — post-merge decrypts the new content
 ```
 
-The `SECRETIZE_SKIP_HOOKS=1` matters: `git checkout -- <path>` fires the `post-checkout` hook even for a single-file restore in current git, which would otherwise immediately re-decrypt what checkout just restored and put you right back in the same diverged, pull-blocking state. If you *were* genuinely editing that file, don't discard it — this is then a real merge conflict like any other and needs manual resolution (commit or stash your change first).
+The `KEYFOLD_SKIP_HOOKS=1` matters: `git checkout -- <path>` fires the `post-checkout` hook even for a single-file restore in current git, which would otherwise immediately re-decrypt what checkout just restored and put you right back in the same diverged, pull-blocking state. If you *were* genuinely editing that file, don't discard it — this is then a real merge conflict like any other and needs manual resolution (commit or stash your change first).
 
-## Configuration (`.repo-enc.yml`)
+## Configuration (`.keyfold.yml`)
 
-Committed at the repo root:
+Committed at the repo root. Repositories set up before the Keyfold rename use
+`.repo-enc.yml` (keys under `.repo-enc/`) and keep working unchanged — the
+format is identical; see [UPGRADING.md](UPGRADING.md).
 
 ```yaml
 version: 1
@@ -172,7 +174,7 @@ patterns:
 exclude:
   - "secrets/public/**"
 key_backend: file          # file | env | gpg
-key_source: .repo-enc/key  # path (file/gpg backends) or env var name (env backend)
+key_source: .keyfold/key  # path (file/gpg backends) or env var name (env backend)
 repo_id: 4f3c...           # random, written by `init`; do not edit
 gpg_recipients:            # gpg backend only — GPG fingerprints, not secret
   - AAAABBBBCCCCDDDD1111222233334444AAAABBBB
@@ -184,22 +186,22 @@ fails to decrypt if copied into another repository — even one that shares the 
 Repos created before this existed have no `repo_id` and keep working unchanged;
 **don't change or remove it** once set, or existing encrypted files stop verifying.
 
-`patterns`/`exclude` are glob paths relative to the repo root (a leading `/` is accepted and normalized away — `/secrets/**` and `secrets/**` are the same pattern); `**` matches any depth. A machine-local `~/.config/repo-enc/config.yml` (or the OS equivalent — set `REPO_ENC_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and `patterns`/`gpg_recipients`/`k8s_secret_paths` entries there are unioned with the repo's, since those can only *expand* what's protected. `exclude` and `k8s_plaintext_keys` are the opposite — both can only *shrink* protection — so they're taken from the repo config alone; a global config can never silently carve a hole out of a repo's committed policy.
+`patterns`/`exclude` are glob paths relative to the repo root (a leading `/` is accepted and normalized away — `/secrets/**` and `secrets/**` are the same pattern); `**` matches any depth. A machine-local `~/.config/keyfold/config.yml` (or the OS equivalent — set `KEYFOLD_CONFIG_DIR` to override the directory outright, e.g. for containers/CI) can set personal defaults — `key_backend`/`key_source` there apply unless the repo config overrides them, and `patterns`/`gpg_recipients`/`k8s_secret_paths` entries there are unioned with the repo's, since those can only *expand* what's protected. `exclude` and `k8s_plaintext_keys` are the opposite — both can only *shrink* protection — so they're taken from the repo config alone; a global config can never silently carve a hole out of a repo's committed policy.
 
 ### Key backends
 
-**Use `gpg` for anything beyond a solo local repo** — it is the only backend that works with `git-secret-controller` or any automated consumer, and the only one where losing a single key doesn't threaten recoverability. `init` prints a nudge when it falls back to `file`.
+**Use `gpg` for anything beyond a solo local repo** — it is the only backend that works with `keyfold-controller` or any automated consumer, and the only one where losing a single key doesn't threaten recoverability. `init` prints a nudge when it falls back to `file`.
 
-- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.repo-enc/key`), gitignored automatically by `init`. Giving a teammate access means copying this raw key to them out-of-band. Structurally incompatible with automated decryption — the key never enters git.
+- **`file`** (default): a 32-byte key stored as hex in `key_source` (default `.keyfold/key`), gitignored automatically by `init`. Giving a teammate access means copying this raw key to them out-of-band. Structurally incompatible with automated decryption — the key never enters git.
 - **`env`**: the key is read from the environment variable named by `key_source`. `init`/`rotate-keys` print an `export VAR=<hex>` line when they generate a new one — this backend can't persist anything to disk for you, so copy that value down before the process exits.
-- **`gpg`**: the same random 32-byte key, but wrapped (GPG-encrypted) to one or more recipients instead of stored raw. The wrapped blob (default `.repo-enc/key.gpg`) is **safe to commit** — unlike the `file` backend's key — since only a matching GPG private key can unwrap it. This solves the onboarding pain point above: a teammate who's already a configured recipient just needs `git secret init` (installs hooks; the committed config already has everything else) and their own existing keyring does the rest, no manual key transfer required.
+- **`gpg`**: the same random 32-byte key, but wrapped (GPG-encrypted) to one or more recipients instead of stored raw. The wrapped blob (default `.keyfold/key.gpg`) is **safe to commit** — unlike the `file` backend's key — since only a matching GPG private key can unwrap it. This solves the onboarding pain point above: a teammate who's already a configured recipient just needs `git keyfold init` (installs hooks; the committed config already has everything else) and their own existing keyring does the rest, no manual key transfer required.
 
   ```bash
-  git secret init --key-backend gpg                      # picks interactively from your local GPG keys
-  git secret init --key-backend gpg --gpg-recipient <fpr> # or specify one directly (repeatable), e.g. for CI
+  git keyfold init --key-backend gpg                      # picks interactively from your local GPG keys
+  git keyfold init --key-backend gpg --gpg-recipient <fpr> # or specify one directly (repeatable), e.g. for CI
 
-  git secret adduser <teammate-fingerprint>   # cheap: re-wraps the existing key, no file re-encryption
-  git secret removeuser <fingerprint>         # forces a full rotate-keys — the removed person already saw the old key
+  git keyfold adduser <teammate-fingerprint>   # cheap: re-wraps the existing key, no file re-encryption
+  git keyfold removeuser <fingerprint>         # forces a full rotate-keys — the removed person already saw the old key
   ```
 
   Both `adduser`/`removeuser` require `key_backend: gpg` and error otherwise. `status` additionally lists current recipients for this backend.
@@ -215,32 +217,32 @@ Repos created before this existed have no `repo_id` and keep working unchanged;
 
 See `examples/basic/` for a runnable walkthrough.
 
-## kubectl-secret
+## kubectl-keyfold
 
-`git-secret` encrypts whole files — the right grain for a single-purpose
+`git-keyfold` encrypts whole files — the right grain for a single-purpose
 credential file, but the wrong grain for a Kubernetes `Secret` manifest that
 bundles several unrelated credentials in one `stringData` map: rotating one
 key means decrypting/re-encrypting all of them, and every re-encryption
 produces a full-file diff since AEAD ciphers use a fresh nonce each time.
 
-`kubectl-secret` is a companion `kubectl` plugin, built from the same source
+`kubectl-keyfold` is a companion `kubectl` plugin, built from the same source
 tree, that encrypts **individual `stringData` values** instead of the whole
-file, reusing `git-secret`'s crypto core and key backends unchanged.
+file, reusing `git-keyfold`'s crypto core and key backends unchanged.
 
 ### Install
 
 ```bash
-go build -o kubectl-secret ./cmd/kubectl-secret
-sudo mv kubectl-secret /usr/local/bin/
+go build -o kubectl-keyfold ./cmd/kubectl-keyfold
+sudo mv kubectl-keyfold /usr/local/bin/
 ```
 
-Once `kubectl-secret` is on `PATH`, `kubectl` discovers it automatically and
-`kubectl secret <verb>` works as a `kubectl` subcommand.
+Once `kubectl-keyfold` is on `PATH`, `kubectl` discovers it automatically and
+`kubectl keyfold <verb>` works as a `kubectl` subcommand.
 
 ### Config: `k8s_secret_paths`
 
 Opt specific manifests into per-value mode by listing them (explicit
-repo-relative paths, not globs) in `.repo-enc.yml`, independent of `patterns`:
+repo-relative paths, not globs) in `.keyfold.yml`, independent of `patterns`:
 
 ```yaml
 k8s_secret_paths:
@@ -251,7 +253,7 @@ k8s_plaintext_keys:            # optional: stringData keys allowed to stay
                                 # real credentials in the same map
 ```
 
-`git-secret`'s `verify`/`pre-commit` enforce `k8s_secret_paths` the same as
+`git-keyfold`'s `verify`/`pre-commit` enforce `k8s_secret_paths` the same as
 whole-file `patterns`: any `stringData` value that's neither a `repo-enc:v1:`
 blob nor listed in `k8s_plaintext_keys` is treated as an accidentally-leaked
 secret and blocks the commit/fails verification — not just an all-or-nothing
@@ -290,54 +292,54 @@ multi-doc files).
 ### The footgun this doesn't fully solve
 
 If someone runs plain `kubectl apply -f file.yaml` on a per-value-encrypted
-manifest — i.e. forgets to run it through `kubectl secret apply` — the
+manifest — i.e. forgets to run it through `kubectl keyfold apply` — the
 ciphertext strings get applied *as the literal secret values*. This fails
 safe from a leak perspective (ciphertext isn't a secret leak) but breaks
 the application silently: no credential leaked, just garbage values in a
-real `Secret`. Watch for this if you're introducing `kubectl-secret` to a
+real `Secret`. Watch for this if you're introducing `kubectl-keyfold` to a
 team that's used to plain `kubectl`.
 
-## GitSecret CRD (git-secret-controller)
+## GitSecret CRD (keyfold-controller)
 
-`kubectl-secret` (above) is a human/CI-driven tool: someone runs `apply`/`view`
+`kubectl-keyfold` (above) is a human/CI-driven tool: someone runs `apply`/`view`
 by hand. `GitSecret` is a native custom resource
-(`git-secret.opscalehub.io/v1alpha1`) with its own controller instead, whose
+(`keyfold.opscalehub.io/v1alpha1`) with its own controller instead, whose
 ciphertext lives **inline in the object itself** — no repo clone, no SSH
 transport, no network hop at all in the decrypt path. Delivered by whatever
 already applies manifests to your cluster (ArgoCD, `kubectl apply`, ...), the
 same way any other Kubernetes object gets there. The content key is wrapped to
-every recipient you choose (`git-secret`'s multi-recipient GPG cryptography),
+every recipient you choose (`git-keyfold`'s multi-recipient GPG cryptography),
 not to a single controller keypair — a lost or rotated controller key is a `--rewrap` away from recovery via any other current
 recipient, not a permanent loss.
 
 ```bash
 # Seal plaintext into a GitSecret manifest:
-git-secret-seal --namespace myapp --name my-secrets \
+keyfold --namespace myapp --name my-secrets \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> \
   --from-literal API_KEY=... --from-literal DB_PASSWORD=... > gitsecret.yaml
 
-kubectl apply -f gitsecret.yaml   # git-secret-controller reconciles it into a plain Secret
+kubectl apply -f gitsecret.yaml   # keyfold-controller reconciles it into a plain Secret
 
 # Add/remove a recipient later without re-encrypting any value:
-git-secret-seal recipients add <new-fingerprint> -f gitsecret.yaml --role recovery
-git-secret-seal recipients remove <old-fingerprint> -f gitsecret.yaml
-git-secret-seal recipients list -f gitsecret.yaml       # who can decrypt, and their role
+keyfold recipients add <new-fingerprint> -f gitsecret.yaml --role recovery
+keyfold recipients remove <old-fingerprint> -f gitsecret.yaml
+keyfold recipients list -f gitsecret.yaml       # who can decrypt, and their role
 
 # ...or set the whole list explicitly:
-git-secret-seal --rewrap gitsecret.yaml \
+keyfold --rewrap gitsecret.yaml \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>
 
 # ...or resolve recipients from a committed keyring file instead of typing them:
-git-secret-seal --namespace myapp --name my-secrets \
+keyfold --namespace myapp --name my-secrets \
   --keyring envs/prod/keyring.yaml --from-env-file app.env > gitsecret.yaml
 ```
 
 Get the controller's own fingerprint + public key with
-`git-secret-controller --gpg-private-key-file <key> --print-public-key`. See
+`keyfold-controller --gpg-private-key-file <key> --print-public-key`. See
 [docs/architecture/keyring.md](docs/architecture/keyring.md) for the keyring
 format and per-environment layout.
 
-Prefer a form to the flags? `git-secret-seal ui` serves a local, public-key-only
+Prefer a form to the flags? `keyfold ui` serves a local, public-key-only
 web page for producing manifests (`http://127.0.0.1:8765`); the chart's
 `sealUi.enabled` runs the same thing in-cluster behind `kubectl port-forward`. It
 never decrypts, never touches the cluster API, never persists — see
@@ -349,13 +351,13 @@ change in review rather than an opaque blob churn. The controller mirrors this
 to `status.recipients` / `status.recipientCount` (a `Recipients` column on
 `kubectl get gitsecret`) so you can see who can decrypt an object without
 inspecting the ciphertext. It also stamps a
-`git-secret.opscalehub.io/source-revision` annotation from the current Git
+`keyfold.opscalehub.io/source-revision` annotation from the current Git
 `HEAD`, mirrored to `status.sourceRevision`, so you can tell which commit a live
 `Secret` came from ([docs/architecture/provenance.md](docs/architecture/provenance.md)).
 
 Every `--recipient` must be a full 40/64-hex GPG fingerprint, not a short key
-ID or an email address — `git-secret-seal` rejects anything else, the same
-rule `.repo-enc.yml`'s `gpg_recipients` already enforces (see
+ID or an email address — `keyfold` rejects anything else, the same
+rule `.keyfold.yml`'s `gpg_recipients` already enforces (see
 [`gpgutil.ValidFingerprint`](internal/gpgutil/gpgutil.go)'s doc comment for
 why: a short ID or email is ambiguous and locally resolvable, a fingerprint
 isn't). `gpg --list-secret-keys --with-colons` (or `gpg -K`) prints yours.
@@ -369,29 +371,29 @@ true` to deliberately take it over.
 An optional **validating admission webhook** (`webhook.enabled` in the chart)
 rejects a `GitSecret` whose `spec.recipients` disagrees with its `encryptedKey`,
 and enforces a per-namespace required-recipient set
-(`git-secret.opscalehub.io/required-recipients` on the `Namespace`). It manages
+(`keyfold.opscalehub.io/required-recipients` on the `Namespace`). It manages
 its own self-signed cert — no cert-manager. See
 [docs/architecture/admission-webhook.md](docs/architecture/admission-webhook.md).
 
-`git-secret-controller` needs its own dedicated GPG identity, imported at
+`keyfold-controller` needs its own dedicated GPG identity, imported at
 startup into an isolated `GNUPGHOME`
 (`--gpg-private-key-file`/`GPG_PRIVATE_KEY_FILE`, key zeroed from memory
 once imported). Install the CRD from
-`config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml` before running
+`config/crd/bases/keyfold.opscalehub.io_gitsecrets.yaml` before running
 the controller.
 
 A signed container image and Helm chart ship on every tagged release. Create
 the controller's GPG key `Secret` (see the
-[chart README](charts/git-secret-controller/README.md#before-installing)), then:
+[chart README](charts/keyfold/README.md#before-installing)), then:
 
 ```bash
-helm install git-secret-controller \
-  oci://ghcr.io/opscalehub/charts/git-secret-controller \
-  --set gpgPrivateKey.existingSecret=git-secret-controller-gpg
+helm install keyfold \
+  oci://ghcr.io/opscalehub/charts/keyfold \
+  --set gpgPrivateKey.existingSecret=keyfold-gpg
 ```
 
 For local work, build the binaries with
-`go build ./cmd/git-secret-controller` and `go build ./cmd/git-secret-seal`.
+`go build ./cmd/keyfold-controller` and `go build ./cmd/keyfold`.
 
 ## Guides
 
@@ -415,7 +417,7 @@ For local work, build the binaries with
 - [Multi-cluster operation](docs/architecture/multi-cluster.md) — one encrypted
   repo, per-cluster controller identities, no central store.
 - [Cluster keyring](docs/architecture/keyring.md) — `--print-public-key`,
-  `git-secret-seal --keyring`, per-environment recipient sets.
+  `keyfold --keyring`, per-environment recipient sets.
 - [Reporting a vulnerability](SECURITY.md).
 
 The core property: the encrypted repository is the durable source of truth, and

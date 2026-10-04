@@ -1,0 +1,159 @@
+# Default values for the keyfold chart (keyfold-controller and friends).
+#
+# Secret material is never accepted here, by design -- only a reference
+# to a Secret you create out-of-band.
+
+image:
+  repository: ghcr.io/opscalehub/keyfold-controller
+  tag: ""  # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+
+# By default the controller watches GitSecrets in every namespace and is
+# granted cluster-wide read+write on Secrets to do it (a GitSecret in any
+# namespace materialises a Secret in that same namespace). To confine it,
+# list the namespaces here: the chart then generates a namespaced
+# Role/RoleBinding per entry instead of the cluster-wide Secret grant, and
+# passes --watch-namespaces so the informer cache matches. Leave empty for
+# cluster-wide.
+watchNamespaces: []
+
+# Required. This controller's own dedicated GPG identity -- the
+# recipient every GitSecret it should be able to decrypt must be sealed
+# to. Generate with `gpg --batch --passphrase '' --quick-generate-key`,
+# export with `gpg --export-secret-keys --armor`, never share it
+# outside this Secret. See README: "GitSecret CRD".
+gpgPrivateKey:
+  existingSecret: ""
+  existingSecretKey: private.asc
+
+# Only matters with replicaCount > 1: without it, more than one replica
+# would race to reconcile the same GitSecret. Safe to leave enabled even
+# at replicaCount 1.
+leaderElection:
+  enabled: true
+
+metrics:
+  port: 8443
+  # HTTPS (self-signed, generated in memory) behind the apiserver's own
+  # authn/authz: a scraper's token must be allowed GET on the /metrics
+  # non-resource URL -- bind it to the <fullname>-metrics-reader ClusterRole
+  # this chart creates. false serves plain, unauthenticated HTTP instead.
+  secure: true
+
+healthProbe:
+  port: 8081
+
+# Validating admission webhook for GitSecret objects. When enabled, the
+# controller rejects a GitSecret whose spec.recipients disagrees with its
+# encryptedKey (a count check -- see threat-model T11), and enforces any
+# per-namespace required-recipient set (the
+# keyfold.opscalehub.io/required-recipients Namespace annotation). The
+# controller generates its own self-signed serving cert at startup and the
+# elected leader injects the CA into the ValidatingWebhookConfiguration --
+# no cert-manager needed. Leave failurePolicy at Fail: the whole point is
+# to block non-conforming objects, and admission is not the decrypt path.
+#
+# Requires replicaCount: 1. The serving cert is per-pod and the
+# ValidatingWebhookConfiguration.caBundle holds one CA, so a multi-replica
+# webhook needs a shared cert (cert-manager) that this chart does not wire
+# up yet -- the chart refuses `webhook.enabled` with replicaCount > 1.
+# Reconcile itself is unaffected and recovers on restart.
+webhook:
+  enabled: false
+  port: 9443
+  failurePolicy: Fail
+
+# Serve GET /pubkey -- this controller's fingerprint on the first line,
+# then its armored public key -- so whoever seals GitSecrets to it can
+# fetch it (`curl http://<svc>/pubkey | gpg --import`) instead of it being
+# copied around by hand. Public data, no auth. Adds a ClusterIP Service on
+# port 80 -> the container port.
+servePubKey:
+  enabled: false
+  port: 8082
+
+# On install/upgrade, run a one-shot Job that writes the controller's
+# fingerprint + public key into a ConfigMap, so sealers can read it with
+# `kubectl get configmap` (GitOps-friendly, no running endpoint needed).
+# Complements servePubKey -- use either or both.
+publishPublicKey:
+  enabled: false
+  configMapName: keyfold-pubkey
+
+# A web form for producing GitSecret manifests -- `keyfold ui`, run
+# in-cluster from this same image. Public-key only: it never decrypts,
+# never touches the Kubernetes API, never persists anything; the output is
+# a manifest an operator copies and applies themselves. Reach it with
+# `kubectl port-forward svc/<release>-seal-ui 8080:80` -- no Ingress.
+# keyringConfigMap (required when enabled) names a ConfigMap with a key
+# `keyring.yaml` in the keyfold keyring format, where every entry
+# carries its armored publicKey: in-cluster there is no operator gpg
+# keyring, so these are the only keys the UI can seal to.
+sealUi:
+  enabled: false
+  port: 8080
+  keyringConfigMap: ""
+  defaultNamespace: ""
+  # Cap on concurrent /api/seal requests -- each forks gpg. Excess
+  # requests get HTTP 429. The in-cluster deployment has no auth of its
+  # own (it is reached by port-forward), so this bounds a burst from any
+  # pod that can route to the Service.
+  maxInflight: 4
+  networkPolicy:
+    # Locks egress to DNS only (the UI needs no egress at serving time).
+    enabled: true
+    # Optional ingress restriction. Empty keeps the Service reachable by
+    # `kubectl port-forward` and the kubelet readiness probe (whose
+    # sources a NetworkPolicy cannot select). Set a list of
+    # NetworkPolicyPeer objects if you front the UI another way.
+    allowFrom: []
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+# Meets the Pod Security "restricted" profile together with securityContext
+# below, so the chart installs into a namespace that enforces it.
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: healthz
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: healthz
+  initialDelaySeconds: 5
+  periodSeconds: 10

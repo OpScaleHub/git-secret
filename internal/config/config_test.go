@@ -341,3 +341,54 @@ func TestMergeIntoUnionsGPGRecipients(t *testing.T) {
 		t.Fatalf("GPGRecipients = %v, want union-deduped [AAAA BBBB]", base.GPGRecipients)
 	}
 }
+
+// TestPath_LegacyAndCurrentNames: a repo set up before the rename keeps
+// its .repo-enc.yml (and the .repo-enc/ key path it implies when key_source
+// was never written); a new repo gets .keyfold.yml; both is an error.
+func TestPath_LegacyAndCurrentNames(t *testing.T) {
+	t.Setenv(GlobalConfigDirEnvVar, t.TempDir())
+	body := "version: 1\npatterns: [\"secrets/**\"]\n" // no key_source: rely on the default
+
+	fresh := t.TempDir()
+	if p, err := Path(fresh); err != nil || filepath.Base(p) != FileName {
+		t.Fatalf("fresh repo Path = %q, %v; want %s", p, err, FileName)
+	}
+
+	legacy := t.TempDir()
+	writeFile(t, filepath.Join(legacy, LegacyFileName), body)
+	cfg, err := Load(legacy)
+	if err != nil {
+		t.Fatalf("Load legacy: %v", err)
+	}
+	if cfg.KeySource != ".repo-enc/key" {
+		t.Errorf("legacy repo key_source default = %q, want .repo-enc/key", cfg.KeySource)
+	}
+	if p, _ := WriteDefault(legacy, []string{"x/**"}); filepath.Base(p) != LegacyFileName {
+		t.Errorf("WriteDefault on a legacy repo returned %q, want the existing %s", p, LegacyFileName)
+	}
+	if _, err := os.Stat(filepath.Join(legacy, FileName)); !os.IsNotExist(err) {
+		t.Error("WriteDefault created .keyfold.yml next to an existing .repo-enc.yml")
+	}
+
+	current := t.TempDir()
+	writeFile(t, filepath.Join(current, FileName), body)
+	if cfg, err := Load(current); err != nil || cfg.KeySource != ".keyfold/key" {
+		t.Errorf("current repo key_source default = %v, %v; want .keyfold/key", cfg, err)
+	}
+
+	both := t.TempDir()
+	writeFile(t, filepath.Join(both, FileName), body)
+	writeFile(t, filepath.Join(both, LegacyFileName), body)
+	if _, err := Load(both); err == nil || !strings.Contains(err.Error(), "both") {
+		t.Errorf("Load with both config files: err = %v, want a 'both exist' error", err)
+	}
+}
+
+func TestGlobalPath_LegacyEnvVar(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv(GlobalConfigDirEnvVar, "")
+	t.Setenv(LegacyGlobalConfigDirEnvVar, dir)
+	if p, err := GlobalPath(); err != nil || p != filepath.Join(dir, "config.yml") {
+		t.Fatalf("GlobalPath with only %s set = %q, %v", LegacyGlobalConfigDirEnvVar, p, err)
+	}
+}

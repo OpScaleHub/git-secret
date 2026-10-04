@@ -3,7 +3,7 @@
 Every error string and exit code below was reproduced against the actual
 CLI/controller while writing this doc, not guessed from reading the code.
 
-## Exit codes (`git-secret`, `kubectl-secret`)
+## Exit codes (`git-keyfold`, `kubectl-keyfold`)
 
 | Code | Meaning |
 |---|---|
@@ -15,7 +15,7 @@ CLI/controller while writing this doc, not guessed from reading the code.
 ## "verify found plaintext committed at HEAD"
 
 ```
-$ git secret verify
+$ git keyfold verify
 verify: found plaintext committed at HEAD for:
   secrets/db.yaml: crypto: not a recognized encrypted file (bad magic)
 ```
@@ -28,10 +28,10 @@ already committed as plaintext.
 **Fix:**
 
 ```bash
-git secret lock          # encrypt the current working-tree content in place
+git keyfold lock          # encrypt the current working-tree content in place
 git add secrets/db.yaml
 git commit -m "fix: encrypt secrets/db.yaml"
-git secret verify         # confirm: exit 0
+git keyfold verify         # confirm: exit 0
 ```
 
 `verify` deliberately checks the committed tree at `HEAD`, not your working
@@ -45,30 +45,30 @@ check when it can't authenticate a file.
 ## "key not found" / exit code 2
 
 ```
-$ git secret unlock
-Error: keybackend: key not found: .repo-enc/key
+$ git keyfold unlock
+Error: keybackend: key not found: .keyfold/key
 ```
 
 **Cause:** the `file`-backend key isn't present at `key_source` (it's
 gitignored by design — never committed, so a fresh clone has no key until
 you copy it in out-of-band), or the `env`-backend variable isn't set, or (for
-`gpg`) no local secret key can open `.repo-enc/key.gpg`.
+`gpg`) no local secret key can open `.keyfold/key.gpg`.
 
 **Fix, by backend:**
 
 - `file`: copy the key file from wherever it was shared out-of-band into
-  `.repo-enc/key` (path from `.repo-enc.yml`'s `key_source`).
+  `.keyfold/key` (path from `.keyfold.yml`'s `key_source`).
 - `env`: `export <VAR>=<hex-value>` (the value `init`/`rotate-keys` printed
   when the key was generated).
 - `gpg`: confirm your GPG secret key is in your keyring
   (`gpg --list-secret-keys`) and is one of the fingerprints in
-  `.repo-enc.yml`'s `gpg_recipients`. If it isn't, ask an existing recipient
-  to run `git secret adduser <your-fingerprint>`.
+  `.keyfold.yml`'s `gpg_recipients`. If it isn't, ask an existing recipient
+  to run `git keyfold adduser <your-fingerprint>`.
 
-## "not a full GPG fingerprint" during `init`/`adduser`/`git-secret-seal`
+## "not a full GPG fingerprint" during `init`/`adduser`/`keyfold`
 
 ```
-$ git secret init --key-backend gpg --gpg-recipient shortid123
+$ git keyfold init --key-backend gpg --gpg-recipient shortid123
 Error: init: load config: config: gpg_recipients entry "shortid123" is not
 a full GPG fingerprint (40 or 64 hex characters) — short IDs and emails
 are ambiguous and not accepted
@@ -76,8 +76,8 @@ are ambiguous and not accepted
 
 **Cause:** a short key ID or email was passed instead of a full fingerprint.
 This is enforced deliberately (short IDs are spoofable/collision-prone) and
-applies identically to `.repo-enc.yml`'s `gpg_recipients` and
-`git-secret-seal --recipient`.
+applies identically to `.keyfold.yml`'s `gpg_recipients` and
+`keyfold --recipient`.
 
 **Fix:** get the full fingerprint and use that instead:
 
@@ -114,7 +114,7 @@ checking key *names*, not decoding the values).
 --encrypt`/`--decrypt` needing `gpg-agent`/`pinentry` in a non-interactive
 session. The controller avoids this — it imports the key into its own
 isolated `GNUPGHOME` at startup and never needs an interactive agent — but
-if you're running `git secret`/`gpg` directly in CI:
+if you're running `git keyfold`/`gpg` directly in CI:
 
 - keep a passphrase-less secret key in a CI-local ephemeral `GNUPGHOME`
   (`gpg --batch --passphrase '' --quick-generate-key ...`, same as the
@@ -124,13 +124,13 @@ if you're running `git secret`/`gpg` directly in CI:
   interactive developer machines (see the main README's "Key backends"
   section for the tradeoffs).
 
-## Unencrypted-secret detection warnings from `kubectl-secret`
+## Unencrypted-secret detection warnings from `kubectl-keyfold`
 
-`kubectl secret apply`/`view` only decrypts values that already start with
+`kubectl keyfold apply`/`view` only decrypts values that already start with
 `repo-enc:v1:` — anything else passes through unchanged. If a value you
 expected to be decrypted isn't, check:
 
-- it's actually listed under `k8s_secret_paths` in `.repo-enc.yml` (exact
+- it's actually listed under `k8s_secret_paths` in `.keyfold.yml` (exact
   repo-relative path, not a glob);
 - the manifest's `apiVersion`/`kind`/`metadata.name`/`metadata.namespace`
   match what it was sealed for — `encrypt-value` binds ciphertext to the

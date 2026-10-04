@@ -178,7 +178,7 @@ uid:u::::2000::x::Second Key <b@example.com>::::::::::0:
 	}
 }
 
-// TestImportSecretKey exercises the real path git-secret-controller uses at
+// TestImportSecretKey exercises the real path keyfold-controller uses at
 // startup: generate a key in one keyring (simulating wherever the
 // identity was originally created), export its private half, and
 // confirm importing it into a *second*, empty keyring makes that

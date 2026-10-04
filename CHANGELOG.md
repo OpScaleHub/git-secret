@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Renamed to Keyfold (#108) — breaking; see UPGRADING.md
+
+- The project is now **Keyfold** ([ADR-0001](docs/adr/0001-product-name.md)):
+  `git-secret` collided with an established, unrelated project in the same
+  space. Binaries: `keyfold` (was `git-secret-seal`), `git-keyfold` (was
+  `git-secret`), `kubectl-keyfold` (was `kubectl-secret`), `keyfold-controller`
+  (was `git-secret-controller`); image `ghcr.io/opscalehub/keyfold-controller`;
+  chart `oci://ghcr.io/opscalehub/charts/keyfold`.
+- CRD API group `keyfold.opscalehub.io/v1alpha1` (kind `GitSecret` unchanged);
+  annotations `keyfold.opscalehub.io/*`. Pre-rename annotation keys are still
+  read (roles, provenance, a Namespace's required recipients).
+- **`keyfold migrate -f PATH`** rewrites manifests to the new group in place —
+  apiVersion and annotation keys only, comments and ciphertext untouched, no
+  re-seal. The controller **adopts** a target `Secret` still controlled by
+  the same-named pre-rename `GitSecret`, so migration never deletes a
+  `Secret` and needs no `spec.target.adopt`.
+- New repositories get `.keyfold.yml` and keys under `.keyfold/`; existing
+  `.repo-enc.yml` repositories keep working unchanged (both files present is
+  an error). `KEYFOLD_SKIP_HOOKS` / `KEYFOLD_CONFIG_DIR` replace
+  `SECRETIZE_SKIP_HOOKS` / `REPO_ENC_CONFIG_DIR`, which are still honoured.
+  Re-run `git keyfold init` per repository to rewrite hooks that exec the old
+  binary name.
+- `keyfold seal …` is the explicit form of the default sealing command.
+- Unchanged, permanently: the `RENC` envelope, the `repo-enc:v1:` value
+  prefix, AAD layouts, the wrapped-key format.
+
 ### Removed
 
 - **`git-secret-server`** (the External Secrets Operator webhook bridge), its
@@ -11,26 +37,25 @@
   host-key fallback), `gitutil.RepoRootAt`, `cli.LoadAt`. See UPGRADING.md for
   moving a workload to a `GitSecret`.
 
-### Changed — Helm chart (#106; see UPGRADING.md)
+### Changed — Helm chart (#106)
 
 - **Installs under Pod Security `restricted`.** Every pod sets
   `seccompProfile: RuntimeDefault`; previously the controller, seal-UI and
   publish-pubkey Job were all rejected and the install failed on its
   post-install hook.
-- **No more doubled names.** `helm install git-secret-controller …` yields
-  `git-secret-controller`, not `git-secret-controller-git-secret-controller`
-  — the Service names the docs already used are now the real ones.
+- **No more doubled names.** A release whose name contains the chart name is
+  used as-is (`helm install keyfold …` yields `keyfold`, `keyfold-webhook`, …).
 - **Controller pods are selected by `app.kubernetes.io/component: controller`**,
   so the controller Deployment and the webhook/pubkey/metrics Services no longer
   also match the seal-UI and publish-Job pods.
 - **Metrics are authenticated by default**: HTTPS (self-signed) with each
   scrape's token checked by `TokenReview` + `SubjectAccessReview`; a
-  `<fullname>-metrics-reader` ClusterRole is provided. `metrics.secure: false`
+  `keyfold-metrics-reader` ClusterRole is provided. `metrics.secure: false`
   keeps plain HTTP. Implemented on client-go directly
   (`internal/metricsauth`) rather than controller-runtime's filter package,
   which would add `k8s.io/apiserver` and ~30 MB to the controller binary.
 - **The in-cluster seal UI requires `sealUi.keyringConfigMap`**, and
-  `git-secret-seal ui --isolated-keyring` refuses to start unless every keyring
+  `keyfold ui --isolated-keyring` refuses to start unless every keyring
   entry carries its `publicKey`. Previously the default configuration failed
   every seal (`can't create directory …/.gnupg: Read-only file system`).
 - Chart README: the `--rewrap … > gitsecret.yaml` example truncated its own

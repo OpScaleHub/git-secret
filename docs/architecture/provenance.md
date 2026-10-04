@@ -10,24 +10,24 @@ silently rolls the live `Secret` back. Provenance metadata makes that visible.
 
 | What | Set by | Where |
 |---|---|---|
-| The commit the **plaintext** was sealed from | `git-secret-seal` | `git-secret.opscalehub.io/source-revision` annotation → mirrored to `status.sourceRevision` |
+| The commit the **plaintext** was sealed from | `keyfold` | `keyfold.opscalehub.io/source-revision` annotation → mirrored to `status.sourceRevision` |
 | The commit the **`GitSecret` object** was applied from | your GitOps tool | e.g. `argocd.argoproj.io/tracking-id`, or ArgoCD's app sync revision |
 
-`git-secret-seal` stamps its annotation automatically when run inside a Git
+`keyfold` stamps its annotation automatically when run inside a Git
 working tree:
 
 ```
-$ git-secret-seal --namespace prod --name app --recipient <fpr> --from-env-file app.env
+$ keyfold --namespace prod --name app --recipient <fpr> --from-env-file app.env
 # gitsecret.yaml metadata.annotations:
-#   git-secret.opscalehub.io/source-revision: 4f2a1c9...        (HEAD, "-dirty" appended if the tree is dirty)
-#   git-secret.opscalehub.io/source-repo: git@github.com:org/app.git
+#   keyfold.opscalehub.io/source-revision: 4f2a1c9...        (HEAD, "-dirty" appended if the tree is dirty)
+#   keyfold.opscalehub.io/source-repo: git@github.com:org/app.git
 ```
 
 - `--source-revision <sha>` overrides it (for CI that seals from a detached
   checkout, or a build system that knows the real revision).
 - `--no-provenance` omits both annotations.
 
-`--rewrap` and `git-secret-seal recipients` preserve whatever annotations the
+`--rewrap` and `keyfold recipients` preserve whatever annotations the
 object already has — provenance is set once, at seal time.
 
 ## Reading it

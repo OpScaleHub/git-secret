@@ -18,12 +18,12 @@
 - [multi-cluster.md](architecture/multi-cluster.md) — one encrypted repo,
   per-cluster controller identities, per-environment recipient sets.
 - [keyring.md](architecture/keyring.md) — `--print-public-key`,
-  `git-secret-seal --keyring`, discoverable recipient public keys.
+  `keyfold --keyring`, discoverable recipient public keys.
 - [admission-webhook.md](architecture/admission-webhook.md) — optional validating
   webhook enforcing `spec.recipients` and per-namespace required recipients.
 - [provenance.md](architecture/provenance.md) — recording which Git revision
   produced a Secret.
-- [sealing-console.md](architecture/sealing-console.md) — `git-secret-seal ui`, a
+- [sealing-console.md](architecture/sealing-console.md) — `keyfold ui`, a
   public-key-only web form for producing GitSecret manifests (local or in-cluster).
 
 ## Reporting a vulnerability

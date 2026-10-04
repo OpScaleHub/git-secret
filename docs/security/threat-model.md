@@ -2,9 +2,9 @@
 
 Status: **initial draft** (tracking issue #38). Covers the two shipped shapes:
 
-1. **CLI + Git hooks** — `git-secret` encrypting files in a repo, `file` / `env` /
+1. **CLI + Git hooks** — `git-keyfold` encrypting files in a repo, `file` / `env` /
    `gpg` key backends.
-2. **`GitSecret` CRD + `git-secret-controller`** — inline ciphertext reconciled
+2. **`GitSecret` CRD + `keyfold-controller`** — inline ciphertext reconciled
    into a Kubernetes `Secret`.
 
 See [architecture/overview.md](../architecture/overview.md) for diagrams of the
@@ -30,7 +30,7 @@ must preserve. It is reviewed before any new network-facing surface is added.
 | Controller ServiceAccount token / RBAC | Cluster | High |
 | Git transport credential (deploy key) | Whatever clones the repo | Medium (guards ciphertext only) |
 | Controller logs / Events / `status` / metrics | Cluster, log sinks | Must contain **no** plaintext or key material |
-| `.repo-enc.yml` | Git (committed) | Integrity-sensitive (defines encryption policy) |
+| `.keyfold.yml` | Git (committed) | Integrity-sensitive (defines encryption policy) |
 
 ---
 
@@ -39,9 +39,9 @@ must preserve. It is reviewed before any new network-facing surface is added.
 ```
  operator workstation ── git push ──▶ Git host ── apply path (ArgoCD/kubectl) ──▶ kube-apiserver
         │                               │                                              │
-   local gpg keyring              (ciphertext only)                            git-secret-controller
+   local gpg keyring              (ciphertext only)                            keyfold-controller
         │                                                                             │
-   git-secret / git-secret-seal                                            ephemeral GNUPGHOME + its key
+   Keyfold / keyfold                                            ephemeral GNUPGHOME + its key
                                                                                       │
                                                                               target Secret ──▶ workload
 ```
@@ -57,7 +57,7 @@ must preserve. It is reviewed before any new network-facing surface is added.
   CLI workflow. Compromise there is game over for anything that workstation can
   decrypt (T6).
 - **etcd / the apiserver is trusted.** A cluster admin who can read `Secret`s
-  needs no help from `git-secret` (T8) — this project does not defend against a
+  needs no help from `git-keyfold` (T8) — this project does not defend against a
   malicious cluster administrator, and does not claim to.
 
 ---
@@ -70,18 +70,18 @@ Notation: **L** = availability/recovery, **C** = confidentiality, **I** = integr
 |---|---|---|---|
 | T1 | Controller pod / Deployment destroyed | L | **Handled.** State is in Git + the controller `Secret`; a fresh controller reconciles everything back. |
 | T2 | Entire cluster lost | L | **Handled.** Re-apply `GitSecret`s to a new cluster + restore the controller key → identical `Secret`s. Runbook §B; test `TestRecovery_ClusterRebuild_SameKeyReproducesData`. |
-| T3 | One recipient **private key lost** (holder unavailable) | L | **Handled.** Any other current recipient runs `git-secret-seal --rewrap` to drop it / add a replacement — `encryptedData` is never re-sealed. Runbook §C/§D; tests `TestRecovery_ControllerKeyLost_*`, `TestRecovery_OperatorLeaves_*`. |
+| T3 | One recipient **private key lost** (holder unavailable) | L | **Handled.** Any other current recipient runs `keyfold --rewrap` to drop it / add a replacement — `encryptedData` is never re-sealed. Runbook §C/§D; tests `TestRecovery_ControllerKeyLost_*`, `TestRecovery_OperatorLeaves_*`. |
 | T4 | One recipient **private key compromised** | C | **Partial, and understood.** `--rewrap` stops *future* exposure, but every historical version of the object in Git stays wrapped to the compromised key → permanent historical exposure. Requires rotating the secret values + a new content key + full re-seal. Runbook §E; test `TestRecovery_KeyCompromise_RewrapAloneIsInsufficient`. |
 | T5 | Malicious / oversized `GitSecret` applied | I / L (DoS) | **Handled.** `encryptedData` is capped at 1024 entries (CRD `maxProperties` + `sealer.MaxEntries`) and 1 MiB per encoded value; the resulting `Secret` is separately capped by the apiserver. |
 | T6 | Operator workstation compromised | C | **Out of scope to prevent.** Blast radius = everything that workstation's keyring can decrypt. Mitigation is operational: per-person keys, hardware-backed keys, offline recovery key not on any workstation. |
 | T7 | Plaintext leak via logs / Events / `status` / metrics | C | **Invariant (I3), regression-tested.** `TestUnseal_ErrorDoesNotLeakPlaintext` asserts a tampered-envelope failure never echoes the plaintext into the returned error (which the controller copies into `.status`). |
-| T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-secret`. |
+| T8 | Malicious cluster administrator | C | **Out of scope.** Anyone who can `kubectl get secret -o yaml` wins without touching `git-keyfold`. |
 | T9 | Compromised controller pod | C | Blast radius = `GitSecret`s wrapped to the controller key. Mitigation: don't wrap every object to every controller — per-cluster / per-env recipient sets ([multi-cluster.md](../architecture/multi-cluster.md)); `runAsNonRoot`, read-only rootfs, minimal RBAC. |
-| T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | **Observable, not yet prevented.** `git-secret-seal` stamps `source-revision` and the controller mirrors it to `status.sourceRevision` (a `Revision` printer column), so a rollback is visible ([provenance.md](../architecture/provenance.md)). Refusing to go below an expected revision is a separate design question. |
-| T10-CLI | Rollback of a whole-file blob in Git (CLI path) | I | **Not prevented, by the same reasoning as T10.** Restoring an earlier ciphertext version of a tracked file authenticates cleanly — the AAD binds the file's *identity* (repo + path), not its *version*, and there is no controller/counter to bind freshness to. `verify` / `pre-push` catch *plaintext* in history, not a stale-but-valid ciphertext. Mitigation is operational: review the diff. **Cross-repository** blob reuse *is* prevented: since a `repo_id` (`.repo-enc.yml`, generated by `init`) is folded into the whole-file AAD (a v2 envelope, `crypto/envelope.go`), a blob sealed in one repo fails authentication if dropped into another that merely shares the key. Repos initialised before `repo_id` existed seal v1 (path-only AAD) and are unaffected. |
+| T10 | Rollback / history-rewrite of a `GitSecret` in Git | I | **Observable, not yet prevented.** `keyfold` stamps `source-revision` and the controller mirrors it to `status.sourceRevision` (a `Revision` printer column), so a rollback is visible ([provenance.md](../architecture/provenance.md)). Refusing to go below an expected revision is a separate design question. |
+| T10-CLI | Rollback of a whole-file blob in Git (CLI path) | I | **Not prevented, by the same reasoning as T10.** Restoring an earlier ciphertext version of a tracked file authenticates cleanly — the AAD binds the file's *identity* (repo + path), not its *version*, and there is no controller/counter to bind freshness to. `verify` / `pre-push` catch *plaintext* in history, not a stale-but-valid ciphertext. Mitigation is operational: review the diff. **Cross-repository** blob reuse *is* prevented: since a `repo_id` (`.keyfold.yml`, generated by `init`) is folded into the whole-file AAD (a v2 envelope, `crypto/envelope.go`), a blob sealed in one repo fails authentication if dropped into another that merely shares the key. Repos initialised before `repo_id` existed seal v1 (path-only AAD) and are unaffected. |
 | T11 | Recipient substitution — object sealed to an attacker key alongside the real ones | C | **Partial (review aid + count check).** `spec.recipients` lists the fingerprints on the object (a one-line diff in review), and the optional [validating webhook](../architecture/admission-webhook.md) rejects a `GitSecret` whose `spec.recipients` *count* disagrees with the blob, plus enforces a per-namespace required-recipient set. It is **not** cryptographic authentication of the set: `--list-packets` exposes encryption-subkey IDs, not primary fingerprints, so a substitution that keeps the count constant (seal to `[controller, attacker]`, list `[controller, human]`) passes both the webhook and a casual diff read. Real per-fingerprint verification is #40 (see invariant #9). |
 | T12 | Pre-existing target `Secret` silently adopted & cleared | I | **Handled.** A colliding `Secret` this `GitSecret` does not own is left untouched and a `TargetConflict` Ready=False condition is set, unless the operator opts in with `spec.target.adopt`. Tests `TestReconcile_DoesNotClobberUnownedSecret` / `_AdoptsUnownedSecretWhenOptedIn`. |
-| T13 | Plaintext committed to Git (CLI path) | C | **Handled.** `verify` + the `pre-push` hook fail closed; `SECRETIZE_SKIP_HOOKS` is opt-in per-invocation, never tied to ambient `CI`. |
+| T13 | Plaintext committed to Git (CLI path) | C | **Handled.** `verify` + the `pre-push` hook fail closed; `KEYFOLD_SKIP_HOOKS` is opt-in per-invocation, never tied to ambient `CI`. |
 | T14 | Recipient specified as a short key ID / email, resolving to the wrong key | C | **Handled.** `gpgutil.ValidFingerprint` requires a full 40/64-hex fingerprint everywhere recipients are accepted. |
 
 ---
@@ -111,7 +111,7 @@ regression regardless of the feature it enables.
    `encryptedKey` is rewrapped. (`internal/sealer.Rewrap`.)
 7. **The controller decrypts only what its own key can unwrap** — it holds no
    master key and cannot enumerate or open objects sealed to other identities.
-8. **`git-secret-seal` never writes plaintext to disk** beyond what the caller
+8. **`keyfold` never writes plaintext to disk** beyond what the caller
    passed in.
 9. **Recipient changes are reviewable** — the declared set (`spec.recipients`) is
    visible in the Git diff of the object, not buried in an opaque re-encrypted
@@ -145,7 +145,7 @@ Keyring-over-HTTP (#56) · a Helm Job to publish the controller pubkey `ConfigMa
 matching against a full keyring object rather than the Namespace annotation.
 
 Closed: #38 (this doc) · #39 (DR runbooks + tests) · #40 (`spec.recipients` +
-status mirror + `VerifyRecipients`) · #41 (recipient roles + `git-secret-seal
+status mirror + `VerifyRecipients`) · #41 (recipient roles + `keyfold
 recipients` + [lifecycle doc](recipient-lifecycle.md)) · #42 (controller adoption
 guard, input bounds, status-leak regression test) · #43
 ([multi-cluster.md](../architecture/multi-cluster.md)) · #47

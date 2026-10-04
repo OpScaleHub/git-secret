@@ -1,0 +1,45 @@
+# keyfold-controller: reconciles GitSecret objects (api/v1alpha1) into
+# plain Kubernetes Secrets. See internal/controller for the reconcile
+# logic and the README's "GitSecret CRD" section for deployment.
+
+FROM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/keyfold-controller ./cmd/keyfold-controller
+# keyfold is bundled too so the chart can run `keyfold ui`
+# (the sealing web form) in-cluster from this same image -- it needs the
+# same gpg runtime and nothing more.
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+    -o /out/keyfold ./cmd/keyfold
+
+# gpg is a real runtime dependency, not build-time-only -- the
+# controller shells out to it on every reconcile (see internal/gpgutil)
+# -- so this can't be a from-scratch/distroless-static image. The
+# controller never clones a repository, so neither git nor an SSH client
+# is needed here at all.
+FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gnupg \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Explicit numeric UID/GID, not just a named user: Kubernetes'
+# runAsNonRoot: true (set by this project's own Helm chart) has to
+# verify non-root *statically*, from the image alone, without running
+# anything -- a USER directive that names an account rather than a
+# numeric ID fails that check, even though the account itself is
+# genuinely non-root.
+RUN groupadd --system --gid 1000 keyfold-controller \
+    && useradd --system --uid 1000 --gid 1000 --create-home --home-dir /home/keyfold-controller --shell /usr/sbin/nologin keyfold-controller
+USER 1000:1000
+WORKDIR /home/keyfold-controller
+
+COPY --from=build /out/keyfold-controller /usr/local/bin/keyfold-controller
+COPY --from=build /out/keyfold /usr/local/bin/keyfold
+
+EXPOSE 8443 8081
+ENTRYPOINT ["/usr/local/bin/keyfold-controller"]

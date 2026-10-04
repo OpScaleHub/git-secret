@@ -1,4 +1,5 @@
-// Package config loads and validates the repo-local .repo-enc.yml, merged
+// Package config loads and validates the repo-local .keyfold.yml (or the
+// pre-rename .repo-enc.yml), merged
 // with an optional global override file for machine-local defaults (e.g.
 // which key backend to use).
 package config
@@ -15,8 +16,51 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// FileName is the repo-local config file, committed to the repo.
-const FileName = ".repo-enc.yml"
+// FileName is the repo-local config file a new repository gets, committed
+// to the repo.
+const FileName = ".keyfold.yml"
+
+// LegacyFileName is the config file name used before the Keyfold rename. A
+// repository that has it keeps using it -- with the .repo-enc/ key paths it
+// implies -- unchanged; nothing needs migrating. Having both is an error.
+const LegacyFileName = ".repo-enc.yml"
+
+// Path returns the config file repoRoot uses: LegacyFileName if only that
+// one exists, otherwise FileName (whether or not it exists yet).
+func Path(repoRoot string) (string, error) {
+	cur := filepath.Join(repoRoot, FileName)
+	legacy := filepath.Join(repoRoot, LegacyFileName)
+	curOK, err := exists(cur)
+	if err != nil {
+		return "", err
+	}
+	legacyOK, err := exists(legacy)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case curOK && legacyOK:
+		return "", fmt.Errorf("config: both %s and %s exist -- keep one (they are the same format; `git mv %s %s` renames the old one)", FileName, LegacyFileName, LegacyFileName, FileName)
+	case legacyOK:
+		return legacy, nil
+	default:
+		return cur, nil
+	}
+}
+
+func exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+// IsLegacyFile reports whether path names the pre-rename config file.
+func IsLegacyFile(path string) bool { return filepath.Base(path) == LegacyFileName }
 
 // CurrentVersion is the only config schema version this build understands.
 const CurrentVersion = 1
@@ -44,7 +88,7 @@ type Config struct {
 	GPGRecipients []string `yaml:"gpg_recipients,omitempty"`
 	// K8sSecretPaths are repo-relative paths (not globs — an explicit
 	// list, since expected usage is a handful of manifests) opted into
-	// kubectl-secret's per-value encryption instead of git-secret's
+	// kubectl-keyfold's per-value encryption instead of Keyfold's
 	// whole-file encryption. Independent of Patterns: a repo can use
 	// either, both, or neither.
 	K8sSecretPaths []string `yaml:"k8s_secret_paths,omitempty"`
@@ -68,27 +112,41 @@ var validBackends = map[string]bool{
 }
 
 // DefaultKeySourceFor returns the default key_source for a given
-// key_backend. "gpg" gets a distinct default from "file" (".repo-enc/key.gpg"
-// vs ".repo-enc/key") since the two are semantically different — one
+// key_backend. "gpg" gets a distinct default from "file" (".keyfold/key.gpg"
+// vs ".keyfold/key") since the two are semantically different — one
 // gitignored/secret, one meant to be committed — and switching backends
 // shouldn't silently collide with a stale key from the other.
 func DefaultKeySourceFor(backend string) string {
-	if backend == "gpg" {
-		return ".repo-enc/key.gpg"
-	}
-	return ".repo-enc/key"
+	return keySourceFor(".keyfold", backend)
 }
 
-func defaults() *Config {
+// legacyKeySourceFor is DefaultKeySourceFor for a repo still on
+// LegacyFileName, whose keys live under .repo-enc/.
+func legacyKeySourceFor(backend string) string {
+	return keySourceFor(".repo-enc", backend)
+}
+
+func keySourceFor(dir, backend string) string {
+	if backend == "gpg" {
+		return dir + "/key.gpg"
+	}
+	return dir + "/key"
+}
+
+func defaults(legacy bool) *Config {
+	ks := DefaultKeySourceFor("file")
+	if legacy {
+		ks = legacyKeySourceFor("file")
+	}
 	return &Config{
 		Version:    CurrentVersion,
 		KeyBackend: "file",
-		KeySource:  DefaultKeySourceFor("file"),
+		KeySource:  ks,
 	}
 }
 
 // NewRepoID returns a fresh random repo id: 16 bytes, hex-encoded. Not a
-// secret -- it is committed in .repo-enc.yml -- just an identifier.
+// secret -- it is committed in the repo config -- just an identifier.
 func NewRepoID() (string, error) {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
@@ -106,27 +164,45 @@ var validRepoID = regexp.MustCompile(`^[A-Za-z0-9_.-]{8,64}$`)
 // setups and for tests, which otherwise can't isolate the global config
 // path portably (os.UserConfigDir ignores XDG_CONFIG_HOME on macOS by
 // design, unlike on Linux).
-const GlobalConfigDirEnvVar = "REPO_ENC_CONFIG_DIR"
+const GlobalConfigDirEnvVar = "KEYFOLD_CONFIG_DIR"
+
+// LegacyGlobalConfigDirEnvVar is the pre-rename name of
+// GlobalConfigDirEnvVar, still honoured when the new one is unset.
+const LegacyGlobalConfigDirEnvVar = "REPO_ENC_CONFIG_DIR"
 
 // GlobalPath returns the path to the user's global override config,
 // respecting OS conventions (XDG on Linux, Application Support on macOS,
 // AppData on Windows) via os.UserConfigDir, unless GlobalConfigDirEnvVar
-// is set.
+// (or its legacy name) is set. Under the OS config dir it is
+// keyfold/config.yml, falling back to the pre-rename repo-enc/config.yml
+// when only that one exists.
 func GlobalPath() (string, error) {
-	if dir := os.Getenv(GlobalConfigDirEnvVar); dir != "" {
-		return filepath.Join(dir, "config.yml"), nil
+	for _, v := range []string{GlobalConfigDirEnvVar, LegacyGlobalConfigDirEnvVar} {
+		if dir := os.Getenv(v); dir != "" {
+			return filepath.Join(dir, "config.yml"), nil
+		}
 	}
 	dir, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("config: resolve user config dir: %w", err)
 	}
-	return filepath.Join(dir, "repo-enc", "config.yml"), nil
+	cur := filepath.Join(dir, "keyfold", "config.yml")
+	legacy := filepath.Join(dir, "repo-enc", "config.yml")
+	if ok, _ := exists(cur); !ok {
+		if ok, _ := exists(legacy); ok {
+			return legacy, nil
+		}
+	}
+	return cur, nil
 }
 
-// Load reads the repo-local config at repoRoot/.repo-enc.yml, merges in
-// the global override file if present, and validates the result.
+// Load reads the repo-local config (see Path), merges in the global
+// override file if present, and validates the result.
 func Load(repoRoot string) (*Config, error) {
-	repoPath := filepath.Join(repoRoot, FileName)
+	repoPath, err := Path(repoRoot)
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(repoPath)
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", repoPath, err)
@@ -135,13 +211,13 @@ func Load(repoRoot string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", repoPath, err)
 	}
-	return MergeGlobal(repo)
+	return MergeGlobalFor(repoPath, repo)
 }
 
 // ParseBytes parses raw YAML into a Config, without merging global
 // config or validating. Exposed so callers that source repo config from
 // somewhere other than the checked-out working tree — e.g. revision-
-// pinned verification, which reads .repo-enc.yml as committed at a
+// pinned verification, which reads the config as committed at a
 // specific git revision rather than off disk — can still go through the
 // same merge/validate path MergeGlobal provides.
 func ParseBytes(data []byte) (*Config, error) {
@@ -171,7 +247,15 @@ func ParseBytes(data []byte) (*Config, error) {
 // repository's committed protection. These two fields are therefore
 // taken from repo alone, never merged with a global value.
 func MergeGlobal(repo *Config) (*Config, error) {
-	cfg := defaults()
+	return MergeGlobalFor(FileName, repo)
+}
+
+// MergeGlobalFor is MergeGlobal for a repo config read from file name (only
+// its base name matters): a LegacyFileName config defaults key_source to
+// the pre-rename .repo-enc/ paths, so a repo that never set it explicitly
+// keeps finding its key.
+func MergeGlobalFor(name string, repo *Config) (*Config, error) {
+	cfg := defaults(IsLegacyFile(name))
 
 	if globalPath, err := GlobalPath(); err == nil {
 		if global, err := loadFile(globalPath); err == nil {
@@ -248,7 +332,7 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("config: key_source must not be empty")
 	}
 	if c.RepoID != "" && !validRepoID.MatchString(c.RepoID) {
-		return fmt.Errorf("config: repo_id %q is not 8-64 chars of [A-Za-z0-9_.-] -- regenerate with `git secret init` in a fresh repo, or remove it to fall back to v1 envelopes", c.RepoID)
+		return fmt.Errorf("config: repo_id %q is not 8-64 chars of [A-Za-z0-9_.-] -- regenerate with `git keyfold init` in a fresh repo, or remove it to fall back to v1 envelopes", c.RepoID)
 	}
 	if c.KeyBackend == "gpg" && len(c.GPGRecipients) == 0 {
 		return fmt.Errorf("config: key_backend \"gpg\" requires at least one entry in gpg_recipients")
@@ -266,14 +350,15 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-const configHeader = "# repo-enc config: https://github.com/OpScaleHub/git-secret\n" +
+const configHeader = "# Keyfold config: https://github.com/OpScaleHub/git-secret\n" +
 	"# 'patterns' are glob paths (relative to repo root, '**' matches any depth)\n" +
 	"# that get transparently encrypted by the installed git hooks.\n"
 
-// WriteDefault writes a starter config to repoRoot/.repo-enc.yml. It
-// refuses to overwrite an existing file so `init` stays idempotent.
+// WriteDefault writes a starter config to repoRoot/.keyfold.yml. It
+// refuses to overwrite an existing config (either name) so `init` stays
+// idempotent.
 func WriteDefault(repoRoot string, patterns []string) (string, error) {
-	cfg := defaults()
+	cfg := defaults(false)
 	cfg.Patterns = patterns
 	id, err := NewRepoID()
 	if err != nil {
@@ -283,27 +368,35 @@ func WriteDefault(repoRoot string, patterns []string) (string, error) {
 	return WriteConfig(repoRoot, cfg)
 }
 
-// WriteConfig writes cfg as the starter .repo-enc.yml, refusing to
-// overwrite an existing file (same idempotency contract as WriteDefault).
+// WriteConfig writes cfg as the starter .keyfold.yml, refusing to
+// overwrite an existing config of either name (same idempotency contract
+// as WriteDefault) -- it returns the existing file's path instead.
 // Used by `init` when the caller has chosen a non-default key backend
 // (e.g. gpg) and needs to set key_backend/key_source/gpg_recipients
 // before the file is ever written.
 func WriteConfig(repoRoot string, cfg *Config) (string, error) {
-	path := filepath.Join(repoRoot, FileName)
-	if _, err := os.Stat(path); err == nil {
-		return path, nil
-	} else if !os.IsNotExist(err) {
+	path, err := Path(repoRoot)
+	if err != nil {
 		return "", err
+	}
+	if ok, err := exists(path); err != nil {
+		return "", err
+	} else if ok {
+		return path, nil
 	}
 	return path, writeConfigFile(path, cfg)
 }
 
-// Save overwrites repoRoot/.repo-enc.yml with cfg unconditionally, unlike
+// Save overwrites the repo's config file (see Path) with cfg
+// unconditionally, unlike
 // WriteDefault/WriteConfig's refuse-if-exists guard. Used by adduser/
 // removeuser, which are legitimate in-place edits to an already-existing,
 // already-customized config rather than a first-time bootstrap.
 func Save(repoRoot string, cfg *Config) error {
-	path := filepath.Join(repoRoot, FileName)
+	path, err := Path(repoRoot)
+	if err != nil {
+		return err
+	}
 	return writeConfigFile(path, cfg)
 }
 

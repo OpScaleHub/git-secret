@@ -88,3 +88,16 @@ func TestValidate_NoNamespaceObjectIsNotFatal(t *testing.T) {
 		t.Fatalf("a missing namespace object should not block admission, got %v", err)
 	}
 }
+
+// TestValidate_HonoursPreRenameRequiredRecipients: a Namespace annotated
+// before the Keyfold rename keeps enforcing its required recipients --
+// Namespaces are not GitSecrets and may not be migrated at the same time.
+func TestValidate_HonoursPreRenameRequiredRecipients(t *testing.T) {
+	withStubbedVerify(t, nil)
+	c := fakeClientWithNamespace(t, "prod", map[string]string{
+		gitsecretv1alpha1.LegacyAnnotationKey(RequiredRecipientsAnnotation): fpRecovery,
+	}).Build()
+	if err := validate(context.Background(), c, gitSecret("prod", fpHuman)); err == nil || !strings.Contains(err.Error(), fpRecovery) {
+		t.Fatalf("pre-rename required-recipients annotation not enforced: %v", err)
+	}
+}

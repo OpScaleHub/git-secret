@@ -1,0 +1,125 @@
+{{- if .Values.sealUi.enabled }}
+{{- if not .Values.sealUi.keyringConfigMap }}
+{{- fail "sealUi.enabled requires sealUi.keyringConfigMap: in-cluster there is no operator gpg keyring, so the UI can only seal to recipients whose armored publicKey the keyring carries. See docs/architecture/sealing-console.md." }}
+{{- end }}
+{{- $name := printf "%s-seal-ui" (include "keyfold.fullname" .) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "keyfold.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: seal-ui
+  template:
+    metadata:
+      labels:
+        {{- include "keyfold.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: seal-ui
+    spec:
+      # No ServiceAccount token: the UI never talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: seal-ui
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/keyfold"]
+          args:
+            - ui
+            - --addr=:{{ .Values.sealUi.port }}
+            - --max-inflight={{ .Values.sealUi.maxInflight }}
+            - --keyring=/keyring/keyring.yaml
+            - --isolated-keyring
+            {{- if .Values.sealUi.defaultNamespace }}
+            - --namespace={{ .Values.sealUi.defaultNamespace }}
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.sealUi.port }}
+              protocol: TCP
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 3
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: keyring
+              mountPath: /keyring
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: keyring
+          configMap:
+            name: {{ .Values.sealUi.keyringConfigMap }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+spec:
+  selector:
+    {{- include "keyfold.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+{{- if .Values.sealUi.networkPolicy.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "keyfold.labels" . | nindent 4 }}
+    app.kubernetes.io/component: seal-ui
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "keyfold.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: seal-ui
+  policyTypes:
+    - Egress
+    {{- if .Values.sealUi.networkPolicy.allowFrom }}
+    - Ingress
+    {{- end }}
+  # The seal-UI needs no egress at serving time -- it never calls the
+  # Kubernetes API and its keyring is a mounted ConfigMap. Allow DNS only.
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+  {{- with .Values.sealUi.networkPolicy.allowFrom }}
+  # Ingress restriction is opt-in: leaving allowFrom empty keeps the
+  # Service reachable by `kubectl port-forward` and the kubelet probe
+  # (whose source a NetworkPolicy cannot easily select). Set it when you
+  # front the UI some other way.
+  ingress:
+    - from:
+        {{- toYaml . | nindent 8 }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.sealUi.port }}
+  {{- end }}
+{{- end }}
+{{- end }}

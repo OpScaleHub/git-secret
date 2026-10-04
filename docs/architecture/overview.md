@@ -13,7 +13,7 @@ Diagrams for the `GitSecret` CRD + controller path. Companion to
  │  plaintext value     │        │                                              │
  │        │             │        │   gitsecret.yaml:                            │
  │        ▼             │  git   │     spec.encryptedKey:  <GPG-wrapped CEK>     │
- │  git-secret-seal ────┼──push─▶│     spec.encryptedData: {k: <AEAD envelope>} │
+ │  keyfold ────┼──push─▶│     spec.encryptedData: {k: <AEAD envelope>} │
  │   --recipient <ctrl> │        │                                              │
  │   --recipient <you>  │        └───────────────────────┬──────────────────────┘
  │   --recipient <rec>  │                                │ apply path
@@ -26,7 +26,7 @@ Diagrams for the `GitSecret` CRD + controller path. Companion to
                                                         │ watch
                                                         ▼
                                 ┌──────────────────────────────────────────────┐
-                                │            git-secret-controller             │
+                                │            keyfold-controller             │
                                 │                                              │
                                 │  ephemeral GNUPGHOME  ── holds ONLY its own   │
                                 │        │                   private key       │
@@ -74,7 +74,7 @@ the GitSecret's recipient list. To actually remove the Secret, delete the
                                              └─ offline recovery key
 ```
 
-Adding/removing a recipient (`git-secret-seal --rewrap`) re-encrypts **only the
+Adding/removing a recipient (`keyfold --rewrap`) re-encrypts **only the
 right-hand box**. Every `encryptedData` value is untouched — that is what makes
 recipient changes cheap and key loss recoverable.
 
@@ -111,7 +111,7 @@ protect against **compromise** — see threat-model.md T3/T4 and #39.
           + one authorized            │              │                 │
             recipient private key     ▼              ▼                 ▼
                                  new cluster A   new cluster B    operator laptop
-                                 new controller  new controller   git-secret-seal
+                                 new controller  new controller   keyfold
                                       │               │           --rewrap / decrypt
                                       ▼               ▼
                                  identical Secrets reconciled back

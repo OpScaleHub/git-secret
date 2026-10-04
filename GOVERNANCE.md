@@ -1,6 +1,6 @@
 # Governance
 
-`git-secret` is currently maintainer-led: a small set of maintainers with
+`git-keyfold` is currently maintainer-led: a small set of maintainers with
 commit access make day-to-day decisions by consensus, and this document
 describes that as it actually operates today rather than aspiring to a
 committee structure the project doesn't yet have the contributor base to

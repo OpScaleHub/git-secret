@@ -1,6 +1,6 @@
 # Design rationale & history
 
-Why `git-secret` looks the way it does. This is a record of decisions, not a
+Why `git-keyfold` looks the way it does. This is a record of decisions, not a
 roadmap. It replaces the `docs/adr/` set (ADR-0000/0001/0002), which was removed
 once the `GitSecret` CRD became the single Kubernetes story; the reasoning in
 those ADRs is preserved here because it is still the reason the architecture has
@@ -8,7 +8,7 @@ the shape it has.
 
 ## The one-sentence thesis
 
-`git-secret` makes it safe to commit a secret to a Git repository: **ciphertext
+`git-keyfold` makes it safe to commit a secret to a Git repository: **ciphertext
 is the durable source of truth in Git, and decryption is multi-recipient,
 recoverable, and Kubernetes-native — without any single cluster, controller, or
 key becoming a single point of catastrophic recovery failure.**
@@ -59,7 +59,7 @@ This validated several things worth keeping:
   about).
 
 It also surfaced the problem that motivated the next design. ESO's provider model
-assumes a remote store you *query*. `git-secret`'s data is ciphertext — it does
+assumes a remote store you *query*. `git-keyfold`'s data is ciphertext — it does
 not need a store; it can be delivered as inert YAML by whatever already applies
 manifests. Forcing it through ESO's Webhook provider meant: a full repo clone in
 the cluster on every refresh interval for every consumer, an SSH transport and
@@ -75,7 +75,7 @@ v0.10.0, when its last consumer had moved to the CRD.
 
 **Ciphertext inline in a CRD object, delivered by the normal manifest-apply
 path, decrypted by a controller holding a matching private key** — built on
-`git-secret`'s existing GPG-backed multi-recipient cryptography, so no single
+`git-keyfold`'s existing GPG-backed multi-recipient cryptography, so no single
 controller keypair is ever the only way in.
 
 - `spec.encryptedKey` is the GPG-wrapped content key (same mechanism as the
@@ -96,7 +96,7 @@ controller keypair is ever the only way in.
   authentication rather than decrypting where it was not sealed for.
 - Built on `controller-runtime` (same as ESO and cert-manager) —
   the informer/reconcile/leader-election machinery is not worth hand-rolling.
-- `git-secret-seal` is the authoring tool: produces a manifest from
+- `keyfold` is the authoring tool: produces a manifest from
   `--from-literal` / `--from-env-file` / an existing Secret, and rewraps an
   existing one's recipient list with `--rewrap`.
 

@@ -37,7 +37,7 @@ func (c *Context) VerifyAtRevision(rev string) ([]string, error) {
 	cfg, err := configAtRevision(c.RepoRoot, rev)
 	if err != nil {
 		if gitutil.IsMissingPath(err) {
-			// No .repo-enc.yml at this revision (e.g. a commit before
+			// No repo config at this revision (e.g. a commit before
 			// `init`): nothing to enforce yet.
 			return nil, nil
 		}
@@ -98,18 +98,28 @@ func (c *Context) VerifyAtRevision(rev string) ([]string, error) {
 	return problems, nil
 }
 
-// configAtRevision loads .repo-enc.yml as committed at rev (merged with
-// the machine-local global config, same as Load), instead of off disk.
+// configAtRevision loads the repo config as committed at rev (merged with
+// the machine-local global config, same as Load), instead of off disk. It
+// looks for .keyfold.yml, then the pre-rename .repo-enc.yml; a revision
+// with neither returns the missing-path error from the last lookup.
 func configAtRevision(repoRoot, rev string) (*config.Config, error) {
-	data, err := gitutil.ReadAtRev(repoRoot, rev, config.FileName)
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for _, name := range []string{config.FileName, config.LegacyFileName} {
+		data, err := gitutil.ReadAtRev(repoRoot, rev, name)
+		if err != nil {
+			lastErr = err
+			if gitutil.IsMissingPath(err) {
+				continue
+			}
+			return nil, err
+		}
+		repo, err := config.ParseBytes(data)
+		if err != nil {
+			return nil, fmt.Errorf("%s at %s: %w", name, rev, err)
+		}
+		return config.MergeGlobalFor(name, repo)
 	}
-	repo, err := config.ParseBytes(data)
-	if err != nil {
-		return nil, fmt.Errorf("%s at %s: %w", config.FileName, rev, err)
-	}
-	return config.MergeGlobal(repo)
+	return nil, lastErr
 }
 
 // matchedPathsAtRevision lists every path in the tree committed at rev
