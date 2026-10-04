@@ -94,6 +94,16 @@
   input; the stale "no per-namespace restriction" note is replaced with
   `watchNamespaces`.
 
+### Testing
+
+- **End-to-end on kind in CI** (#116): `test/e2e/e2e.sh` installs the chart
+  under Pod Security `restricted` and asserts 16 checks — the Kubernetes example
+  (`examples/kubernetes/demo.sh`, now runnable), public-key discovery, readiness,
+  self-heal, webhook denials, ciphertext binding, a non-recipient controller
+  keeping the last `Secret`, recovery-key rewrap to a replacement controller via
+  `--keyring` (values byte-identical, recovery keyring untouched), the in-cluster
+  sealing UI and authenticated metrics. Part of the `CI status` gate.
+
 ### Documentation
 
 - **Restructured** (#114). The README is 122 lines (from 465): what Keyfold is,
