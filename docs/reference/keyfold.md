@@ -24,6 +24,7 @@ truncates it first.
 | `keyfold unseal` | print the values | one recipient's private key |
 | `keyfold migrate` | move manifests to the current API group | nothing secret |
 | `keyfold ui` | web form for sealing | recipients' public keys |
+| `keyfold --version` | print the version | — |
 
 Public keys can come from your GPG keyring or, for `seal`, `--rewrap`,
 `recipients`, `rekey` and `set`, from `--keyring` entries carrying
@@ -40,7 +41,8 @@ keyfold seal --namespace NS --name NAME \
 ```
 
 Values come from literals, a dotenv file, or an existing `Secret` manifest
-(`data` or `stringData`; its namespace and name are the defaults). Sources
+(`-f` / `--from-secret-file`; `data` or `stringData`; its namespace and name
+are the defaults). Sources
 combine; later ones override keys. A literal lands in shell history — prefer
 the file forms for real secrets. `--keyring` adds its fingerprints to the
 recipients and records their roles in the

@@ -75,7 +75,7 @@ the result is wrapped to — in your keyring, or as `publicKey` entries in
 | Operation | Command | `encryptedKey` | `encryptedData` | Values | Use it to |
 |---|---|---|---|---|---|
 | **Seal** | `keyfold seal` | new | new | as given | create an object |
-| **Rewrap** | `keyfold recipients add/remove`, `--rewrap` | content key re-wrapped to the new list | **unchanged** | unchanged | add or remove a cluster, person, or recovery key |
+| **Rewrap** | `keyfold recipients add/remove`, `--rewrap` | content key rewrapped to the new list | **unchanged** | unchanged | add or remove a cluster, person, or recovery key |
 | **Rekey** | `keyfold rekey` | **new content key** | all re-encrypted | unchanged | retire a content key someone may have kept (after a removal) |
 | **Set** | `keyfold set KEY` | new content key | all re-encrypted | one changed | change or add one value without re-entering the rest |
 | **Secret rotation** | change it at its source, then `keyfold set` | new | new | **new** | stop a leaked or departing person's access to the value itself |
