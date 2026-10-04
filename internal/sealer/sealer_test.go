@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 // shortTempDir returns a temp dir short enough for gpg-agent's Unix

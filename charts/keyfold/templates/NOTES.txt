@@ -19,5 +19,5 @@ Health (Ready = apiserver reachable and cache synced):
   kubectl -n {{ .Release.Namespace }} port-forward deploy/{{ include "keyfold.fullname" . }} {{ .Values.healthProbe.port }}:{{ .Values.healthProbe.port }}
   curl 'http://localhost:{{ .Values.healthProbe.port }}/readyz?verbose'
 
-Docs: https://github.com/OpScaleHub/git-secret/blob/main/docs/getting-started/quickstart.md
+Docs: https://github.com/OpScaleHub/keyfold/blob/main/docs/getting-started/quickstart.md
       (concepts, multi-cluster, recovery runbooks under docs/)

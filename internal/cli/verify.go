@@ -3,8 +3,8 @@ package cli
 import (
 	"fmt"
 
-	"github.com/OpScaleHub/git-secret/internal/config"
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
 )
 
 // Verify checks that every config-matched file and every k8s_secret_paths

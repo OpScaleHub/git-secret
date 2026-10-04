@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
 )
 
 // commitViaHook stages paths, invokes HookPreCommit directly, then

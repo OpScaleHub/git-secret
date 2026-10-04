@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/OpScaleHub/git-secret/crypto"
-	"github.com/OpScaleHub/git-secret/internal/config"
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/crypto"
+	"github.com/OpScaleHub/keyfold/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 // AddUserResult reports what AddUser did.

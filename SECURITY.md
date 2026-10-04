@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Report suspected vulnerabilities privately via [GitHub's private vulnerability
-reporting](https://github.com/OpScaleHub/git-secret/security/advisories/new)
+reporting](https://github.com/OpScaleHub/keyfold/security/advisories/new)
 ("Report a vulnerability" on the repository's Security tab).
 
 Please do **not** open a public issue for a suspected vulnerability.
@@ -52,7 +52,7 @@ Every tagged release carries cryptographic provenance in addition to the
 **Binaries** — SLSA build provenance, signed with GitHub's OIDC identity:
 
 ```
-gh attestation verify ./git-secret-linux-amd64 --repo OpScaleHub/git-secret
+gh attestation verify ./keyfold-linux-amd64 --repo OpScaleHub/keyfold
 ```
 
 **Container images** — signed with keyless [cosign](https://docs.sigstore.dev/),
@@ -60,15 +60,21 @@ plus provenance + SBOM attestations:
 
 ```
 cosign verify \
-  --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
+  --certificate-identity-regexp '^https://github.com/OpScaleHub/keyfold/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/opscalehub/keyfold-controller:<tag>
 
 cosign verify-attestation --type slsaprovenance \
-  --certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/' \
+  --certificate-identity-regexp '^https://github.com/OpScaleHub/keyfold/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   ghcr.io/opscalehub/keyfold-controller:<tag>
 ```
+
+Releases up to **v0.10.0** were built before the repository was renamed from
+`OpScaleHub/git-secret`; their images are `ghcr.io/opscalehub/git-secret-controller`
+and their signatures carry the old identity — verify them with
+`--certificate-identity-regexp '^https://github.com/OpScaleHub/git-secret/'`.
+`gh attestation verify --repo OpScaleHub/keyfold` works for both.
 
 **SBOM** — an SPDX SBOM of the module graph (`keyfold-sbom.spdx.json`) is
 attached to each GitHub release; the images carry their own finer-grained SBOM

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/OpScaleHub/git-secret/crypto"
-	"github.com/OpScaleHub/git-secret/internal/config"
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/crypto"
+	"github.com/OpScaleHub/keyfold/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
 	"gopkg.in/yaml.v3"
 )
 

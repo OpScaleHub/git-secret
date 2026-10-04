@@ -19,7 +19,7 @@ func buildKubectlSecret(t *testing.T) string {
 		name += ".exe"
 	}
 	bin := filepath.Join(t.TempDir(), name)
-	cmd := exec.Command("go", "build", "-o", bin, "github.com/OpScaleHub/git-secret/cmd/kubectl-keyfold")
+	cmd := exec.Command("go", "build", "-o", bin, "github.com/OpScaleHub/keyfold/cmd/kubectl-keyfold")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build kubectl-keyfold: %v\n%s", err, out)
 	}
@@ -35,7 +35,7 @@ func buildGitSecret(t *testing.T) string {
 		name += ".exe"
 	}
 	bin := filepath.Join(t.TempDir(), name)
-	cmd := exec.Command("go", "build", "-o", bin, "github.com/OpScaleHub/git-secret/cmd/git-keyfold")
+	cmd := exec.Command("go", "build", "-o", bin, "github.com/OpScaleHub/keyfold/cmd/git-keyfold")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("build git-keyfold: %v\n%s", err, out)
 	}

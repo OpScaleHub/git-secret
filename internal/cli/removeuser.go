@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/OpScaleHub/git-secret/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/config"
 )
 
 // RemoveUserResult reports what RemoveUser did.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpScaleHub/git-secret/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/config"
 )
 
 // withK8sSecretPath layers relPath onto the repo's k8s_secret_paths and

@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/api/v1alpha1"
-	"github.com/OpScaleHub/git-secret/internal/sealer"
+	"github.com/OpScaleHub/keyfold/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/internal/sealer"
 )
 
 const unsealHelp = `keyfold unseal - read a GitSecret's values without a cluster

@@ -14,7 +14,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/OpScaleHub/git-secret/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/api/v1alpha1"
 )
 
 const migrateHelp = `keyfold migrate - move manifests to the keyfold.opscalehub.io API group

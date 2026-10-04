@@ -18,8 +18,8 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/internal/cli"
-	"github.com/OpScaleHub/git-secret/keybackend"
+	"github.com/OpScaleHub/keyfold/internal/cli"
+	"github.com/OpScaleHub/keyfold/keybackend"
 	"gopkg.in/yaml.v3"
 )
 

@@ -7,8 +7,8 @@
 - `gpg` — optional, only needed to run the `gpg`-backend test suites locally.
 
 ```bash
-git clone https://github.com/OpScaleHub/git-secret.git
-cd git-secret
+git clone https://github.com/OpScaleHub/keyfold.git
+cd keyfold
 go build ./...
 go test ./...
 ```

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
 )
 
 // newTestRepo creates a scratch git repo, chdirs the test into it (t.Chdir

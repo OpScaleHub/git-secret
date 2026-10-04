@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	renccrypto "github.com/OpScaleHub/git-secret/crypto"
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	renccrypto "github.com/OpScaleHub/keyfold/crypto"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 // GPGBackend stores the key GPG-encrypted ("wrapped") to one or more

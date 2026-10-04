@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 func TestParseWatchNamespaces(t *testing.T) {

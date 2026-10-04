@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	gitsecretv1alpha1 "github.com/OpScaleHub/git-secret/api/v1alpha1"
+	gitsecretv1alpha1 "github.com/OpScaleHub/keyfold/api/v1alpha1"
 )
 
 const (
