@@ -7,7 +7,7 @@ description: >-
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-home: https://git-secret.opscale.ir
+home: https://keyfold.opscale.ir
 sources:
   - https://github.com/OpScaleHub/keyfold
 keywords:
