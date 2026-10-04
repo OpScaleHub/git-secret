@@ -28,6 +28,15 @@
 - Unchanged, permanently: the `RENC` envelope, the `repo-enc:v1:` value
   prefix, AAD layouts, the wrapped-key format.
 
+### Added
+
+- **`keyfold unseal -f FILE`** (#109): read a `GitSecret`'s values with any one
+  recipient's private key — disaster recovery with no cluster at all. JSON by
+  default (lossless), `--format env`, or `--key K` for one raw value. Stdout
+  only; refuses to print to a terminal without `--show`. A keyring holding none
+  of the recipient keys gets an error naming the fingerprints and roles needed.
+  New disaster-recovery scenario **H**.
+
 ### Removed
 
 - **`git-secret-server`** (the External Secrets Operator webhook bridge), its

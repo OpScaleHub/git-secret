@@ -112,7 +112,8 @@ regression regardless of the feature it enables.
 7. **The controller decrypts only what its own key can unwrap** — it holds no
    master key and cannot enumerate or open objects sealed to other identities.
 8. **`keyfold` never writes plaintext to disk** beyond what the caller
-   passed in.
+   passed in. `keyfold unseal` prints to stdout only and refuses a terminal
+   unless `--show`.
 9. **Recipient changes are reviewable** — the declared set (`spec.recipients`) is
    visible in the Git diff of the object, not buried in an opaque re-encrypted
    blob. This is a review aid, not proof: the declared set is self-asserted and
