@@ -10,8 +10,8 @@ Please do **not** open a public issue for a suspected vulnerability.
 
 Include, as far as you can:
 
-- affected component — CLI / Git hooks, the `GitSecret` CRD + controller, or the
-  legacy `git-secret-server`;
+- affected component — CLI / Git hooks, `kubectl-secret`, `git-secret-seal`, or
+  the `GitSecret` CRD + controller (incl. the Helm chart);
 - affected version or commit;
 - a minimal reproduction;
 - the impact you believe it has, mapped to the [threat
@@ -34,8 +34,9 @@ after a private-key compromise. See the threat model for why.
 
 ## Supported versions
 
-The latest tagged release. `git-secret-server` receives security fixes only; the
-`GitSecret` CRD + controller is the actively developed integration.
+The latest tagged release. `git-secret-server` (the former External Secrets
+Operator bridge) was removed after v0.10.0 and is no longer supported; its last
+published artifacts are v0.10.0.
 
 ## Disclosure
 

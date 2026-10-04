@@ -62,6 +62,16 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: CRD manifests match the Go types
+        if: runner.os == 'Linux'
+        run: |
+          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0 \
+            crd paths=./api/... output:crd:dir=config/crd/bases
+          cp config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml \
+            charts/git-secret-controller/crds/gitsecret.yaml
+          git diff --exit-code -- config/crd charts/git-secret-controller/crds || {
+            echo "::error::CRD is stale: regenerate with controller-gen v0.19.0 and copy it into the chart (see CONTRIBUTING.md)"; exit 1; }
+
       # Linux: the GPG-dependent suites must actually execute (not silently
       # t.Skip -- see internal/gpgutil TestGPGSuiteFloor), and we run the
       # race detector here. macOS/Windows skip the GPG suites by design.
@@ -118,19 +128,10 @@ jobs:
 
       - name: helm lint
         run: |
-          # git-secret-server is deprecated (superseded by the GitSecret CRD +
-          # git-secret-controller); still linted so it keeps building for
-          # existing ESO users, not because it is a recommended path.
-          helm lint ./charts/git-secret-server
           helm lint ./charts/git-secret-controller
 
       - name: helm template (with required values set, to render every template)
         run: |
-          helm template test ./charts/git-secret-server \
-            --set repo.url=git@github.com:example/repo.git \
-            --set sshKey.existingSecret=dummy-ssh \
-            --set gpgPrivateKey.existingSecret=dummy-gpg \
-            --set authToken.existingSecret=dummy-token
           helm template test ./charts/git-secret-controller \
             --set gpgPrivateKey.existingSecret=dummy-gpg \
             --include-crds

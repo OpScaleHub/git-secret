@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Removed
+
+- **`git-secret-server`** (the External Secrets Operator webhook bridge), its
+  container image, Helm chart and release binaries (#107). Deprecated since the
+  `GitSecret` CRD shipped; v0.10.0 is its last release. Its server-only helpers
+  went with it: `gitutil.Clone`/`CloneContext` (and the SSH `accept-new`
+  host-key fallback), `gitutil.RepoRootAt`, `cli.LoadAt`. See UPGRADING.md for
+  moving a workload to a `GitSecret`.
+
 ### Changed — Helm chart (#106; see UPGRADING.md)
 
 - **Installs under Pod Security `restricted`.** Every pod sets

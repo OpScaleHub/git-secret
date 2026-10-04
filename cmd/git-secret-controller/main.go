@@ -1,7 +1,7 @@
 // Command git-secret-controller runs a Kubernetes controller for the
 // GitSecret CRD (api/v1alpha1): it decrypts GitSecret objects into plain
-// Secrets using its own GPG private key, imported at startup exactly the
-// way cmd/git-secret-server imports its repo-decryption key. See
+// Secrets using its own GPG private key, imported once at startup into an
+// isolated GNUPGHOME. See
 // internal/controller for the reconcile logic and
 // docs/security/design-rationale.md for why the CRD/controller is the
 // project's Kubernetes integration.
@@ -92,9 +92,8 @@ func run(args []string, environ []string) int {
 	}
 
 	// An isolated, process-private GNUPGHOME -- never the operator's own
-	// keyring, and cleaned up on exit. Mirrors cmd/git-secret-server's
-	// identical startup sequence exactly, including zeroing the in-memory
-	// key once imported.
+	// keyring, and cleaned up on exit. The in-memory key bytes are zeroed
+	// once imported.
 	gnupgHome, err := os.MkdirTemp("", "git-secret-controller-gnupg-*")
 	if err != nil {
 		setupLog.Error(err, "create GNUPGHOME")

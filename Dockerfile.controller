@@ -18,9 +18,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}"
 
 # gpg is a real runtime dependency, not build-time-only -- the
 # controller shells out to it on every reconcile (see internal/gpgutil)
-# -- so this can't be a from-scratch/distroless-static image. Unlike
-# git-secret-server, this controller never clones a repository, so
-# neither git nor an SSH client is needed here at all.
+# -- so this can't be a from-scratch/distroless-static image. The
+# controller never clones a repository, so neither git nor an SSH client
+# is needed here at all.
 FROM debian:bookworm-slim@sha256:88200866dfff7ea7f5cbcb6ec7c8a701889efe6fe859fe64d6990e4b07ea4171
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gnupg \
@@ -32,8 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # verify non-root *statically*, from the image alone, without running
 # anything -- a USER directive that names an account rather than a
 # numeric ID fails that check, even though the account itself is
-# genuinely non-root. (git-secret-server's Dockerfile originally got
-# this wrong; fixed there first, so this one starts correct.)
+# genuinely non-root.
 RUN groupadd --system --gid 1000 git-secret-controller \
     && useradd --system --uid 1000 --gid 1000 --create-home --home-dir /home/git-secret-controller --shell /usr/sbin/nologin git-secret-controller
 USER 1000:1000

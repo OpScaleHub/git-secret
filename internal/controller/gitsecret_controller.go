@@ -28,10 +28,9 @@ import (
 const conditionReady = "Ready"
 
 // GitSecretReconciler decrypts GitSecret objects into Kubernetes Secrets.
-// Unlike git-secret-server, it never clones a repo or makes an outbound
-// network call: every input (ciphertext, recipients) already arrived as
-// part of the GitSecret object itself via the normal apply path (ArgoCD,
-// kubectl, ...), and the only secret this process itself needs is its own
+// It never clones a repo or makes an outbound network call: every input
+// (ciphertext, recipients) already arrived as part of the GitSecret object
+// itself via the normal apply path (a GitOps tool, kubectl, ...), and the only secret this process itself needs is its own
 // GPG private key, imported once at startup (see
 // cmd/git-secret-controller).
 type GitSecretReconciler struct {
