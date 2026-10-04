@@ -64,7 +64,7 @@ Because a `GitSecret` is delivered through Git, **every prior version of the
 object stays in Git history**, each wrapped to whatever recipient set it had at
 the time. Consequences:
 
-- **Removing a recipient** (CRD `recipients remove` / `--rewrap`) re-wraps the
+- **Removing a recipient** (CRD `recipients remove` / `--rewrap`) rewraps the
   content key to the reduced set, so the removed key can no longer *unwrap* it
   from objects sealed after the rewrap. It does **not** rotate the content key
   and does **not** re-encrypt any `encryptedData` value (invariant #6), so a

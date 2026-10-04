@@ -19,7 +19,7 @@ func PickGPGRecipient(stdin io.Reader, stdout io.Writer, keys []gpgutil.SecretKe
 	if len(keys) == 0 {
 		return "", fmt.Errorf("no local GPG keys found — generate one with `gpg --full-generate-key`, or pass the recipient explicitly")
 	}
-	fmt.Fprintln(stdout, "Select a GPG key to encrypt the repo key to:")
+	fmt.Fprintln(stdout, "Select a GPG key to wrap this repository's content key to:")
 	for i, k := range keys {
 		uid := "(no user ID)"
 		if len(k.UserIDs) > 0 {

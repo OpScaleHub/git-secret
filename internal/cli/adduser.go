@@ -18,7 +18,7 @@ type AddUserResult struct {
 // AddUser grants recipient (a GPG fingerprint) access to the repo's
 // existing key, only valid when KeyBackend is "gpg". Unlike RemoveUser,
 // this is cheap: the data-encryption-key itself is unchanged, only
-// re-wrapped for the expanded recipient list, so no file needs
+// rewrapped for the expanded recipient list, so no file needs
 // re-encrypting.
 func (c *Context) AddUser(recipient string) (*AddUserResult, error) {
 	if c.Config.KeyBackend != "gpg" {
@@ -51,7 +51,7 @@ func (c *Context) AddUser(recipient string) (*AddUserResult, error) {
 		return nil, fmt.Errorf("adduser: %w", err)
 	}
 
-	// Stage the re-wrapped key without touching the real key.gpg yet, so
+	// Stage the rewrapped key without touching the real key.gpg yet, so
 	// a config-save failure below can't leave the committed key rewritten
 	// for a recipient .repo-enc.yml never ends up listing — the "failed
 	// command silently grants access" gap. Only after config.Save
@@ -76,7 +76,7 @@ func (c *Context) AddUser(recipient string) (*AddUserResult, error) {
 		// recipient genuinely can't decrypt anything yet), but it does
 		// need a human to reconcile: either move the staged file into
 		// place by hand, or remove+re-add the recipient.
-		return nil, fmt.Errorf("adduser: %s now lists %s but promoting the re-wrapped key failed (key.gpg was left untouched, so %s does not yet have access) -- move %s into place manually, or removeuser+adduser %s again: %w", config.FileName, recipient, recipient, tmpKeyPath, recipient, err)
+		return nil, fmt.Errorf("adduser: %s now lists %s but promoting the rewrapped key failed (key.gpg was left untouched, so %s does not yet have access) -- move %s into place manually, or removeuser+adduser %s again: %w", config.FileName, recipient, recipient, tmpKeyPath, recipient, err)
 	}
 	c.Config = &newCfg
 

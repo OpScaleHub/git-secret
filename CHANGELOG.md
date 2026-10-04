@@ -89,6 +89,16 @@
   input; the stale "no per-namespace restriction" note is replaced with
   `watchNamespaces`.
 
+### Documentation
+
+- **[docs/concepts.md](docs/concepts.md)** (#113): the model in one page — the
+  envelope, the two independent key hierarchies (GitSecret objects vs.
+  repository files), who can do what (a new cluster's public key cannot add
+  itself), what seal / rewrap / rekey / set / secret rotation / unseal each
+  change, loss vs. compromise, and a glossary. Linked from the README, docs
+  index, quickstart, overview and landing page. "rewrap" is now spelled one way
+  everywhere.
+
 ### Fixed
 
 - **Small fixes** (#112): provenance is no longer marked `-dirty` by untracked

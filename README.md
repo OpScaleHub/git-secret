@@ -1,4 +1,4 @@
-# Git Secret Manager (`git-keyfold`)
+# Keyfold
 
 **A recoverable, Git-native cryptographic control plane for Kubernetes secrets.**
 
@@ -7,6 +7,10 @@ multi-recipient, auditable, and Kubernetes-native — and no single cluster,
 controller, or key is a single point of catastrophic recovery failure. It is also
 a plain single-binary Git plugin: transparent file encryption via git hooks, with
 plaintext only ever in your working tree, never in commit history.
+
+**New here? Read [docs/concepts.md](docs/concepts.md)** — the whole model in one
+page: what is encrypted with what, who can do what, and what rewrap, rekey and
+secret rotation each change.
 
 ### Design goals
 
@@ -135,7 +139,7 @@ When someone else clones the repo, their working tree gets ciphertext (that's wh
 | `decrypt <path...>` | Decrypt specific files in place. |
 | `rotate-keys` | Generate a new key and re-encrypt every config-matched file under it. |
 | `verify` | Check every config-matched file and `k8s_secret_paths` manifest committed at `HEAD` is actually, authentically encrypted (and that the raw `file`-backend key isn't committed); exits 3 if not. Requires the key — it fails closed (exit 2) rather than skip the one check that proves anything. |
-| `adduser [recipient]` | `gpg` backend only: grant a recipient access — cheap, re-wraps the existing key without touching any file. Omit the argument to pick interactively from your local public keyring. |
+| `adduser [recipient]` | `gpg` backend only: grant a recipient access — cheap, rewraps the existing key without touching any file. Omit the argument to pick interactively from your local public keyring. |
 | `removeuser <recipient>` | `gpg` backend only: revoke a recipient and rotate to a brand new key — a removed recipient already saw the old one, so this re-encrypts every matched file. |
 | `hook <name>` | Internal — invoked by the installed hooks, not typically run by hand. |
 | `version` | Show version, commit, and Go runtime info. |
@@ -200,7 +204,7 @@ Repos created before this existed have no `repo_id` and keep working unchanged;
   git keyfold init --key-backend gpg                      # picks interactively from your local GPG keys
   git keyfold init --key-backend gpg --gpg-recipient <fpr> # or specify one directly (repeatable), e.g. for CI
 
-  git keyfold adduser <teammate-fingerprint>   # cheap: re-wraps the existing key, no file re-encryption
+  git keyfold adduser <teammate-fingerprint>   # cheap: rewraps the existing key, no file re-encryption
   git keyfold removeuser <fingerprint>         # forces a full rotate-keys — the removed person already saw the old key
   ```
 
@@ -404,6 +408,7 @@ For local work, build the binaries with
 
 ## Guides
 
+- [Concepts](docs/concepts.md) — the model, who can do what, and the glossary.
 - [Quickstart: GitSecret + Kubernetes](docs/getting-started/quickstart.md) —
   end-to-end walkthrough, verified against a live cluster.
 - [Troubleshooting](docs/guides/troubleshooting.md) — common failure modes,

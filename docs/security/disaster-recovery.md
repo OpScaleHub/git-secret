@@ -144,7 +144,7 @@ covered by `TestRecovery_KeyCompromise_RewrapAloneIsInsufficient`.
 **The limit of the design, stated plainly:** multi-recipient GPG protects against
 *loss* of a key, not *compromise*. A `--rewrap` stops the compromised key from
 opening future object versions, but every prior version of that object lives in
-Git history wrapped to the compromised key, and re-wrapping cannot reach into
+Git history wrapped to the compromised key, and rewrapping cannot reach into
 history. Anything ever committed to that object must be considered exposed.
 
 Response:

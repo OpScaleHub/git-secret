@@ -101,6 +101,8 @@ rm -f private.asc gitsecret.yaml
 
 ## Next steps
 
+- [Concepts](../concepts.md) — the model behind what you just did: content
+  key, recipients, rewrap vs rekey vs secret rotation.
 - [Helm chart README](../../charts/keyfold/README.md) — run
   the controller in-cluster instead of as a local process, with RBAC,
   leader election, and the optional admission webhook.
