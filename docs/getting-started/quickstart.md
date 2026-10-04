@@ -1,120 +1,120 @@
-# Quickstart: GitSecret + Kubernetes
+# Quickstart: Keyfold on Kubernetes
 
-End-to-end walkthrough: generate a controller identity, seal a secret,
-install the CRD + controller, and watch it reconcile into a plain
-`Secret`. Every step below was run and verified against a local
-[`kind`](https://kind.sigs.k8s.io/) cluster (Kubernetes v1.34) as part of
-writing this doc — commands, output shapes, and the sync condition are
-copy-pasted from that run.
+Install the controller, seal a secret to **the cluster, an offline recovery key
+and yourself**, watch it become a `Secret` — then read it back with no cluster
+at all. About ten minutes on any Kubernetes ≥ 1.28 (a local
+[`kind`](https://kind.sigs.k8s.io/) cluster is fine). New to the model? Read
+[concepts](../concepts.md) first; it's one page.
 
-This covers the `GitSecret` CRD + controller path (inline ciphertext, no Git
-repo access needed at reconcile time). If you want file-level encryption in
-a Git repo instead (the original `git keyfold` CLI), see the [main
-README](../../README.md#quick-start).
+You need `kubectl`, `helm`, `gpg`, `jq`, and the `keyfold` CLI
+(`keyfold-<os>-<arch>` from the
+[releases](https://github.com/OpScaleHub/git-secret/releases) — rename it to
+`keyfold` and put it on `PATH` — or `go build -o keyfold ./cmd/keyfold`).
 
-## Prerequisites
+## 1. Three identities
 
-- `go` 1.26+ (to build the binaries; no release binary download is required
-  for this walkthrough)
-- `gpg`
-- A cluster and `kubectl` context — this doc uses `kind`, but any
-  Kubernetes v1.28+ cluster works the same way
-
-```bash
-kind create cluster   # skip if you already have a cluster/context
-kubectl cluster-info
-```
-
-## 1. Build the binaries
+A secret should never depend on one key. Make a dedicated **controller**
+identity for this cluster and an offline **recovery** identity; you are the
+third recipient. Each lives in its own `GNUPGHOME` here only to keep the
+walkthrough self-contained — in real life the recovery key belongs on a
+hardware token or an offline machine, never on the cluster or a laptop.
 
 ```bash
-git clone https://github.com/OpScaleHub/git-secret.git
-cd git-secret
-go build -o keyfold ./cmd/keyfold
-go build -o keyfold-controller ./cmd/keyfold-controller
+export KF=$(mktemp -d) && cd "$KF"
+for id in controller recovery; do
+  mkdir -m 700 "$id"
+  GNUPGHOME="$PWD/$id" gpg --batch --passphrase '' \
+    --quick-generate-key "keyfold-$id <$id@example.invalid>" default default never
+done
+fpr() { GNUPGHOME="$1" gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}'; }
+CTRL=$(fpr "$PWD/controller") RECOVERY=$(fpr "$PWD/recovery")
+ME=$(fpr "${GNUPGHOME:-$HOME/.gnupg}")      # your own key
 ```
 
-## 2. Generate the controller's GPG identity
+## 2. Install the controller
 
-The controller needs its own dedicated key — never reuse a human's key for
-this.
+Only the controller's **private** key goes into the cluster.
 
 ```bash
-export GNUPGHOME=$(mktemp -d)
-gpg --batch --passphrase '' --quick-generate-key \
-  "keyfold-controller <controller@example.com>" default default never
+kubectl create namespace keyfold-system
+GNUPGHOME="$PWD/controller" gpg --export-secret-keys --armor "$CTRL" > controller.asc
+kubectl -n keyfold-system create secret generic keyfold-gpg --from-file=private.asc=controller.asc
+rm controller.asc
 
-FPR=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')
-echo "$FPR"   # you'll use this fingerprint below
+helm install keyfold oci://ghcr.io/opscalehub/charts/keyfold \
+  --namespace keyfold-system --set gpgPrivateKey.existingSecret=keyfold-gpg --wait
 ```
 
-## 3. Seal a secret
+The chart installs the `GitSecret` CRD and runs under Pod Security
+`restricted`. See the [chart README](../../charts/keyfold/README.md) for the
+admission webhook, public-key publishing, metrics and RBAC scoping.
+
+## 3. A keyring for this environment
+
+Commit one of these per environment, so "who can decrypt prod" is a reviewed
+file rather than tribal knowledge. Embedding the public keys lets anyone seal
+or rewrap without importing them first.
 
 ```bash
-./keyfold --namespace demo --name my-secrets \
-  --recipient "$FPR" --from-literal API_KEY=abc123 > gitsecret.yaml
+pub() { GNUPGHOME="$1" gpg --armor --export "$2" | sed 's/^/      /'; }
+cat > keyring.yaml <<EOF
+recipients:
+  - fingerprint: $CTRL
+    role: controller
+    publicKey: |
+$(pub "$PWD/controller" "$CTRL")
+  - fingerprint: $RECOVERY
+    role: recovery
+    publicKey: |
+$(pub "$PWD/recovery" "$RECOVERY")
+  - fingerprint: $ME
+    role: human
+    publicKey: |
+$(pub "${GNUPGHOME:-$HOME/.gnupg}" "$ME")
+EOF
 ```
 
-`gitsecret.yaml` now holds a `GitSecret` object with `spec.encryptedData`
-(the per-value ciphertext) and `spec.encryptedKey` (the content key, GPG-
-wrapped to `$FPR`) — safe to commit to Git or hand to anyone; only a holder
-of the matching private key can decrypt it.
-
-## 4. Install the CRD and start the controller
+## 4. Seal and apply
 
 ```bash
 kubectl create namespace demo
-kubectl apply -f config/crd/bases/keyfold.opscalehub.io_gitsecrets.yaml
+keyfold seal --namespace demo --name db --keyring keyring.yaml \
+  --from-literal DB_USER=app --from-literal DB_PASSWORD=hunter2 > db.yaml
 
-gpg --export-secret-keys --armor "$FPR" > private.asc
-./keyfold-controller --gpg-private-key-file private.asc \
-  --watch-namespaces demo &
+keyfold recipients list -f db.yaml       # controller, recovery, human
+kubectl apply -f db.yaml                 # or commit it and let your GitOps tool apply it
+kubectl -n demo get gitsecret db         # READY True, RECIPIENTS 3
+kubectl -n demo get secret db -o jsonpath='{.data.DB_PASSWORD}' | base64 -d
 ```
 
-(This runs the controller as a local process talking to your current
-`kubectl` context — fine for a quickstart. See [the Helm
-chart](../../charts/keyfold/README.md) to run it in-cluster
-for real use, which is how you'd normally deploy this.)
+`db.yaml` is safe to commit: it holds only ciphertext, the recipient list, and
+which commit it was sealed from. (A literal on the command line lands in shell
+history — for real secrets use `--from-env-file` or `-f secret.yaml`.)
 
-## 5. Apply the GitSecret and watch it reconcile
+## 5. Recover without the cluster
+
+The point of three recipients: with the recovery key alone — no cluster, no
+controller, no network — the values come back.
 
 ```bash
-kubectl -n demo apply -f gitsecret.yaml
-kubectl -n demo get gitsecret my-secrets -o jsonpath='{.status.conditions[0].message}'
-# => decrypted 1 key(s) into Secret/my-secrets
-
-kubectl -n demo get secret my-secrets -o jsonpath='{.data.API_KEY}' | base64 -d
-# => abc123
+GNUPGHOME="$PWD/recovery" keyfold unseal -f db.yaml | jq .
 ```
-
-`kubectl get gitsecret my-secrets` also shows a `Recipients` column — who
-can decrypt this object — without ever exposing the plaintext itself.
 
 ## 6. Clean up
 
 ```bash
-kill %1   # stop the local controller process
 kubectl delete namespace demo
+helm -n keyfold-system uninstall keyfold && kubectl delete namespace keyfold-system
 kubectl delete crd gitsecrets.keyfold.opscalehub.io
-rm -f private.asc gitsecret.yaml
+cd / && rm -rf "$KF"
 ```
 
-## Next steps
+## Next
 
-- [Concepts](../concepts.md) — the model behind what you just did: content
-  key, recipients, rewrap vs rekey vs secret rotation.
-- [Helm chart README](../../charts/keyfold/README.md) — run
-  the controller in-cluster instead of as a local process, with RBAC,
-  leader election, and the optional admission webhook.
-- [Recipient & key lifecycle](../security/recipient-lifecycle.md) — adding,
-  removing, and rotating recipients without re-encrypting values.
-- [Troubleshooting](../guides/troubleshooting.md) — common failure modes
-  and how to diagnose them.
-- [Architecture overview](../architecture/overview.md) — the full seal →
-  apply → reconcile flow and envelope structure.
-
-If you're looking for the file-level `git keyfold` CLI (encrypt whole files
-in a Git repo, hydrate via hooks) rather than the CRD/controller, start from
-the [main README's Quick start](../../README.md#quick-start) instead —
-there is no ArgoCD Config Management Plugin integration in this project
-today, so a guide for one isn't included here.
+- [Concepts](../concepts.md) — rewrap vs rekey vs secret rotation, who can do what.
+- [Multi-cluster](../architecture/multi-cluster.md) — add a second cluster to
+  every object in one command, without re-encrypting a value.
+- [Recipient lifecycle](../security/recipient-lifecycle.md) and
+  [disaster recovery](../security/disaster-recovery.md) — runbooks.
+- [`keyfold` reference](../reference/keyfold.md) and
+  [troubleshooting](../guides/troubleshooting.md).

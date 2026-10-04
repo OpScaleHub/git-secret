@@ -253,7 +253,7 @@ func run(args []string, environ []string) int {
 		}
 	}
 
-	setupLog.Info("starting manager", "version", version)
+	setupLog.Info("starting manager", "version", version, "fingerprint", ownFingerprint)
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		return exitError

@@ -2,7 +2,7 @@
 
 Optional. When enabled, `keyfold-controller` also serves a validating
 admission webhook for `GitSecret` objects, turning two things that were
-conventions into enforced policy (#55, threat-model T11 / invariant #9).
+conventions into enforced policy (threat-model T11 / invariant #9).
 
 ## What it enforces
 
@@ -50,7 +50,7 @@ leader-gated (`internal/webhook.caBundleInjector`) so a mis-scaled deployment is
 not also a write-storm on the cluster-scoped config, and the chart refuses
 `webhook.enabled` with `replicaCount > 1` outright. Multi-replica webhook HA needs
 a shared cert (cert-manager); reconcile HA via leader election is unaffected and
-does not need the webhook. See [#77](https://github.com/OpScaleHub/git-secret/issues/77).
+does not need the webhook.
 
 ## Enabling it
 
@@ -71,29 +71,6 @@ Manually: run the controller with `--enable-webhook --webhook-service <svc>
 --webhook-config-name <name>` and `POD_NAMESPACE` set; create a `Service` on port
 443 → container port 9443 and a `ValidatingWebhookConfiguration` pointing at
 `/validate-keyfold-opscalehub-io-v1alpha1-gitsecret` with an empty `caBundle`.
-
-## Verified live (2026-08-28, k0s v1.36.2)
-
-End-to-end against a real apiserver with the `v0.8.0` controller image and the
-`v0.8.0` CRD, in an isolated namespace with a `namespaceSelector`-scoped
-`ValidatingWebhookConfiguration`:
-
-| Check | Result |
-|---|---|
-| Controller generates + serves its self-signed cert on `:9443` | ✅ `Updated current TLS certificate` |
-| CA injected into the `ValidatingWebhookConfiguration` at runtime | ✅ `injected caBundle` log line |
-| Valid `GitSecret` (recipients match `encryptedKey`) | ✅ admitted, then decrypted into a `Secret` |
-| `spec.recipients` lists 2 fingerprints, blob wrapped to 1 | ✅ **denied**: `spec.recipients does not match encryptedKey: sealer: spec.recipients lists 2 fingerprint(s) but encryptedKey is wrapped to 1 recipient(s)` |
-| Namespace has `keyfold.opscalehub.io/required-recipients` and the object omits one | ✅ **denied**: `namespace "…" requires recipient(s) missing from spec.recipients: …` |
-
-No reconcile hot-loop — an early observation of one was traced to *two*
-controllers (a cluster-wide one plus the isolated test one) both writing the same
-object's status. A single controller settles to `Ready` and then stops: as of
-[#77](https://github.com/OpScaleHub/git-secret/issues/77) the reconciler only
-writes status when a field other than `lastSyncTime` actually changes, so its own
-status write no longer re-enqueues it. The live status fields (`recipientCount`,
-`recipients`, `sourceRevision`) were re-checked on a clean single-controller
-deploy and populate correctly (#65).
 
 ## Not covered
 

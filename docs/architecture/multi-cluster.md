@@ -45,7 +45,7 @@ Keep one [keyring file](keyring.md) per environment
 (`envs/prod/keyring.yaml`, ...) and seal with `keyfold --keyring
 envs/prod/keyring.yaml` so the recipient boundary is a reviewable file, not
 tribal knowledge. Admission enforcement that objects under `envs/prod/**` match
-the prod keyring is a planned follow-up.
+the prod keyring is not implemented; the webhook enforces required recipients per Namespace instead ([admission-webhook.md](admission-webhook.md)).
 
 ## Runbooks
 

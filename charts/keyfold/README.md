@@ -3,7 +3,7 @@
 Deploys the controller for the `GitSecret` CRD (`api/v1alpha1`): reconciles
 GPG-wrapped ciphertext carried inline in a `GitSecret` object into a plain
 Kubernetes `Secret` — no repo clone, no SSH transport, no network hop in
-the decrypt path. See the main [README](../../README.md#gitsecret-crd-keyfold-controller)
+the decrypt path. See the [`keyfold` reference](../../docs/reference/keyfold.md)
 for the full reference, including `keyfold` and `--rewrap`.
 
 This chart installs the CRD (`crds/gitsecret.yaml`) alongside the

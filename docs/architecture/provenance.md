@@ -11,7 +11,7 @@ silently rolls the live `Secret` back. Provenance metadata makes that visible.
 | What | Set by | Where |
 |---|---|---|
 | The commit the **plaintext** was sealed from | `keyfold` | `keyfold.opscalehub.io/source-revision` annotation → mirrored to `status.sourceRevision` |
-| The commit the **`GitSecret` object** was applied from | your GitOps tool | e.g. `argocd.argoproj.io/tracking-id`, or ArgoCD's app sync revision |
+| The commit the **`GitSecret` object** was applied from | your GitOps tool | e.g. the tracking annotation or sync revision your GitOps tool records |
 
 `keyfold` stamps its annotation automatically when run inside a Git
 working tree:

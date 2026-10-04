@@ -145,3 +145,29 @@ func writeGS(t *testing.T, p string, gs v1alpha1.GitSecret) {
 		t.Fatal(err)
 	}
 }
+
+// TestRekey_PublicKeysFromKeyring: the operator's keyring lacks the other
+// recipient's public key; --keyring supplies it for this run only.
+func TestRekey_PublicKeysFromKeyring(t *testing.T) {
+	f := newBulkFixture(t) // A holds only its own key; C's public key lives only in the keyring file
+	var out, errb bytes.Buffer
+	if code := run([]string{"seal", "--namespace", "prod", "--name", "x", "--keyring", f.keyring, "--no-provenance", "--from-literal", "K=v"}, &out, &errb); code != exitOK {
+		t.Fatalf("seal via keyring: %s", errb.String())
+	}
+	path := t.TempDir() + "/x.yaml"
+	os.WriteFile(path, out.Bytes(), 0o644)
+
+	out.Reset()
+	errb.Reset()
+	if code := run([]string{"rekey", "-f", path}, &out, &errb); code != exitError || !strings.Contains(errb.String(), "--keyring") {
+		t.Fatalf("rekey without the other public key: %d %q", code, errb.String())
+	}
+	out.Reset()
+	if code := run([]string{"rekey", "-f", path, "--keyring", f.keyring}, &out, &errb); code != exitOK {
+		t.Fatalf("rekey --keyring = %d: %s", code, errb.String())
+	}
+	t.Setenv("GNUPGHOME", f.homeC)
+	if got, err := sealer.Unseal("prod", "x", loadGS(t, out.Bytes()).Spec); err != nil || got["K"] != "v" {
+		t.Fatalf("other recipient after rekey: %v %v", got, err)
+	}
+}

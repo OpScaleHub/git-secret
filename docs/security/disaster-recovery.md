@@ -65,7 +65,7 @@ them from the `GitSecret`s — no data is only in the `Secret`.
    if that backup is also gone — generate a new controller identity and follow
    §C to rewrap.
 4. Deploy `keyfold-controller`.
-5. Re-apply the `GitSecret` manifests (ArgoCD pointed at the same repo does this
+5. Re-apply the `GitSecret` manifests (a GitOps tool pointed at the same repo does this
    for you).
 6. The controller reconciles identical `Secret`s.
 

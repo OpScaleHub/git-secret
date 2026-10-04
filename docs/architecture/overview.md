@@ -19,7 +19,7 @@ Companion to
  │   --recipient <ctrl> │        │                                              │
  │   --recipient <you>  │        └───────────────────────┬──────────────────────┘
  │   --recipient <rec>  │                                │ apply path
- │                      │                                │ (ArgoCD / kubectl)
+ │                      │                                │ (GitOps / kubectl)
  │  local gpg keyring   │                                ▼
  └─────────────────────┘        ┌──────────────────────────────────────────────┐
                                 │                 kube-apiserver               │
@@ -104,7 +104,7 @@ recipient changes cheap and key loss recoverable.
 ```
 
 Multi-recipient GPG buys redundancy against **loss**. It does not by itself
-protect against **compromise** — see threat-model.md T3/T4 and #39.
+protect against **compromise** — see threat-model.md T3/T4 and [concepts](../concepts.md#loss-versus-compromise).
 
 ## Recovery: cluster is disposable
 
