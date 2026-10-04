@@ -324,7 +324,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// time this command's real output was inspected rather than assumed
 	// correct. sigs.k8s.io/yaml round-trips through encoding/json first,
 	// so the emitted YAML keys match the struct tags exactly.
-	out, err := sigsyaml.Marshal(gs)
+	out, err := marshalManifest(&gs)
 	if err != nil {
 		fmt.Fprintln(stderr, "error: marshal manifest:", err)
 		return exitError
@@ -370,12 +370,17 @@ func runRewrap(path string, recipients []string, stdout, stderr io.Writer) int {
 
 	newSpec, err := sealer.Rewrap(gs.Spec, recipients)
 	if err != nil {
+		if strings.Contains(err.Error(), "No secret key") {
+			err = explainUnwrapError(err, &gs)
+		} else {
+			err = explainWrapError(err)
+		}
 		fmt.Fprintln(stderr, "error:", err)
 		return exitError
 	}
 	gs.Spec = newSpec
 
-	out, err := sigsyaml.Marshal(gs)
+	out, err := marshalManifest(&gs)
 	if err != nil {
 		fmt.Fprintln(stderr, "error: marshal manifest:", err)
 		return exitError

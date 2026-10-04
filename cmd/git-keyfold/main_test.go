@@ -26,7 +26,12 @@ func shortTempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("create short temp dir: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	// Stop the agent gpg started for this home before deleting it, so test
+	// runs don't leave live agents (and their /run/user socket dirs) behind.
+	t.Cleanup(func() {
+		_ = exec.Command("gpgconf", "--homedir", dir, "--kill", "all").Run()
+		os.RemoveAll(dir)
+	})
 	return dir
 }
 
@@ -510,5 +515,21 @@ func TestCLIInitGPGBackendNonInteractive(t *testing.T) {
 	gitignore, _ := os.ReadFile(filepath.Join(repo, ".gitignore"))
 	if strings.Contains(string(gitignore), ".keyfold/key.gpg") {
 		t.Fatalf("gpg key blob should not be gitignored: %q", gitignore)
+	}
+}
+
+// TestCLIVerifyWithNoCommits: a repository with nothing committed has no
+// HEAD to check; verify must say so rather than claim "all matched files
+// are encrypted at HEAD".
+func TestCLIVerifyWithNoCommits(t *testing.T) {
+	bin := buildBinary(t)
+	withBinOnPath(t, bin)
+	repo := initGitRepo(t)
+	if _, _, code := runBin(t, bin, repo, "init", "secrets/**"); code != 0 {
+		t.Fatalf("init failed")
+	}
+	stdout, stderr, code := runBin(t, bin, repo, "verify")
+	if code != 0 || !strings.Contains(stdout, "nothing committed yet") || strings.Contains(stdout, "OK") {
+		t.Fatalf("verify on an empty repo: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 }

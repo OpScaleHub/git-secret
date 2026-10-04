@@ -11,8 +11,11 @@ import (
 func gitProvenance() (revision, repo string) {
 	revision = gitOutput("rev-parse", "HEAD")
 	// A dirty tree means the sealed plaintext may not match the commit --
-	// flag it so the annotation isn't quietly misleading.
-	if revision != "" && gitOutput("status", "--porcelain") != "" {
+	// flag it so the annotation isn't quietly misleading. Only changes to
+	// tracked files count: an untracked file can't be what was sealed from
+	// the commit, and the usual "keyfold seal ... > new.yaml" creates one
+	// (the redirect target) before this even runs.
+	if revision != "" && gitOutput("status", "--porcelain", "--untracked-files=no") != "" {
 		revision += "-dirty"
 	}
 	repo = gitOutput("config", "--get", "remote.origin.url")

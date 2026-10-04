@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 
-	sigsyaml "sigs.k8s.io/yaml"
-
 	"github.com/OpScaleHub/git-secret/api/v1alpha1"
 	"github.com/OpScaleHub/git-secret/internal/sealer"
 )
@@ -159,7 +157,7 @@ func reseal(gs *v1alpha1.GitSecret, data map[string]string, prov *provenanceRest
 	}
 	gs.Status = v1alpha1.GitSecretStatus{}
 
-	out, err := sigsyaml.Marshal(gs)
+	out, err := marshalManifest(gs)
 	if err != nil {
 		fmt.Fprintln(stderr, "error: marshal manifest:", err)
 		return exitError

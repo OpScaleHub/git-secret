@@ -42,7 +42,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26' # must match the `go` directive in go.mod
+          go-version: '1.27' # must not be older than the `go` directive in go.mod; matches the Dockerfile's golang image
 
       - name: Build binaries
         env:
@@ -145,7 +145,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.26'
+          go-version: '1.27'
 
       - name: Build binaries
         env:

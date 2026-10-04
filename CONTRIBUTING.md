@@ -2,7 +2,7 @@
 
 ## Development setup
 
-- Go 1.25 or newer.
+- Go 1.26 or newer (CI and releases build with 1.27).
 - Git (used both to build/test and by the tool itself).
 - `gpg` — optional, only needed to run the `gpg`-backend test suites locally.
 

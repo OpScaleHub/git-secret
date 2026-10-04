@@ -67,6 +67,7 @@ func (r *GitSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if targetName == "" {
 		targetName = gs.Name
 	}
+	gs.Status.TargetName = targetName
 
 	// Mirror the declared recipient set into status regardless of what
 	// happens below, so `kubectl get gitsecret` shows who can decrypt an
@@ -243,6 +244,7 @@ func statusMeaningfullyChanged(a, b *gitsecretv1alpha1.GitSecretStatus) bool {
 		a.SyncedKeys != b.SyncedKeys ||
 		a.RecipientCount != b.RecipientCount ||
 		a.SourceRevision != b.SourceRevision ||
+		a.TargetName != b.TargetName ||
 		!slices.Equal(a.Recipients, b.Recipients) {
 		return true
 	}

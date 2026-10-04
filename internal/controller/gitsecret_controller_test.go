@@ -35,7 +35,12 @@ func shortTempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("create short temp dir: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	// Stop the agent gpg started for this home before deleting it, so test
+	// runs don't leave live agents (and their /run/user socket dirs) behind.
+	t.Cleanup(func() {
+		_ = exec.Command("gpgconf", "--homedir", dir, "--kill", "all").Run()
+		os.RemoveAll(dir)
+	})
 	return dir
 }
 
@@ -137,6 +142,9 @@ func TestReconcile_CreatesTargetSecret(t *testing.T) {
 	var updated gitsecretv1alpha1.GitSecret
 	if err := fakeClient.Get(context.Background(), namespacedName("downtime", "downtime-secrets"), &updated); err != nil {
 		t.Fatal(err)
+	}
+	if updated.Status.TargetName == "" {
+		t.Error("status.targetName not set (the Target printer column reads it)")
 	}
 	if updated.Status.SyncedKeys != 2 {
 		t.Errorf("status.syncedKeys = %d, want 2", updated.Status.SyncedKeys)

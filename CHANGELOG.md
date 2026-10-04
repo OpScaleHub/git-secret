@@ -91,6 +91,18 @@
 
 ### Fixed
 
+- **Small fixes** (#112): provenance is no longer marked `-dirty` by untracked
+  files (the usual `keyfold seal … > new.yaml` created one); `git keyfold
+  verify` in a repository with no commits says so instead of "OK"; sealed
+  manifests no longer carry empty `status: {}` / `target: {}`; the `Target`
+  column shows the effective Secret name even when it defaults to the
+  object's name (new `status.targetName`, additive); the controller reports
+  Ready only while the apiserver answers and its informer cache has synced
+  (it used to report Ready while unable to reach the apiserver; liveness is
+  unchanged, so an unreachable API marks the pod NotReady without restarting
+  it); `--rewrap` errors explain a missing key.
+  CI and releases build with Go 1.27, matching the images (`go.mod` minimum
+  stays 1.26).
 - **Admission webhook no longer decrypts, and no longer rejects objects it
   cannot decrypt (#105).** The recipient-count check ran `gpg --list-packets`,
   which attempts decryption: with this controller's key among the recipients

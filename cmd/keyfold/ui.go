@@ -16,7 +16,6 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	sigsyaml "sigs.k8s.io/yaml"
 
 	"github.com/OpScaleHub/git-secret/api/v1alpha1"
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
@@ -280,7 +279,7 @@ func (s *uiServer) handleSeal(w http.ResponseWriter, r *http.Request) {
 		gs.Annotations = map[string]string{v1alpha1.RecipientRolesAnnotation: rs}
 	}
 
-	out, err := sigsyaml.Marshal(gs)
+	out, err := marshalManifest(&gs)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "marshal: " + err.Error()})
 		return

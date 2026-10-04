@@ -374,7 +374,7 @@ func recipientsMutate(add bool, args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintln(stderr, "error:", strings.TrimPrefix(err.Error(), errNoChange.Error()+": "))
 			return exitError
 		}
-		out, err := sigsyaml.Marshal(gs)
+		out, err := marshalManifest(gs)
 		if err != nil {
 			fmt.Fprintln(stderr, "error: marshal manifest:", err)
 			return exitError
@@ -419,7 +419,7 @@ func recipientsMutate(add bool, args []string, stdout, stderr io.Writer) int {
 			failures = append(failures, fmt.Sprintf("%s: %v", t.path, err))
 			continue
 		}
-		out, err := sigsyaml.Marshal(gs)
+		out, err := marshalManifest(gs)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: marshal: %v", t.path, err))
 			continue
