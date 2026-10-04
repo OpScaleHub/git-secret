@@ -44,6 +44,18 @@ CI also renders the chart and checks its invariants: every pod meets the
 one workload, and required values fail loudly. Keep `values.yaml` defaults
 consistent with the security posture documented in the chart README.
 
+### End-to-end tests
+
+`test/e2e/e2e.sh` runs on a real cluster in CI (kind). Locally, with a kind
+cluster as your current context:
+
+```bash
+docker build -t keyfold-controller:e2e -f Dockerfile . && kind load docker-image keyfold-controller:e2e
+test/e2e/e2e.sh
+```
+
+It starts with `examples/kubernetes/demo.sh`, so keep that example working.
+
 ### CRD changes
 
 The CRD YAML is generated from the Go types in `api/v1alpha1` — including

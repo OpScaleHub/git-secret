@@ -11,6 +11,9 @@ You need `kubectl`, `helm`, `gpg`, `jq`, and the `keyfold` CLI
 [releases](https://github.com/OpScaleHub/keyfold/releases) — rename it to
 `keyfold` and put it on `PATH` — or `go build -o keyfold ./cmd/keyfold`).
 
+The same steps as one runnable script — exercised by CI on every change — are in
+[`examples/kubernetes/demo.sh`](../../examples/kubernetes/).
+
 ## 1. Three identities
 
 A secret should never depend on one key. Make a dedicated **controller**

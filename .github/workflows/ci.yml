@@ -30,6 +30,8 @@ jobs:
               - 'charts/**'
               - 'config/**'
               - 'Dockerfile*'
+              - 'test/**'
+              - 'examples/**'
               - '.github/workflows/**'
               - '.github/dependabot.yml'
 
@@ -173,6 +175,53 @@ jobs:
             echo "sealUi.enabled without sealUi.keyringConfigMap must fail to render"; exit 1
           fi
 
+  e2e:
+    name: End-to-end (kind)
+    # The scenarios the September 2026 audit ran by hand, on a real cluster:
+    # Pod Security restricted install, the Kubernetes example, webhook,
+    # self-heal, ciphertext binding, recovery-key rewrap, sealing UI, metrics.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.27'
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+
+      - name: Install kind and test dependencies
+        run: |
+          go install sigs.k8s.io/kind@v0.31.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet --break-system-packages pyyaml
+
+      - name: Create cluster
+        run: |
+          kind create cluster --name e2e --wait 180s \
+            --image kindest/node:v1.34.0@sha256:7416a61b42b1662ca6ca89f02028ac133a309a2a30ba309614e8ec94d976dc5a
+
+      - name: Build and load the controller image
+        run: |
+          docker build -t keyfold-controller:e2e -f Dockerfile .
+          kind load docker-image keyfold-controller:e2e --name e2e
+
+      - name: Run e2e
+        run: test/e2e/e2e.sh
+
+      - name: Diagnostics
+        if: failure()
+        run: |
+          kubectl get pods,gitsecrets -A -o wide || true
+          kubectl -n keyfold-system logs deploy/keyfold --tail=200 || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
+
   ci-status:
     name: CI status
     # Single stable check to gate merges on: passes when the heavy jobs
@@ -180,14 +229,15 @@ jobs:
     # actually failed or was cancelled. Make this the required status check
     # in branch protection instead of the per-OS matrix legs.
     if: always()
-    needs: [changes, test, chart]
+    needs: [changes, test, chart, e2e]
     runs-on: ubuntu-latest
     steps:
       - name: Check results
         run: |
           echo "test:  ${{ needs.test.result }}"
           echo "chart: ${{ needs.chart.result }}"
-          for r in "${{ needs.test.result }}" "${{ needs.chart.result }}"; do
+          echo "e2e:   ${{ needs.e2e.result }}"
+          for r in "${{ needs.test.result }}" "${{ needs.chart.result }}" "${{ needs.e2e.result }}"; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
               echo "a required job did not succeed"
               exit 1
