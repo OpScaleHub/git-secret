@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -350,7 +350,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-const configHeader = "# Keyfold config: https://github.com/OpScaleHub/git-secret\n" +
+const configHeader = "# Keyfold config: https://github.com/OpScaleHub/keyfold\n" +
 	"# 'patterns' are glob paths (relative to repo root, '**' matches any depth)\n" +
 	"# that get transparently encrypted by the installed git hooks.\n"
 

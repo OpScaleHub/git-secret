@@ -15,9 +15,9 @@ import (
 	"io"
 	"sort"
 
-	"github.com/OpScaleHub/git-secret/api/v1alpha1"
-	renccrypto "github.com/OpScaleHub/git-secret/crypto"
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/api/v1alpha1"
+	renccrypto "github.com/OpScaleHub/keyfold/crypto"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 const keySize = 32 // chacha20poly1305.KeySize; avoids importing x/crypto here just for the constant.

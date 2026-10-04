@@ -3,7 +3,7 @@ package cli
 import (
 	"fmt"
 
-	"github.com/OpScaleHub/git-secret/crypto"
+	"github.com/OpScaleHub/keyfold/crypto"
 )
 
 // Whole-file encryption additional-authenticated-data.

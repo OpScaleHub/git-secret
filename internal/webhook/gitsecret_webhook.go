@@ -12,8 +12,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	gitsecretv1alpha1 "github.com/OpScaleHub/git-secret/api/v1alpha1"
-	"github.com/OpScaleHub/git-secret/internal/sealer"
+	gitsecretv1alpha1 "github.com/OpScaleHub/keyfold/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/internal/sealer"
 )
 
 // WebhookPath is where the ValidatingWebhookConfiguration must point.

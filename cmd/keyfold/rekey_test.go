@@ -8,8 +8,8 @@ import (
 
 	sigsyaml "sigs.k8s.io/yaml"
 
-	"github.com/OpScaleHub/git-secret/api/v1alpha1"
-	"github.com/OpScaleHub/git-secret/internal/sealer"
+	"github.com/OpScaleHub/keyfold/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/internal/sealer"
 )
 
 func loadGS(t *testing.T, b []byte) v1alpha1.GitSecret {

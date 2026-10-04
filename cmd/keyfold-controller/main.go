@@ -32,11 +32,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	crwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	gitsecretv1alpha1 "github.com/OpScaleHub/git-secret/api/v1alpha1"
-	"github.com/OpScaleHub/git-secret/internal/controller"
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
-	"github.com/OpScaleHub/git-secret/internal/metricsauth"
-	gswebhook "github.com/OpScaleHub/git-secret/internal/webhook"
+	gitsecretv1alpha1 "github.com/OpScaleHub/keyfold/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/internal/controller"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/internal/metricsauth"
+	gswebhook "github.com/OpScaleHub/keyfold/internal/webhook"
 )
 
 var version = "dev"

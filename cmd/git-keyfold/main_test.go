@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpScaleHub/git-secret/crypto"
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/crypto"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 // shortTempDir returns a short-path temp directory suitable for

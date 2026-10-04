@@ -20,8 +20,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	gitsecretv1alpha1 "github.com/OpScaleHub/git-secret/api/v1alpha1"
-	"github.com/OpScaleHub/git-secret/internal/sealer"
+	gitsecretv1alpha1 "github.com/OpScaleHub/keyfold/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/internal/sealer"
 )
 
 // conditionReady is the standard "did the last reconcile succeed" status

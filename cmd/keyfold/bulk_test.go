@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpScaleHub/git-secret/api/v1alpha1"
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
-	"github.com/OpScaleHub/git-secret/internal/sealer"
+	"github.com/OpScaleHub/keyfold/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/internal/sealer"
 )
 
 // bulkFixture: operator A (the only secret key in GNUPGHOME) plus a new

@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
 )
 
 // binaryName is the executable hooks shell out to. It must be on PATH,

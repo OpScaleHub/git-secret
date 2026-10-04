@@ -15,11 +15,11 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/internal/cli"
-	"github.com/OpScaleHub/git-secret/internal/config"
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
-	"github.com/OpScaleHub/git-secret/keybackend"
+	"github.com/OpScaleHub/keyfold/internal/cli"
+	"github.com/OpScaleHub/keyfold/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/keybackend"
 )
 
 // version is stamped at build time via:

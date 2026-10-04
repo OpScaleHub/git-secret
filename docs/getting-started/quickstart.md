@@ -8,7 +8,7 @@ at all. About ten minutes on any Kubernetes ≥ 1.28 (a local
 
 You need `kubectl`, `helm`, `gpg`, `jq`, and the `keyfold` CLI
 (`keyfold-<os>-<arch>` from the
-[releases](https://github.com/OpScaleHub/git-secret/releases) — rename it to
+[releases](https://github.com/OpScaleHub/keyfold/releases) — rename it to
 `keyfold` and put it on `PATH` — or `go build -o keyfold ./cmd/keyfold`).
 
 ## 1. Three identities

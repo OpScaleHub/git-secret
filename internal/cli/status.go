@@ -3,8 +3,8 @@ package cli
 import (
 	"os"
 
-	"github.com/OpScaleHub/git-secret/crypto"
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/crypto"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
 )
 
 // FileState describes what Status found for one matched file.

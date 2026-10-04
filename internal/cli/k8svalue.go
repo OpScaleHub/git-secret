@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/crypto"
+	"github.com/OpScaleHub/keyfold/crypto"
 	"gopkg.in/yaml.v3"
 )
 

@@ -4,6 +4,11 @@
 
 ### Renamed to Keyfold (#108) — breaking; see UPGRADING.md
 
+- The repository is now **[OpScaleHub/keyfold](https://github.com/OpScaleHub/keyfold)**
+  (old URLs redirect) and the Go module path `github.com/OpScaleHub/keyfold`;
+  the site moves to **keyfold.opscale.ir**. Signatures on releases from here on carry the
+  new repository identity; v0.10.0 and earlier keep the old one (SECURITY.md).
+
 - The project is now **Keyfold** ([ADR-0001](docs/adr/0001-product-name.md)):
   `git-secret` collided with an established, unrelated project in the same
   space. Binaries: `keyfold` (was `git-secret-seal`), `git-keyfold` (was

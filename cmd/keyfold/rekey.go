@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/api/v1alpha1"
-	"github.com/OpScaleHub/git-secret/internal/sealer"
+	"github.com/OpScaleHub/keyfold/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/internal/sealer"
 )
 
 const rekeyHelp = `keyfold rekey - re-encrypt every value under a fresh content key

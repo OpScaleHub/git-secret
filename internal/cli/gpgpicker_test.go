@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 func testKeys() []gpgutil.SecretKey {

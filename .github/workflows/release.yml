@@ -95,7 +95,7 @@ jobs:
       # SLSA build provenance: a signed statement (GitHub's Fulcio-backed
       # OIDC identity) that these exact bytes were produced by this workflow
       # at this commit. Verify with `gh attestation verify <file> --repo
-      # OpScaleHub/git-secret`. Unlike the .sha256 sidecars, this cannot be
+      # OpScaleHub/keyfold`. Unlike the .sha256 sidecars, this cannot be
       # forged by whoever can edit the release assets.
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

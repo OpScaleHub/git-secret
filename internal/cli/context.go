@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/internal/config"
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
-	"github.com/OpScaleHub/git-secret/keybackend"
+	"github.com/OpScaleHub/keyfold/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/keybackend"
 )
 
 // Context bundles everything a command needs: where the repo is, its

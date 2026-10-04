@@ -62,7 +62,7 @@ helm install keyfold oci://ghcr.io/opscalehub/charts/keyfold \
   --namespace keyfold-system --set gpgPrivateKey.existingSecret=keyfold-gpg
 ```
 
-**The CLIs** — from the [releases](https://github.com/OpScaleHub/git-secret/releases)
+**The CLIs** — from the [releases](https://github.com/OpScaleHub/keyfold/releases)
 (linux/macOS amd64+arm64, windows amd64), each with SLSA provenance:
 
 | Binary | For |
@@ -72,7 +72,7 @@ helm install keyfold oci://ghcr.io/opscalehub/charts/keyfold \
 | `kubectl-keyfold` | `kubectl keyfold …`: encrypted values inside a plain `Secret` manifest |
 
 ```bash
-gh attestation verify ./keyfold-linux-amd64 --repo OpScaleHub/git-secret
+gh attestation verify ./keyfold-linux-amd64 --repo OpScaleHub/keyfold
 ```
 
 Building from source needs Go 1.26+: `go install ./cmd/...` (binaries land in `$(go env GOPATH)/bin`).
@@ -118,5 +118,5 @@ is additive-only) and includes the migration from the pre-rename
 ## License
 
 Intended to be MIT, but no `LICENSE` file has been committed yet — until it is
-(tracked in [#129](https://github.com/OpScaleHub/git-secret/issues/129)), no
+(tracked in [#129](https://github.com/OpScaleHub/keyfold/issues/129)), no
 license is formally granted.

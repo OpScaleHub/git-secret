@@ -1,4 +1,4 @@
-module github.com/OpScaleHub/git-secret
+module github.com/OpScaleHub/keyfold
 
 go 1.26.0
 

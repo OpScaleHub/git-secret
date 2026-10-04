@@ -5,7 +5,7 @@ import (
 
 	sigsyaml "sigs.k8s.io/yaml"
 
-	"github.com/OpScaleHub/git-secret/api/v1alpha1"
+	"github.com/OpScaleHub/keyfold/api/v1alpha1"
 )
 
 // marshalManifest renders a GitSecret as YAML for a person to commit.

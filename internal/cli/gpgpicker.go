@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/internal/gpgutil"
+	"github.com/OpScaleHub/keyfold/internal/gpgutil"
 )
 
 // PickGPGRecipient prints a numbered menu of keys to stdout and reads a

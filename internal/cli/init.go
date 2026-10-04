@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/OpScaleHub/git-secret/internal/config"
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
-	"github.com/OpScaleHub/git-secret/keybackend"
+	"github.com/OpScaleHub/keyfold/internal/config"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/keybackend"
 )
 
 // InitOptions configures a bootstrap run. KeyBackend/GPGRecipients only

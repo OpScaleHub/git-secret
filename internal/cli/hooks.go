@@ -8,9 +8,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OpScaleHub/git-secret/crypto"
-	"github.com/OpScaleHub/git-secret/internal/gitutil"
-	"github.com/OpScaleHub/git-secret/keybackend"
+	"github.com/OpScaleHub/keyfold/crypto"
+	"github.com/OpScaleHub/keyfold/internal/gitutil"
+	"github.com/OpScaleHub/keyfold/keybackend"
 )
 
 // HookNames are the git hooks Init installs. Order doesn't matter here;

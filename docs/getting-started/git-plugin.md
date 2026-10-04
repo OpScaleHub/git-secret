@@ -8,8 +8,8 @@ either without the other ([concepts](../concepts.md#two-places-keyfold-encrypts)
 ## 1. Install
 
 Download `git-keyfold-<os>-<arch>` from the
-[releases](https://github.com/OpScaleHub/git-secret/releases), check it
-(`gh attestation verify ./git-keyfold-linux-amd64 --repo OpScaleHub/git-secret`),
+[releases](https://github.com/OpScaleHub/keyfold/releases), check it
+(`gh attestation verify ./git-keyfold-linux-amd64 --repo OpScaleHub/keyfold`),
 rename it to `git-keyfold` (`git-keyfold.exe` on Windows) and put it on `PATH`.
 `git keyfold <command>` then works as a git subcommand. To build instead:
 `go build -o git-keyfold ./cmd/git-keyfold` (Go 1.26+).
