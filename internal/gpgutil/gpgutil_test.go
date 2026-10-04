@@ -353,3 +353,64 @@ func TestExportPublicKey(t *testing.T) {
 		t.Fatal("ExportPublicKey returned success for an unknown fingerprint")
 	}
 }
+
+// TestScratchPublicKeyring: a public key handed over in a keyring file is
+// usable for encryption without touching the operator's keyring, and only
+// if it is exactly the key its entry's fingerprint names.
+func TestScratchPublicKeyring(t *testing.T) {
+	fprX := newTestKeyring(t, "X <x@example.com>")
+	pubX, err := ExportPublicKey(fprX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second key in the same home, to build a mismatched and a two-key block.
+	cmd := exec.Command(Binary, "--batch", "--passphrase", "", "--quick-generate-key", "Y <y@example.com>", "default", "default", "never")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("generate Y: %v: %s", err, out)
+	}
+	keys, _ := ListSecretKeys()
+	var fprY string
+	for _, k := range keys {
+		if k.Fingerprint != fprX {
+			fprY = k.Fingerprint
+		}
+	}
+	pubY, _ := ExportPublicKey(fprY)
+	both, err := run(nil, "--batch", "--armor", "--export", fprX, fprY)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	kr, err := NewScratchPublicKeyring()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { kr.Close() })
+
+	if err := kr.ImportFor(fprX, pubY); err == nil {
+		t.Error("accepted Y's key as the publicKey for X")
+	}
+	if err := kr.ImportFor(fprX, both); err == nil {
+		t.Error("accepted a block carrying an extra key alongside X")
+	}
+
+	kr2, _ := NewScratchPublicKeyring()
+	t.Cleanup(func() { kr2.Close() })
+	if err := kr2.ImportFor(fprX, pubX); err != nil {
+		t.Fatalf("ImportFor(X, X's key): %v", err)
+	}
+	if err := kr2.ImportFor(fprX, pubX); err != nil {
+		t.Errorf("re-importing the same key: %v", err)
+	}
+
+	// An operator home that has never seen X can encrypt to it via the scratch keybox.
+	t.Setenv("GNUPGHOME", shortTempDir(t))
+	if _, err := Encrypt([]byte("x"), []string{fprX}); err == nil {
+		t.Fatal("encrypt to an unknown key succeeded without the scratch keyring")
+	}
+	ExtraPublicKeyrings = []string{kr2.Keybox()}
+	t.Cleanup(func() { ExtraPublicKeyrings = nil })
+	if _, err := Encrypt([]byte("x"), []string{fprX}); err != nil {
+		t.Fatalf("encrypt via scratch keyring: %v", err)
+	}
+}

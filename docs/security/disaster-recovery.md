@@ -26,7 +26,11 @@ These are not optional. Set them up on day one, not after an incident:
    cluster it runs in (sealed backup, secret manager, offline media).
 3. **The Git repository is mirrored** — the ciphertext is the durable artifact;
    if it only exists on one host, that host is a single point of failure (T-repo).
-4. **`keyfold` and `gpg` are available** to whoever holds a recovery key.
+4. **`keyfold` and `gpg` are available** to whoever holds a recovery key —
+   together with the **public keys of every recipient**, best as an
+   environment [keyring file](../architecture/keyring.md) with embedded
+   `publicKey`s committed next to the manifests. Rewrapping wraps to the whole
+   recipient list, so each one's public key is needed, not just the new one's.
 
 ## Scenario table
 
@@ -78,15 +82,16 @@ decrypt:
    gpg --batch --passphrase '' --quick-generate-key 'keyfold-controller <ops@example.com>' default default never
    gpg --armor --export-secret-keys <new-fpr> > controller-key.asc
    ```
-2. On a machine holding a surviving recipient's private key, and with the new
-   controller's **public** key imported, rewrap every affected object:
+2. On a machine holding a surviving recipient's private key, add the new
+   controller to every affected object and drop the lost one:
    ```
-   keyfold --rewrap gitsecret.yaml \
-     --recipient <new-controller-fpr> \
-     --recipient <human-fpr> \
-     --recipient <recovery-fpr>
+   keyfold recipients add <new-controller-fpr> --role controller \
+     -f deploy/ --keyring envs/prod/keyring.yaml --write
+   keyfold recipients remove <lost-controller-fpr> -f deploy/ \
+     --keyring envs/prod/keyring.yaml --write
    ```
-   `--rewrap` replaces `spec.encryptedKey` only — no value is re-encrypted.
+   (`keyfold --rewrap FILE --recipient …` sets a single object's whole list
+   instead.) Only `spec.encryptedKey` changes — no value is re-encrypted.
 3. Commit the rewrapped manifests; load `controller-key.asc` into the cluster as
    the controller's `Secret`; deploy.
 

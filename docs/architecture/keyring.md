@@ -69,16 +69,29 @@ distributing the actual public key material (WKD, a keyserver, committed `.asc`
 files) is out of scope — the keyring assumes the sealing operator already has the
 public keys in their GPG keyring, the same precondition `--recipient` already has.
 
-### Trust note on HTTP keyrings
+### Embedded public keys
 
-A keyring carries fingerprints and roles, not key material. A tampered keyring
-could add a fingerprint you don't intend — but `keyfold` still needs that
-key's *public key* in your local GPG keyring to seal to it, so an injected
-fingerprint you don't have fails the seal outright rather than leaking anything.
-`https` is still recommended; `http` is allowed. Fetch failures fail closed.
+An entry may carry its armored `publicKey`. `keyfold seal`, `--rewrap`,
+`recipients add|remove` and `ui` then use those keys for that run only — kept
+in a scratch keybox, never imported into your keyring — so sealing or
+rewrapping works on a machine that has none of them (an offline recovery
+workstation, a CI job). Each block must be **exactly** the key its
+`fingerprint` names; a different key, or extra keys in the same block, are
+rejected.
+
+### Trust note
+
+**Whoever can edit the keyring decides who can decrypt** what is sealed with
+it. Without embedded `publicKey`s, a tampered keyring that adds a fingerprint
+you don't have fails the seal (the public key is missing locally); with them,
+an attacker-supplied entry *and* its key are both present, and the seal
+succeeds — to the attacker's key. Treat the keyring like the code it sits
+next to: commit it, review changes to it, and prefer a committed file over a
+URL. `https` is strongly preferred over `http`; fetch failures fail closed.
 
 ## Not yet
 
-- A `keyfold keyring add/verify` helper to build and check the file.
+- A `keyfold keyring add/verify` helper to build and check the file (until
+  then: `gpg --armor --export <fpr>` for each `publicKey`).
 - Admission enforcement is by Namespace annotation
   ([admission-webhook.md](admission-webhook.md)), not yet full keyring matching.

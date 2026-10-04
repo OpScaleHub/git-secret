@@ -51,15 +51,38 @@ the prod keyring is a planned follow-up.
 
 ### Add a cluster
 
-1. Generate the new controller's identity; import its public key locally.
-2. `keyfold recipients add <new-controller-fpr> -f obj.yaml --role controller`
-   for every object that cluster should consume.
-3. Commit; point the new cluster's ArgoCD at the repo; deploy its controller.
+**Who can do this:** only an existing recipient of each object — an operator,
+or whoever holds the offline recovery key. The new cluster's public key alone
+can never add itself: adding a recipient means unwrapping the current content
+key, which needs a current recipient's *private* key.
+
+1. Generate the new controller's identity and publish its public key
+   (`keyfold-controller --print-public-key`, or the chart's
+   `publishPublicKey`); add it, with its armored `publicKey`, to the
+   environment's [keyring file](keyring.md).
+2. As an existing recipient, add it to every object that cluster should
+   consume, in one step:
+
+   ```
+   keyfold recipients add <new-controller-fpr> --role controller \
+     -f deploy/prod/ --keyring envs/prod/keyring.yaml --dry-run   # preview
+   keyfold recipients add <new-controller-fpr> --role controller \
+     -f deploy/prod/ --keyring envs/prod/keyring.yaml --write
+   ```
+
+   `--keyring` supplies every recipient's public key for this run (each checked
+   against its fingerprint, never imported into your keyring). Every file is
+   computed first; if any one fails, nothing is written. No value is
+   re-encrypted.
+3. Commit; point the new cluster's GitOps tool (Argo CD, Flux, …) at the repo;
+   deploy its controller.
 
 ### Replace / decommission a cluster
 
-1. `keyfold recipients remove <old-controller-fpr> -f obj.yaml` for every
-   object.
+1. `keyfold recipients remove <old-controller-fpr> -f deploy/prod/ --write`
+   (add `--keyring` if your keyring lacks the remaining recipients' public
+   keys), then `keyfold rekey` the objects if the old cluster may have kept
+   content keys.
 2. Commit. The old controller can still decrypt versions already in Git history
    (see [recipient-lifecycle.md](../security/recipient-lifecycle.md)) — if the
    old cluster is considered compromised rather than merely retired, treat it as

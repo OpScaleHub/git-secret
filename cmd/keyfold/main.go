@@ -183,6 +183,31 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
+	var keyringRoles map[string]v1alpha1.RecipientRole
+	if *keyringFile != "" {
+		krFprs, krRoles, err := loadKeyring(*keyringFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return exitError
+		}
+		seen := map[string]bool{}
+		for _, r := range recipients {
+			seen[upperFP(r)] = true
+		}
+		for _, fp := range krFprs {
+			if !seen[upperFP(fp)] {
+				recipients = append(recipients, fp)
+			}
+		}
+		keyringRoles = krRoles
+		cleanup, err := useKeyringPublicKeys(*keyringFile)
+		if err != nil {
+			fmt.Fprintln(stderr, "error:", err)
+			return exitError
+		}
+		defer cleanup()
+	}
+
 	if *rewrapFile != "" {
 		return runRewrap(*rewrapFile, recipients, stdout, stderr)
 	}
@@ -230,25 +255,6 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if ns == "" || nm == "" {
 		fmt.Fprintln(stderr, "error: --namespace and --name are required (or must be derivable from -f's Secret metadata)")
 		return exitUsage
-	}
-
-	var keyringRoles map[string]v1alpha1.RecipientRole
-	if *keyringFile != "" {
-		krFprs, krRoles, err := loadKeyring(*keyringFile)
-		if err != nil {
-			fmt.Fprintln(stderr, "error:", err)
-			return exitError
-		}
-		seen := map[string]bool{}
-		for _, r := range recipients {
-			seen[upperFP(r)] = true
-		}
-		for _, fp := range krFprs {
-			if !seen[upperFP(fp)] {
-				recipients = append(recipients, fp)
-			}
-		}
-		keyringRoles = krRoles
 	}
 
 	if len(recipients) == 0 {
