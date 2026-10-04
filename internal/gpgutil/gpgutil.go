@@ -172,7 +172,7 @@ func EncryptContext(ctx context.Context, plaintext []byte, recipients []string) 
 // bundled with it) into the current GNUPGHOME, so this process's own
 // gpg (and gpg-agent) can subsequently decrypt blobs wrapped to it.
 // Intended for a process's one-time startup import (e.g.
-// git-secret-server importing its own dedicated identity from a
+// git-secret-controller importing its own dedicated identity from a
 // mounted Secret) into an isolated, process-private GNUPGHOME set up
 // by the caller — never the operator's own keyring.
 func ImportSecretKey(armored []byte) error {

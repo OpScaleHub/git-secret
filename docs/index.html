@@ -716,7 +716,7 @@ gpg_recipients:
           <ul class="req-list">
             <li><code>git-secret-&lt;os&gt;-&lt;arch&gt;</code> — the CLI. Rename to <code>git-secret</code> (<code>git-secret.exe</code> on Windows) and put it on <code>PATH</code>; <code>git secret</code> then works as a native git subcommand</li>
             <li><code>git-secret-seal-&lt;os&gt;-&lt;arch&gt;</code> — seals values into a <code>GitSecret</code> manifest (used in the Kubernetes steps below)</li>
-            <li><code>git-secret-controller-linux-&lt;arch&gt;</code> and <code>git-secret-server-linux-&lt;arch&gt;</code> — in-cluster binaries, already packaged in the Helm chart and images; you rarely need them directly</li>
+            <li><code>git-secret-controller-linux-&lt;arch&gt;</code> — the in-cluster controller, already packaged in the Helm chart and image; you rarely need it directly</li>
             <li><code>git-secret-sbom.spdx.json</code> — SPDX SBOM</li>
             <li><code>kubectl-secret</code> has no release binary yet: <code>go build -o kubectl-secret ./cmd/kubectl-secret</code></li>
           </ul>
@@ -770,7 +770,6 @@ kubectl apply -f gitsecret.yaml   <span class="comment"># or commit it and let A
           <li>The key <code>Secret</code> must be in the release namespace; pin <code>--version</code> to the release tag you want.</li>
           <li>The chart never accepts key material in <code>values.yaml</code> — only a reference to the <code>Secret</code> you created.</li>
           <li>Cluster-scoped by default; see the <a class="footnote-link" href="https://github.com/OpScaleHub/git-secret/blob/main/charts/git-secret-controller/README.md" target="_blank" rel="noopener">chart README</a> for RBAC and upgrades (Helm doesn't upgrade CRDs for you).</li>
-          <li>Migrating from External Secrets Operator? <code>git-secret-server</code> is deprecated and security-fix-only; new deployments should use the CRD.</li>
         </ul>
       </div>
 

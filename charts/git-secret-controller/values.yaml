@@ -1,8 +1,7 @@
 # Default values for git-secret-controller.
 #
 # Secret material is never accepted here, by design -- only a reference
-# to a Secret you create out-of-band, same discipline the
-# git-secret-server chart already follows.
+# to a Secret you create out-of-band.
 
 image:
   repository: ghcr.io/opscalehub/git-secret-controller

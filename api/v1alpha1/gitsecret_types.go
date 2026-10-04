@@ -132,11 +132,10 @@ type GitSecretStatus struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // GitSecret decrypts into a plain Kubernetes Secret via a controller that
-// holds one of the GPG recipient keys EncryptedKey is wrapped to. Unlike
-// the ESO webhook bridge (cmd/git-secret-server), ciphertext lives inline
-// in the object -- delivered by whatever already applies manifests to the
-// cluster (ArgoCD, kubectl, ...), with no repo clone, deploy key, or
-// network hop involved in decryption.
+// holds one of the GPG recipient keys EncryptedKey is wrapped to. The
+// ciphertext lives inline in the object -- delivered by whatever already
+// applies manifests to the cluster (a GitOps tool, kubectl, ...), with no
+// repo clone, deploy key, or network hop involved in decryption.
 type GitSecret struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

@@ -68,8 +68,8 @@ TOFU/`accept-new` gap with no fail-fast guard), and a five-layer delivery path
 (ArgoCD → ESO CRDs → webhook → clone → decrypt) where several ordering / size /
 retry-exhaustion failures showed up during the production rollout.
 
-`git-secret-server` and its Helm chart still exist and still build. It is no
-longer the recommended integration and receives no new feature work.
+`git-secret-server` was deprecated once the CRD shipped and removed after
+v0.10.0, when its last consumer had moved to the CRD.
 
 ### 4. Native `GitSecret` CRD + controller — current
 

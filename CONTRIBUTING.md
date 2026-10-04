@@ -36,13 +36,26 @@ respects that skip guard rather than failing on GPG-less environments (see
 ### Helm chart changes
 
 ```bash
-helm lint ./charts/git-secret-server
 helm lint ./charts/git-secret-controller
 ```
 
-CI also renders both charts; keep `values.yaml` defaults consistent with the
-security posture documented in each chart's README (restricted Pod Security
-Standard fields where the workload allows it).
+CI also renders the chart and checks its invariants: every pod meets the
+`restricted` Pod Security Standard, every Service/Deployment selects exactly
+one workload, and required values fail loudly. Keep `values.yaml` defaults
+consistent with the security posture documented in the chart README.
+
+### CRD changes
+
+The CRD YAML is generated from the Go types in `api/v1alpha1` — including
+field descriptions, so a doc-comment edit counts. Regenerate and copy it into
+the chart in the same PR; CI fails if either copy is stale:
+
+```bash
+go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.19.0 \
+  crd paths=./api/... output:crd:dir=config/crd/bases
+cp config/crd/bases/git-secret.opscalehub.io_gitsecrets.yaml \
+  charts/git-secret-controller/crds/gitsecret.yaml
+```
 
 ## Pull requests
 

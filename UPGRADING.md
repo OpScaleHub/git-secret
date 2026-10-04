@@ -88,6 +88,18 @@ Four chart changes, one of which needs a manual step for some installs:
 Pods now also set `seccompProfile: RuntimeDefault`, so the chart installs into
 Pod Security `restricted` namespaces.
 
+## `git-secret-server` removed (#107)
+
+The External Secrets Operator bridge — `git-secret-server`, its image, its Helm
+chart and its release binaries — is removed. v0.10.0 is its last published
+version; those artifacts stay available but receive no further fixes.
+
+To move a workload off it, seal each secret as a `GitSecret`
+(`git-secret-seal`, multi-recipient, with the controller's fingerprint among the
+recipients), apply it, and delete the corresponding `ExternalSecret` once the
+target `Secret` is owned by the `GitSecret` (set `spec.target.adopt: true` to
+take over a `Secret` the `ExternalSecret` created).
+
 ## Downgrade
 
 Additive-only means a downgrade is safe for objects that do not use fields the
