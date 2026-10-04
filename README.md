@@ -325,6 +325,9 @@ keyfold recipients add <new-fingerprint> -f gitsecret.yaml --role recovery
 keyfold recipients remove <old-fingerprint> -f gitsecret.yaml
 keyfold recipients list -f gitsecret.yaml       # who can decrypt, and their role
 
+# Read the values back with any recipient's key -- no cluster needed:
+keyfold unseal -f gitsecret.yaml | jq .
+
 # ...or set the whole list explicitly:
 keyfold --rewrap gitsecret.yaml \
   --recipient <controller-fingerprint> --recipient <your-own-fingerprint> --recipient <new-fingerprint>

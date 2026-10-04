@@ -36,6 +36,8 @@ Commands:
   keyfold seal ...           produce a GitSecret manifest (the default: the
                              flags below work with or without "seal")
   keyfold recipients ...     list / add / remove who can decrypt an object
+  keyfold unseal -f FILE     read the values back with any recipient's key --
+                             recovery without a cluster
   keyfold ui                 a local, public-key-only web form for sealing
   keyfold migrate -f PATH    move manifests to the keyfold.opscalehub.io API
                              group (see UPGRADING.md)
@@ -130,6 +132,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		args = args[1:]
 	} else if len(args) > 0 && args[0] == "migrate" {
 		return runMigrate(args[1:], stdout, stderr)
+	} else if len(args) > 0 && args[0] == "unseal" {
+		return runUnseal(args[1:], stdout, stderr)
 	}
 	if len(args) > 0 && args[0] == "recipients" {
 		return runRecipients(args[1:], stdout, stderr)

@@ -39,6 +39,7 @@ These are not optional. Set them up on day one, not after an incident:
 | E | A recipient private key **compromised** | Partially — see the limit | [§E](#e--recipient-key-compromised) |
 | F | `GitSecret` rolled back / rewritten in Git | Yes (re-apply correct revision) | [§F](#f--object-rolled-back-in-git) |
 | G | Git repository itself lost | Only from a mirror / backup | [§G](#g--repository-lost) |
+| H | No cluster at all — you need the values themselves | Yes, with any one recipient key | [§H](#h--read-the-values-without-a-cluster) |
 
 ---
 
@@ -110,7 +111,7 @@ What this does **not** do: `recipients remove` on the CRD path performs a
 *rewrap* — it re-encrypts `spec.encryptedKey` to the new recipient set but keeps
 the **same content key** and leaves every `spec.encryptedData` value untouched
 (invariant #6). A departing operator whose key ever unwrapped that content key
-(one `keyfold` unseal, or a copy of a historical `encryptedKey` wrapped
+(one `keyfold unseal`, or a copy of a historical `encryptedKey` wrapped
 to them) may have kept it, and it still opens every `encryptedData` value that
 has not since been **changed**. Only changing a value — which forces a full
 re-`Seal` under a fresh content key (§E, step 2) — cryptographically locks them
@@ -164,8 +165,10 @@ it *can* still open the pre-rewrap object (historical exposure is real).
 
 A force-push or bad revert can make the apply path deliver an old `GitSecret`.
 The controller will faithfully reconcile whatever it is given — it has no notion
-of "newer". Recovery: restore the correct revision in Git and re-apply. Surfacing
-which Git revision produced a given `Secret` is future work (threat-model.md T10).
+of "newer". Recovery: restore the correct revision in Git and re-apply.
+`status.sourceRevision` (the `Revision` column of `kubectl get gitsecret -o wide`)
+shows which commit the live object was sealed from — see
+[provenance.md](../architecture/provenance.md) and threat-model.md T10.
 
 ## G — repository lost
 
@@ -173,6 +176,27 @@ The ciphertext is the durable artifact. Recover the repo from a mirror or backup
 (prereq #3), then proceed as normal. If no copy of the repo exists anywhere, the
 secrets are gone — there is no key that helps, because there is no ciphertext to
 apply it to. **This is why prereq #3 is not optional.**
+
+## H — read the values without a cluster
+
+Every cluster is gone, or you simply need the database password now. On a
+machine holding **any one** recipient's private key — typically the offline
+recovery key — and a checkout of the repository:
+
+```
+keyfold unseal -f deploy/prod/db-creds.yaml | jq .          # all values, JSON
+keyfold unseal -f deploy/prod/db-creds.yaml --key DB_PASSWORD | pbcopy
+keyfold unseal -f deploy/prod/db-creds.yaml --format env > /dev/shm/db.env
+```
+
+Nothing else is involved: no cluster, no controller, no network. Values go to
+stdout only, and `unseal` refuses to print to a terminal unless you pass
+`--show`, so they don't land in scrollback by accident — pipe them where they
+are needed. Where they end up after that (a file, a clipboard) is yours to
+clean up.
+
+If your keyring holds none of the object's recipient keys, the error lists
+the fingerprints (and roles) it is wrapped to, so you know which key to fetch.
 
 ---
 
