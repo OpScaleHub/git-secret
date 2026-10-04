@@ -14,7 +14,7 @@ README](../../README.md#quick-start).
 
 ## Prerequisites
 
-- `go` 1.25+ (to build the binaries; no release binary download is required
+- `go` 1.26+ (to build the binaries; no release binary download is required
   for this walkthrough)
 - `gpg`
 - A cluster and `kubectl` context — this doc uses `kind`, but any

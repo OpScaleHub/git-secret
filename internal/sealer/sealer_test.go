@@ -25,7 +25,12 @@ func shortTempDir(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("create short temp dir: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(dir) })
+	// Stop the agent gpg started for this home before deleting it, so test
+	// runs don't leave live agents (and their /run/user socket dirs) behind.
+	t.Cleanup(func() {
+		_ = exec.Command("gpgconf", "--homedir", dir, "--kill", "all").Run()
+		os.RemoveAll(dir)
+	})
 	return dir
 }
 

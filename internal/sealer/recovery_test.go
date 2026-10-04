@@ -57,6 +57,7 @@ func TestRecovery_ClusterRebuild_SameKeyReproducesData(t *testing.T) {
 	// The old cluster (and its keyring) is gone. Only two things survived:
 	// the GitSecret manifest (spec) and a backup of the controller key.
 	keyBackup := exportSecretKey(t, oldHome, fpr)
+	_ = exec.Command("gpgconf", "--homedir", oldHome, "--kill", "all").Run()
 	os.RemoveAll(oldHome)
 
 	newHome := shortTempDir(t)

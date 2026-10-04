@@ -20,6 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -228,9 +229,28 @@ func run(args []string, environ []string) int {
 		setupLog.Error(err, "unable to set up health check")
 		return exitError
 	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+	// Ready means able to do the job: the informer cache has synced, which
+	// needs a reachable apiserver. A plain ping would report Ready for a pod
+	// that cannot reach the API at all -- and with the webhook on, Services
+	// would route admission calls to it.
+	apiCheck, err := apiReachableCheck(mgr)
+	if err != nil {
+		setupLog.Error(err, "unable to set up apiserver ready check")
+		return exitError
+	}
+	if err := mgr.AddReadyzCheck("apiserver", apiCheck); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		return exitError
+	}
+	if err := mgr.AddReadyzCheck("informer-cache", cacheSyncedCheck(mgr)); err != nil {
+		setupLog.Error(err, "unable to set up ready check")
+		return exitError
+	}
+	if webhookOn {
+		if err := mgr.AddReadyzCheck("webhook", mgr.GetWebhookServer().StartedChecker()); err != nil {
+			setupLog.Error(err, "unable to set up webhook ready check")
+			return exitError
+		}
 	}
 
 	setupLog.Info("starting manager", "version", version)
@@ -311,6 +331,39 @@ func metricsOptions(addr string, secure bool) server.Options {
 		opts.FilterProvider = metricsauth.FilterProvider
 	}
 	return opts
+}
+
+// apiReachableCheck is a readiness check that the apiserver answers
+// GET /version (allowed for any authenticated identity) within 2s. The
+// informer-cache check alone is not enough: if the apiserver is down when
+// the controller starts, discovery fails, no informer is ever created, and
+// "wait for cache sync" passes vacuously.
+func apiReachableCheck(mgr manager.Manager) (healthz.Checker, error) {
+	dc, err := discovery.NewDiscoveryClientForConfigAndClient(mgr.GetConfig(), mgr.GetHTTPClient())
+	if err != nil {
+		return nil, err
+	}
+	return func(req *http.Request) error {
+		ctx, cancel := context.WithTimeout(req.Context(), 2*time.Second)
+		defer cancel()
+		if err := dc.RESTClient().Get().AbsPath("/version").Do(ctx).Error(); err != nil {
+			return fmt.Errorf("apiserver unreachable: %w", err)
+		}
+		return nil
+	}, nil
+}
+
+// cacheSyncedCheck is a readiness check that passes once the manager's
+// informer cache has synced. It waits at most a second per probe.
+func cacheSyncedCheck(mgr manager.Manager) healthz.Checker {
+	return func(req *http.Request) error {
+		ctx, cancel := context.WithTimeout(req.Context(), time.Second)
+		defer cancel()
+		if !mgr.GetCache().WaitForCacheSync(ctx) {
+			return fmt.Errorf("informer cache not synced: the apiserver is unreachable or the controller is still starting")
+		}
+		return nil
+	}
 }
 
 func envMap(environ []string) map[string]string {

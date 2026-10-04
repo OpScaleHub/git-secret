@@ -150,6 +150,24 @@ and isn't owned by this `GitSecret` — the controller refuses to clobber it.
 `Secret` if it's safe to, or set `spec.target.adopt: true` to deliberately
 take ownership of it.
 
+## `Warning: unrecognized format "int64"` when installing the CRD
+
+Harmless. Kubernetes 1.34+ warns about the `format: int64` that every CRD
+embedding the standard `metav1.Condition` type carries (on
+`status.conditions[].observedGeneration`, and on `status.observedGeneration`).
+The field validates as an integer either way; nothing needs fixing on your
+side.
+
+## Controller pod not Ready
+
+Readiness requires the apiserver to answer (`GET /version`, every probe) and the
+controller's informer cache to have synced (and, with the webhook on, a started
+webhook server). `kubectl port-forward` to the pod's health port and
+`curl localhost:8081/readyz?verbose` shows which check fails. A pod that stays
+`0/1` is usually one that cannot reach the API: check its logs
+for `Error retrieving lease lock` / connection timeouts and the cluster's
+networking (kube-proxy, CNI, NetworkPolicies on the release namespace).
+
 ## Where to look next
 
 - [Quickstart](../getting-started/quickstart.md) — a known-good end-to-end

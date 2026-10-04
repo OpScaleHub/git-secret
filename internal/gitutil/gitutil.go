@@ -236,6 +236,13 @@ func runBytes(dir *string, args ...string) ([]byte, error) {
 // IsMissingPath reports whether err from ReadAtRev/ReadStaged means the
 // path simply doesn't exist at that revision (e.g. not committed yet),
 // as opposed to a real I/O or git failure.
+// HasCommits reports whether the repository at repoRoot has a HEAD commit
+// (false in a freshly initialised repo).
+func HasCommits(repoRoot string) bool {
+	_, err := run(&repoRoot, "rev-parse", "--verify", "--quiet", "HEAD")
+	return err == nil
+}
+
 func IsMissingPath(err error) bool {
 	if err == nil {
 		return false

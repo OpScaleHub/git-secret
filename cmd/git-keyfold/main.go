@@ -17,6 +17,7 @@ import (
 
 	"github.com/OpScaleHub/git-secret/internal/cli"
 	"github.com/OpScaleHub/git-secret/internal/config"
+	"github.com/OpScaleHub/git-secret/internal/gitutil"
 	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 	"github.com/OpScaleHub/git-secret/keybackend"
 )
@@ -392,6 +393,10 @@ func cmdVerify() int {
 	ctx, err := cli.Load()
 	if err != nil {
 		return fail(err)
+	}
+	if !gitutil.HasCommits(ctx.RepoRoot) {
+		fmt.Println("verify: nothing committed yet - there is no HEAD to check.")
+		return exitOK
 	}
 	problems, err := ctx.Verify()
 	if err != nil {
