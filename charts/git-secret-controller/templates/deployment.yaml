@@ -7,15 +7,16 @@ metadata:
   name: {{ include "git-secret-controller.fullname" . }}
   labels:
     {{- include "git-secret-controller.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "git-secret-controller.selectorLabels" . | nindent 6 }}
+      {{- include "git-secret-controller.controllerSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "git-secret-controller.selectorLabels" . | nindent 8 }}
+        {{- include "git-secret-controller.controllerSelectorLabels" . | nindent 8 }}
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}
@@ -33,6 +34,7 @@ spec:
           args:
             - --gpg-private-key-file=/secrets/gpg/private.asc
             - --metrics-bind-address=:{{ .Values.metrics.port }}
+            - --metrics-secure={{ .Values.metrics.secure }}
             - --health-probe-bind-address=:{{ .Values.healthProbe.port }}
             {{- if .Values.leaderElection.enabled }}
             - --leader-elect

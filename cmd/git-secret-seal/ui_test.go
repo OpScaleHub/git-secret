@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	sigsyaml "sigs.k8s.io/yaml"
 
 	"github.com/OpScaleHub/git-secret/api/v1alpha1"
+	"github.com/OpScaleHub/git-secret/internal/gpgutil"
 	"github.com/OpScaleHub/git-secret/internal/sealer"
 )
 
@@ -191,5 +193,40 @@ func TestUI_SealRejectsOversizedInput(t *testing.T) {
 	srv.handleSeal(rec, httptest.NewRequest(http.MethodPost, "/api/seal", bytes.NewReader(b)))
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "too many keys") {
 		t.Fatalf("oversized key count: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// TestUI_IsolatedKeyringFailsFast: the in-cluster deployment runs with
+// --isolated-keyring on a read-only root filesystem with no operator
+// keyring. A missing keyring, or an entry with no embedded publicKey, must
+// stop the UI at startup with a usable message -- not fail every seal
+// later with a gpg "can't create directory ~/.gnupg" error.
+func TestUI_IsolatedKeyringFailsFast(t *testing.T) {
+	if !gpgutil.Available() {
+		t.Skip("gpg not installed")
+	}
+	dir := t.TempDir()
+	noPub := dir + "/nopub.yaml"
+	fpr := strings.Repeat("A", 40)
+	if err := os.WriteFile(noPub, []byte("recipients:\n  - fingerprint: "+fpr+"\n    role: controller\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"no keyring", []string{"--isolated-keyring"}, "requires --keyring"},
+		{"entry without publicKey", []string{"--isolated-keyring", "--keyring", noPub}, "has no publicKey"},
+	}
+	for _, c := range cases {
+		var stdout, stderr bytes.Buffer
+		if code := runUI(c.args, &stdout, &stderr); code != exitUsage {
+			t.Errorf("%s: exit %d, want %d (stderr %q)", c.name, code, exitUsage, stderr.String())
+		}
+		if !strings.Contains(stderr.String(), c.want) {
+			t.Errorf("%s: stderr %q does not mention %q", c.name, stderr.String(), c.want)
+		}
 	}
 }

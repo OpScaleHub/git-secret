@@ -73,6 +73,33 @@ func keyringHasPublicKeys(src string) (bool, error) {
 	return false, nil
 }
 
+// checkIsolatedKeyring validates the keyring for `ui --isolated-keyring`:
+// with no operator keyring to fall back on, every recipient offered for
+// sealing must bring its own armored public key, or sealing to it fails
+// on the first request instead of at startup.
+func checkIsolatedKeyring(src string) error {
+	if src == "" {
+		return fmt.Errorf("requires --keyring (a keyring whose entries carry their armored publicKey)")
+	}
+	raw, err := readKeyringBytes(src)
+	if err != nil {
+		return fmt.Errorf("read keyring %s: %w", src, err)
+	}
+	var kr keyringFile
+	if err := sigsyaml.Unmarshal(raw, &kr); err != nil {
+		return fmt.Errorf("parse keyring %s: %w", src, err)
+	}
+	if len(kr.Recipients) == 0 {
+		return fmt.Errorf("keyring %s lists no recipients", src)
+	}
+	for i, r := range kr.Recipients {
+		if strings.TrimSpace(r.PublicKey) == "" {
+			return fmt.Errorf("keyring %s: recipients[%d] (%s) has no publicKey -- export it with `gpg --armor --export %s`", src, i, r.Fingerprint, r.Fingerprint)
+		}
+	}
+	return nil
+}
+
 // importKeyringPubKeys imports any armored publicKey entries from the
 // keyring at src into the current GNUPGHOME, so server-side sealing works
 // without the operator's own keyring. Entries with no publicKey are

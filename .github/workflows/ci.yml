@@ -135,6 +135,43 @@ jobs:
             --set gpgPrivateKey.existingSecret=dummy-gpg \
             --include-crds
 
+      - name: chart invariants (Pod Security, selectors, naming, required values)
+        run: |
+          set -euo pipefail
+          python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --quiet --break-system-packages pyyaml
+          all=$(helm template git-secret-controller ./charts/git-secret-controller \
+            --set gpgPrivateKey.existingSecret=dummy-gpg \
+            --set webhook.enabled=true --set servePubKey.enabled=true \
+            --set publishPublicKey.enabled=true \
+            --set sealUi.enabled=true --set sealUi.keyringConfigMap=kr)
+          python3 - "$all" <<'PY'
+          import sys, yaml
+          docs = [d for d in yaml.safe_load_all(sys.argv[1]) if d]
+          pods = {d["metadata"]["name"]: d for d in docs if d["kind"] in ("Deployment", "Job")}
+          fail = []
+          for name, d in pods.items():
+              spec = d["spec"]["template"]["spec"]
+              if (spec.get("securityContext") or {}).get("seccompProfile", {}).get("type") != "RuntimeDefault":
+                  fail.append(f"{name}: pod lacks seccompProfile RuntimeDefault (Pod Security restricted)")
+          labels = {n: d["spec"]["template"]["metadata"]["labels"] for n, d in pods.items()}
+          for d in docs:
+              sel = d["spec"]["selector"] if d["kind"] == "Service" else \
+                    d["spec"]["selector"]["matchLabels"] if d["kind"] == "Deployment" else None
+              if sel is None:
+                  continue
+              hits = [n for n, l in labels.items() if all(l.get(k) == v for k, v in sel.items())]
+              if len(hits) != 1:
+                  fail.append(f"{d['kind']} {d['metadata']['name']} selects {hits}, want exactly one workload")
+          if "git-secret-controller" not in pods:
+              fail.append(f"release 'git-secret-controller' should render a Deployment named 'git-secret-controller', got {sorted(pods)}")
+          print("\n".join(fail) or f"ok: {len(pods)} workloads, all restricted-compatible, selectors disjoint")
+          sys.exit(1 if fail else 0)
+          PY
+          if helm template t ./charts/git-secret-controller \
+               --set gpgPrivateKey.existingSecret=dummy-gpg --set sealUi.enabled=true >/dev/null 2>&1; then
+            echo "sealUi.enabled without sealUi.keyringConfigMap must fail to render"; exit 1
+          fi
+
   ci-status:
     name: CI status
     # Single stable check to gate merges on: passes when the heavy jobs

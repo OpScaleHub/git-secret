@@ -49,6 +49,45 @@ served.
 3. If you changed `webhook.enabled`, note it requires `replicaCount: 1` (see
    [docs/architecture/admission-webhook.md](docs/architecture/admission-webhook.md)).
 
+## Upgrading to the release after v0.10.0 (chart hardening, #106)
+
+Four chart changes, one of which needs a manual step for some installs:
+
+- **Resource names.** A release name that already contains the chart name is
+  no longer doubled: `helm install git-secret-controller …` now yields
+  `git-secret-controller` (and `-webhook`, `-pubkey`, `-seal-ui`, `-metrics`)
+  instead of `git-secret-controller-git-secret-controller-*`. Helm replaces
+  the renamed objects on upgrade; nothing to do. Anything *outside* the chart
+  that referenced the old names (a `ServiceMonitor`, a `NetworkPolicy`, a
+  port-forward script, a `ClusterRoleBinding` to the ClusterRole) must be
+  updated.
+- **Controller selector.** The controller's pods now carry
+  `app.kubernetes.io/component: controller`, and its Deployment and Services
+  select on it (so they no longer also match the seal-UI or publish-Job
+  pods). A Deployment's selector is immutable, so **if your release name does
+  not contain `git-secret-controller`** (the Deployment keeps its name), delete
+  it before upgrading:
+
+  ```bash
+  kubectl -n <ns> delete deployment <release>-git-secret-controller
+  helm upgrade <release> … 
+  ```
+
+  The target `Secret`s are untouched; reconciliation pauses until the new pod
+  is ready. With `webhook.enabled` and `failurePolicy: Fail`, `GitSecret`
+  writes are rejected during that gap — schedule it accordingly. The seal-UI
+  Deployment is unaffected (its selector did not change).
+- **Metrics are authenticated by default** (`metrics.secure: true`): HTTPS with
+  a self-signed cert behind `TokenReview`/`SubjectAccessReview`. Bind the new
+  `<fullname>-metrics-reader` ClusterRole to your scraper and switch it to
+  HTTPS, or set `metrics.secure: false` to keep the old plain endpoint.
+- **`sealUi.enabled` requires `sealUi.keyringConfigMap`** whose entries all
+  carry a `publicKey`. Without one the in-cluster UI could never seal (it had no
+  keys and a read-only filesystem); the chart now says so at render time.
+
+Pods now also set `seccompProfile: RuntimeDefault`, so the chart installs into
+Pod Security `restricted` namespaces.
+
 ## Downgrade
 
 Additive-only means a downgrade is safe for objects that do not use fields the

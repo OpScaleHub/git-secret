@@ -1,4 +1,7 @@
 {{- if .Values.sealUi.enabled }}
+{{- if not .Values.sealUi.keyringConfigMap }}
+{{- fail "sealUi.enabled requires sealUi.keyringConfigMap: in-cluster there is no operator gpg keyring, so the UI can only seal to recipients whose armored publicKey the keyring carries. See docs/architecture/sealing-console.md." }}
+{{- end }}
 {{- $name := printf "%s-seal-ui" (include "git-secret-controller.fullname" .) }}
 apiVersion: apps/v1
 kind: Deployment
@@ -32,9 +35,8 @@ spec:
             - ui
             - --addr=:{{ .Values.sealUi.port }}
             - --max-inflight={{ .Values.sealUi.maxInflight }}
-            {{- if .Values.sealUi.keyringConfigMap }}
             - --keyring=/keyring/keyring.yaml
-            {{- end }}
+            - --isolated-keyring
             {{- if .Values.sealUi.defaultNamespace }}
             - --namespace={{ .Values.sealUi.defaultNamespace }}
             {{- end }}
@@ -52,19 +54,15 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
-            {{- if .Values.sealUi.keyringConfigMap }}
             - name: keyring
               mountPath: /keyring
               readOnly: true
-            {{- end }}
       volumes:
         - name: tmp
           emptyDir: {}
-        {{- if .Values.sealUi.keyringConfigMap }}
         - name: keyring
           configMap:
             name: {{ .Values.sealUi.keyringConfigMap }}
-        {{- end }}
 ---
 apiVersion: v1
 kind: Service

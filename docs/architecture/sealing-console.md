@@ -23,7 +23,7 @@ Helm (`charts/git-secret-controller`):
 ```yaml
 sealUi:
   enabled: true
-  keyringConfigMap: git-secret-keyring   # optional: pre-fills recipients
+  keyringConfigMap: git-secret-keyring   # required: recipients + their public keys
   defaultNamespace: ""
 ```
 
@@ -80,7 +80,10 @@ recipients:
 ```
 
 The UI imports those public keys into an ephemeral keyring at startup, so
-in-cluster sealing works without any operator keyring. Build the `publicKey`
+in-cluster sealing works without any operator keyring. In-cluster it runs with
+`--isolated-keyring`: every entry **must** carry its `publicKey` — there is no
+other keyring to fall back on — so the chart requires `keyringConfigMap` and
+the UI refuses to start if an entry is missing its key. Build the `publicKey`
 blocks with `gpg --armor --export <fpr>` (or, for the controller's own key,
 `git-secret-controller --print-public-key`).
 

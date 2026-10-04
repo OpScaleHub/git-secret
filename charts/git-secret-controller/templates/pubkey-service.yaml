@@ -7,7 +7,7 @@ metadata:
     {{- include "git-secret-controller.labels" . | nindent 4 }}
 spec:
   selector:
-    {{- include "git-secret-controller.selectorLabels" . | nindent 4 }}
+    {{- include "git-secret-controller.controllerSelectorLabels" . | nindent 4 }}
   ports:
     - name: http
       port: 80

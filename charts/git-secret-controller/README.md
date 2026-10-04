@@ -41,6 +41,19 @@ helm install git-secret-controller \
   --set gpgPrivateKey.existingSecret=git-secret-controller-gpg
 ```
 
+With that release name every resource is named `git-secret-controller`
+(`-webhook`, `-pubkey`, `-seal-ui`, `-metrics` for the Services). A release
+name that doesn't contain the chart name gets it appended
+(`<release>-git-secret-controller`).
+
+## Pod Security
+
+Every pod this chart creates meets the Kubernetes Pod Security
+**`restricted`** profile out of the box (non-root, no privilege escalation,
+all capabilities dropped, read-only root filesystem, `RuntimeDefault`
+seccomp), so it installs into a namespace labelled
+`pod-security.kubernetes.io/enforce: restricted`.
+
 ## Cluster-scoped by default
 
 The controller watches `GitSecret` objects in every namespace, and this
@@ -49,9 +62,10 @@ read/write `Secret`s cluster-wide, scoped only by which `GitSecret`
 objects it's actually given (each one is sealed to a specific set of
 recipients; a `GitSecret` the controller's key can't open is left alone,
 its `status` reporting the failure instead of touching any `Secret`).
-There's no per-namespace restriction wired up in this chart today — if
-your cluster needs one, replace `templates/rbac.yaml`'s `ClusterRole`/
-`ClusterRoleBinding` with a `Role`/`RoleBinding` per namespace.
+To confine it, list the namespaces in `watchNamespaces`: the chart then
+grants `Secret`/`GitSecret` access through a `Role`/`RoleBinding` in each
+listed namespace instead of cluster-wide, and passes `--watch-namespaces` so
+the controller's cache matches.
 
 ## Recipient rotation
 
@@ -61,7 +75,8 @@ values — only its wrapped content key:
 
 ```bash
 git-secret-seal --rewrap gitsecret.yaml \
-  --recipient <controller-fpr> --recipient <new-recipient-fpr> > gitsecret.yaml
+  --recipient <controller-fpr> --recipient <new-recipient-fpr> > gitsecret.new.yaml
+mv gitsecret.new.yaml gitsecret.yaml   # never redirect onto the input: the shell truncates it first
 kubectl apply -f gitsecret.yaml
 ```
 
@@ -102,13 +117,37 @@ optional ways to expose it:
 Both are off by default; use either or both. See
 `docs/architecture/keyring.md`.
 
+## Metrics
+
+`/metrics` is served over HTTPS on `metrics.port` (default 8443) behind the
+apiserver's own authentication and authorization: each scrape's bearer
+token goes through a `TokenReview`, and its user must be allowed `get` on
+the `/metrics` non-resource URL. The chart creates a
+`<fullname>-metrics-reader` `ClusterRole` for that — bind it to your
+scraper:
+
+```bash
+kubectl create clusterrolebinding prometheus-git-secret-metrics \
+  --clusterrole=git-secret-controller-metrics-reader \
+  --serviceaccount=monitoring:prometheus
+```
+
+The serving certificate is self-signed, so configure the scraper with
+`insecure_skip_verify` (or `tls_config.insecureSkipVerify` in a
+`ServiceMonitor`). `metrics.secure: false` restores the plain,
+unauthenticated HTTP endpoint.
+
 ## Sealing web form (`sealUi.enabled`)
 
 Runs `git-secret-seal ui` in-cluster from the same image: a public-key-only
 web form for producing `GitSecret` manifests. It has
 `automountServiceAccountToken: false` -- it cannot reach the API -- never
 decrypts, and never persists. Reach it with `kubectl port-forward
-svc/<release>-seal-ui 8080:80`; there is no Ingress. `sealUi.keyringConfigMap`
-(optional) names a `ConfigMap` with a `keyring.yaml` (fingerprint + role +
-armored `publicKey`) to pre-fill the recipient picker. See
+svc/<fullname>-seal-ui 8080:80`; there is no Ingress.
+
+`sealUi.keyringConfigMap` is **required**: it names a `ConfigMap` with a
+`keyring.yaml` (fingerprint + role + armored `publicKey` for every entry).
+In-cluster there is no operator GPG keyring, so these are the only keys the
+UI can seal to; the chart refuses to render without it and the UI refuses
+to start if any entry lacks its `publicKey`. See
 `docs/architecture/sealing-console.md`.
