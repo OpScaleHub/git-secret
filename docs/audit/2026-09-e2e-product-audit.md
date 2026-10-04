@@ -435,3 +435,41 @@ Ranked selling points: (1) recoverable by design; (2) add/replace clusters by
 rewrap, no re-encryption; (3) Kubernetes-native CRD + controller, nothing
 external to run; (4) reviewable — recipients and provenance visible in the
 diff; (5) also a standalone Git CLI for files, no Kubernetes required.
+
+---
+
+## 8. Status after epic #117 (2026-10-04)
+
+Every finding was worked through epic #117; the final consistency pass
+(this addendum) found only two small reference gaps, fixed alongside it.
+
+| Finding | Resolution |
+|---|---|
+| B1 webhook decrypts / denies non-recipient objects | #105 → PR #118 (`gpg --list-only`) |
+| B2 Pod Security `restricted` · B3 seal-UI · B5 selectors · B8 metrics | #106 → PR #119 |
+| B4 doubled chart names | PR #119 (pulled forward from the rename) |
+| B6 provenance `-dirty` · B7 `verify` w/o HEAD · B10 cosmetics, readiness, toolchain | #112 → PR #127 (int64 CRD warning: upstream, documented) |
+| B9 raw gpg errors | PRs #125, #127 |
+| G1 offline unseal | #109 → PR #123 |
+| G2 rekey / single-value update | #110 → PR #124 |
+| G3 bulk recipients · G4 keyring public keys · G5 key/fingerprint binding | #111 → PR #125 |
+| G6 two key hierarchies unexplained | #113 → PR #128 (`docs/concepts.md`) |
+| G7 no e2e / example | #116 → PR #134 (16 checks on kind, in CI) |
+| M1 landing page · M3 (landing part) | #115 → PR #131 — **held until the release is tagged** |
+| M2 quickstart anti-pattern · M3 · M5 · M6 · M8 · L2 ADRs | #114 → PR #130 |
+| M4 terminology | PRs #128, #130 and this pass |
+| M7 competitor references | PR #103 |
+| M9 name collision | ADR-0001 → #108 → PR #122; repository renamed (PR #132), site on keyfold.opscale.ir (PR #133) |
+| L1 `git-secret-server` | #107 → PR #121 |
+
+**Final pass checks** (source ↔ CRD ↔ chart ↔ CLI ↔ README ↔ docs ↔ landing):
+CLI help vs. reference docs (every command and flag); every chart value
+documented; release artifact names vs. documented names; CRD and deepcopy
+regenerated with no diff; terminology sweep (remaining Argo CD mentions are the
+`kubectl keyfold` warning feature and generic "Argo CD, Flux, …" examples;
+`SECRETIZE_SKIP_HOOKS` is the honoured legacy name); all relative links and
+anchors in every Markdown file and all 18 repository links on the new landing
+page resolve; both examples execute.
+
+**Found along the way, open:** #126 intermittent local gpg test failure (never
+on CI); #129 the repository has no `LICENSE` file — maintainer decision.
